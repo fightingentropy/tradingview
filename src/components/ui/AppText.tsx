@@ -34,5 +34,7 @@ const styles = StyleSheet.create({
   label: { color: Colors.text, fontSize: FontSize.sm, fontWeight: '600' },
   caption: { color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: '500' },
   mono: { color: Colors.text, fontSize: FontSize.md, fontFamily: Fonts.mono },
-  numeric: { fontVariant: ['tabular-nums'], fontFamily: Fonts.mono },
+  // SF Pro (the system font) with tabular figures — matches the TradingView app;
+  // tabular-nums keeps streaming prices from jittering without a monospace face.
+  numeric: { fontVariant: ['tabular-nums'] },
 });
