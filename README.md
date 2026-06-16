@@ -1,56 +1,46 @@
-# Welcome to your Expo app 👋
+# TradingView Clone (Expo)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A fast, snappy TradingView-style mobile app: watchlists of ticker symbols showing
+where they trade, tap a symbol for a live candlestick chart.
 
-## Get started
+## Data sources
 
-1. Install dependencies
+- **Hyperliquid** (`https://api.hyperliquid.xyz`) — crypto perps + spot, fully public/keyless,
+  REST snapshot + WebSocket streaming (`allMids`, `candle`).
+- **trade.xyz** — equity / commodity / FX perps (HIP-3 `xyz` dex), reached through the *same*
+  Hyperliquid endpoints. Also keyless.
+- **Twelve Data** — real exchange-listed US stocks (NASDAQ/NYSE), proxied server-side.
+  Optional: set `TWELVE_DATA_KEY` in `.env` (free key at https://twelvedata.com). Inert without it.
+- **Cboe** — the real CBOE Volatility Index (**VIX**) via Cboe's free public delayed-quotes CDN
+  (`cdn.cboe.com`). Keyless; fetched directly (quote + daily/intraday OHLC history).
 
-   ```bash
-   npm install
-   ```
+## Stack
 
-2. Start the app
+Expo SDK 56 (New Architecture) · Expo Router · React Query + Zustand · MMKV · FlashList v2 ·
+Victory Native XL + Skia + Reanimated (chart) · Expo Router API routes (stocks proxy).
 
-   ```bash
-   npx expo start
-   ```
+## Run (iOS-first, dev build — not Expo Go)
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+The native stack (Skia, MMKV, Reanimated) requires a custom dev client.
 
 ```bash
-npm run reset-project
+npx expo run:ios          # build + launch on the iOS simulator
+# then, for subsequent JS work, just:
+npx expo start            # Fast Refresh over the dev client
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+> The dev client connects to the React Native default port **8081**. If another Metro server
+> is already on 8081, free it first (the dev client ignores `--port` overrides in this SDK).
 
-### Other setup steps
+To enable real stocks: add `TWELVE_DATA_KEY=...` to `.env`, restart `expo start`.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Structure
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/app/            Expo Router routes (tabs: Watchlist | Markets | Settings; symbol/[id]; api/stocks/*)
+src/providers/      hyperliquid/ (rest, ws, coins, provider) · stocks/ · registry
+src/data/           React Query hooks (useMarkets, useCandles, useLivePriceFeed)
+src/store/          Zustand stores (watchlists + MMKV persistence, live prices)
+src/components/     SymbolRow, PriceChart, TimeframeBar, VenueBadge, WatchlistTabs, ui/
+scripts/hl-probe.mjs  Dev script to inspect live Hyperliquid response shapes
+```
