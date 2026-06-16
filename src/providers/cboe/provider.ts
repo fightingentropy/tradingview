@@ -129,9 +129,13 @@ export const cboeProvider: MarketDataProvider = {
     return snapshot;
   },
 
-  async getCandles(instrument: Instrument, interval: CandleInterval): Promise<Candle[]> {
-    const { ms, count } = INTERVALS[interval];
-    const wantsIntraday = interval !== '1d' && interval !== '1w';
+  async getCandles(
+    instrument: Instrument,
+    interval: CandleInterval,
+    count = INTERVALS[interval].count,
+  ): Promise<Candle[]> {
+    const { ms } = INTERVALS[interval];
+    const wantsIntraday = interval !== '1d' && interval !== '1w' && interval !== '1M';
 
     // Intraday for sub-daily timeframes when the market is open; otherwise (and
     // for 1d/1w) fall back to the daily series so the chart always renders.

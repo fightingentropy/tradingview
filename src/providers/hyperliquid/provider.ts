@@ -30,10 +30,13 @@ export const hyperliquidProvider: MarketDataProvider = {
     };
   },
 
-  async getCandles(instrument: Instrument, interval: CandleInterval): Promise<Candle[]> {
-    const meta = INTERVALS[interval];
+  async getCandles(
+    instrument: Instrument,
+    interval: CandleInterval,
+    count = INTERVALS[interval].count,
+  ): Promise<Candle[]> {
     const endTime = Date.now();
-    const startTime = endTime - meta.ms * meta.count;
+    const startTime = endTime - INTERVALS[interval].ms * count;
     const raw = await fetchCandleSnapshot(instrument.coinKey, interval, startTime, endTime);
     return raw.map(mapCandle).sort((a, b) => a.t - b.t);
   },

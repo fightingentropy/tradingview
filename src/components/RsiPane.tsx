@@ -11,19 +11,29 @@ import type { Candle } from '@/domain/types';
 const PANE_HEIGHT = 96;
 
 /** A compact RSI oscillator pane (0–100) with 30/70 guide lines. */
-export function RsiPane({ candles, period }: { candles: Candle[]; period: number }) {
+export function RsiPane({
+  candles,
+  period,
+  visibleCount,
+}: {
+  candles: Candle[];
+  period: number;
+  /** Show only the last N points (computed over the full lead-included series). */
+  visibleCount?: number;
+}) {
   const data = useMemo(() => {
     const values = rsi(
       candles.map((c) => c.c),
       period,
     );
+    const start = visibleCount != null ? Math.max(0, values.length - visibleCount) : 0;
     const out: { x: number; rsi: number }[] = [];
-    for (let i = 0; i < values.length; i++) {
+    for (let i = start; i < values.length; i++) {
       const v = values[i];
-      if (v != null) out.push({ x: i, rsi: v });
+      if (v != null) out.push({ x: i - start, rsi: v });
     }
     return out;
-  }, [candles, period]);
+  }, [candles, period, visibleCount]);
 
   const last = data.length ? data[data.length - 1].rsi : null;
   const lastColor =

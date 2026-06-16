@@ -36,6 +36,8 @@ export interface Quote {
   change24hPct: number | null;
   /** 24h notional volume in quote currency. */
   dayVolume: number | null;
+  /** Current hourly funding rate as a fraction (e.g. 0.0000125 = 0.00125%/hr). Perps only; null otherwise. */
+  funding?: number | null;
   ts: number;
 }
 
@@ -49,7 +51,7 @@ export interface Candle {
   v: number;
 }
 
-export type CandleInterval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
+export type CandleInterval = '1m' | '5m' | '15m' | '1h' | '2h' | '4h' | '8h' | '1d' | '1w' | '1M';
 
 /** Which direction of move arms a price alert. */
 export type AlertDirection = 'up' | 'down' | 'both';

@@ -1,4 +1,4 @@
-import { QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox } from 'react-native';
@@ -9,7 +9,7 @@ import { AlertHost } from '@/components/AlertHost';
 import { SymbolMenuProvider } from '@/components/SymbolMenu';
 import { Colors } from '@/constants/theme';
 import { AlertWatcher } from '@/hooks/useAlertWatcher';
-import { queryClient } from '@/lib/queryClient';
+import { PERSIST_MAX_AGE, queryClient, queryPersister } from '@/lib/queryClient';
 
 // Victory Native's candlestick paths emit Skia path deprecation warnings; harmless and noisy.
 LogBox.ignoreLogs([/SkPath\..*is deprecated/, '[react-native-skia]']);
@@ -31,7 +31,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.background }}>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{ persister: queryPersister, maxAge: PERSIST_MAX_AGE, buster: '1' }}>
           <ThemeProvider value={navTheme}>
             <StatusBar style="light" />
             <SymbolMenuProvider>
@@ -50,7 +52,7 @@ export default function RootLayout() {
             <AlertWatcher />
             <AlertHost />
           </ThemeProvider>
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

@@ -51,6 +51,19 @@ export function formatPercent(value: number | string | null | undefined): string
   return `${sign}${n.toFixed(2)}%`;
 }
 
+/**
+ * Annualise an hourly perp funding rate (a fraction, e.g. 0.0000458) into a
+ * signed APR percentage: +40.13%, -11.20%, 0.00%. Hyperliquid charges funding
+ * hourly, so APR = hourlyRate × 24 × 365.
+ */
+export function formatFundingApr(hourlyRate: number | string | null | undefined): string {
+  const n = toNum(hourlyRate);
+  if (n === null) return '—';
+  const apr = n * 24 * 365 * 100;
+  const sign = apr > 0 ? '+' : ''; // toFixed already carries the '-' for negatives
+  return `${sign}${apr.toFixed(2)}%`;
+}
+
 /** Compact notation for volumes / market caps: 1.2K, 3.4M, 5.6B, 1.2T. */
 export function formatCompact(value: number | string | null | undefined): string {
   const n = toNum(value);

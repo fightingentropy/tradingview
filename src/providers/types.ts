@@ -25,8 +25,11 @@ export interface MarketDataProvider {
   /** Full catalog + a snapshot of stats in one shot. */
   loadMarkets(): Promise<MarketSnapshot>;
 
-  /** Historical candles to seed a chart. */
-  getCandles(instrument: Instrument, interval: CandleInterval): Promise<Candle[]>;
+  /**
+   * Historical candles to seed a chart. `count` is the number of candles to
+   * fetch (defaults to the interval's fallback size when omitted).
+   */
+  getCandles(instrument: Instrument, interval: CandleInterval, count?: number): Promise<Candle[]>;
 
   /**
    * Stream live last prices for the given coin keys. Returns an unsubscribe fn.

@@ -7,7 +7,8 @@ import { allProviders } from '@/providers/registry';
 
 export interface MarketsData {
   instruments: Instrument[];
-  byId: Map<string, Instrument>;
+  // Plain record (not a Map) so the whole snapshot survives JSON persistence.
+  byId: Record<string, Instrument>;
   quotes: Record<string, Quote>;
 }
 
@@ -22,7 +23,8 @@ async function loadAllMarkets(): Promise<MarketsData> {
       Object.assign(quotes, r.value.quotes);
     }
   }
-  const byId = new Map(instruments.map((i) => [i.id, i]));
+  const byId: Record<string, Instrument> = {};
+  for (const i of instruments) byId[i.id] = i;
   return { instruments, byId, quotes };
 }
 
@@ -41,6 +43,6 @@ export function useInstrumentsByIds(ids: string[]) {
   const { data } = useMarkets();
   return useMemo(() => {
     if (!data) return [];
-    return ids.map((id) => data.byId.get(id)).filter((i): i is Instrument => i !== undefined);
+    return ids.map((id) => data.byId[id]).filter((i): i is Instrument => i !== undefined);
   }, [data, ids]);
 }

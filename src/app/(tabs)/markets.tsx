@@ -1,5 +1,6 @@
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
+import { useIsRestoring } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
@@ -34,6 +35,7 @@ function matchesFilter(i: Instrument, f: Filter): boolean {
 export default function MarketsScreen() {
   const router = useRouter();
   const { data, isLoading } = useMarkets();
+  const isRestoring = useIsRestoring();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -105,7 +107,7 @@ export default function MarketsScreen() {
         ) : null}
       </View>
 
-      {isLoading ? (
+      {isLoading || isRestoring ? (
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} />
         </View>

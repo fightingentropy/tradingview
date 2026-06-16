@@ -4,15 +4,19 @@ import type { MarketDataProvider, MarketSnapshot } from '../types';
 import { fetchStockCandles, fetchStockQuotes } from './client';
 import { micToVenue, STOCK_SEEDS } from './symbols';
 
-/** Twelve Data interval names keyed by our CandleInterval. */
+/** Twelve Data interval names keyed by our CandleInterval. (Twelve Data has no
+ *  8h bucket, so 8h falls back to its nearest supported 4h resolution.) */
 const TD_INTERVAL: Record<CandleInterval, string> = {
   '1m': '1min',
   '5m': '5min',
   '15m': '15min',
   '1h': '1h',
+  '2h': '2h',
   '4h': '4h',
+  '8h': '4h',
   '1d': '1day',
   '1w': '1week',
+  '1M': '1month',
 };
 
 // Module-level snapshot cache. useMarkets refetches often (for crypto), but the
@@ -64,9 +68,13 @@ export const stocksProvider: MarketDataProvider = {
     return snapshot;
   },
 
-  async getCandles(instrument: Instrument, interval: CandleInterval): Promise<Candle[]> {
+  async getCandles(
+    instrument: Instrument,
+    interval: CandleInterval,
+    count?: number,
+  ): Promise<Candle[]> {
     const values = await fetchStockCandles(instrument.coinKey, TD_INTERVAL[interval]);
-    return values
+    const candles = values
       .map((v) => ({
         t: Date.parse(v.datetime.includes(':') ? v.datetime.replace(' ', 'T') : v.datetime),
         o: Number(v.open),
@@ -77,5 +85,6 @@ export const stocksProvider: MarketDataProvider = {
       }))
       .filter((c) => Number.isFinite(c.t))
       .sort((a, b) => a.t - b.t);
+    return count ? candles.slice(-count) : candles;
   },
 };

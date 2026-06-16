@@ -7,19 +7,23 @@ import { queryKeys } from '@/lib/queryKeys';
 import { getProvider } from '@/providers/registry';
 
 /** Historical candles seeded from REST and kept live via the websocket candle feed. */
-export function useCandles(instrument: Instrument | undefined, interval: CandleInterval) {
+export function useCandles(
+  instrument: Instrument | undefined,
+  interval: CandleInterval,
+  count: number,
+) {
   const provider = instrument ? getProvider(instrument.source) : undefined;
 
   const query = useQuery<Candle[]>({
-    queryKey: instrument ? queryKeys.candles(instrument.id, interval) : ['candles', 'none'],
-    queryFn: () => provider!.getCandles(instrument!, interval),
+    queryKey: instrument ? queryKeys.candles(instrument.id, interval, count) : ['candles', 'none'],
+    queryFn: () => provider!.getCandles(instrument!, interval, count),
     enabled: !!instrument && !!provider,
     staleTime: 10_000,
   });
 
   useEffect(() => {
     if (!instrument || !provider?.subscribeCandles) return;
-    const key = queryKeys.candles(instrument.id, interval);
+    const key = queryKeys.candles(instrument.id, interval, count);
     const unsub = provider.subscribeCandles(instrument, interval, (c: Candle) => {
       queryClient.setQueryData<Candle[]>(key, (old) => {
         if (!old || old.length === 0) return old;
@@ -34,7 +38,7 @@ export function useCandles(instrument: Instrument | undefined, interval: CandleI
       });
     });
     return unsub;
-  }, [instrument, provider, interval]);
+  }, [instrument, provider, interval, count]);
 
   return query;
 }

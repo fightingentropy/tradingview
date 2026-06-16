@@ -2,26 +2,26 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { INTERVALS, INTERVAL_ORDER } from '@/domain/intervals';
-import type { CandleInterval } from '@/domain/types';
+import { rangeLabel, RANGE_ORDER, type RangeKey } from '@/domain/ranges';
 
 interface Props {
-  value: CandleInterval;
-  onChange: (interval: CandleInterval) => void;
+  value: RangeKey;
+  onChange: (range: RangeKey) => void;
 }
 
-export function TimeframeBar({ value, onChange }: Props) {
+/** TradingView-style date-range selector (1D · 1W · 1M · 3M · YTD · 1Y · 5Y · All). */
+export function RangeBar({ value, onChange }: Props) {
   return (
     <View style={styles.bar}>
-      {INTERVAL_ORDER.map((iv) => {
-        const active = iv === value;
+      {RANGE_ORDER.map((key) => {
+        const active = key === value;
         return (
           <Pressable
-            key={iv}
-            onPress={() => onChange(iv)}
+            key={key}
+            onPress={() => onChange(key)}
             style={[styles.item, active && styles.itemActive]}>
             <AppText variant="label" color={active ? Colors.text : Colors.textMuted}>
-              {INTERVALS[iv].label}
+              {rangeLabel(key)}
             </AppText>
           </Pressable>
         );
@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     gap: Spacing.xs,
   },

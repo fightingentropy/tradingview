@@ -18,9 +18,21 @@ interface Props {
   /** When provided, renders a watch toggle star on the right. */
   watched?: boolean;
   onToggleWatch?: (instrument: Instrument) => void;
+  /** When provided, renders a drag handle; long-pressing it starts a reorder. */
+  onDrag?: () => void;
+  /** Highlights the row while it is the one being dragged. */
+  dragging?: boolean;
 }
 
-function SymbolRowImpl({ instrument, quote, onPress, watched, onToggleWatch }: Props) {
+function SymbolRowImpl({
+  instrument,
+  quote,
+  onPress,
+  watched,
+  onToggleWatch,
+  onDrag,
+  dragging,
+}: Props) {
   const { open } = useSymbolMenu();
   const onOpenMenu = useCallback(() => open(instrument), [open, instrument]);
   const menuTrigger = useContextMenuTrigger(onOpenMenu);
@@ -40,7 +52,7 @@ function SymbolRowImpl({ instrument, quote, onPress, watched, onToggleWatch }: P
     <Pressable
       onPress={() => onPress(instrument)}
       {...menuTrigger}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+      style={({ pressed }) => [styles.row, pressed && styles.pressed, dragging && styles.dragging]}>
       <View style={styles.left}>
         <AppText variant="label" style={styles.symbol}>
           {instrument.symbol}
@@ -76,6 +88,17 @@ function SymbolRowImpl({ instrument, quote, onPress, watched, onToggleWatch }: P
           />
         </Pressable>
       ) : null}
+
+      {onDrag ? (
+        <Pressable
+          onLongPress={onDrag}
+          delayLongPress={150}
+          hitSlop={12}
+          style={styles.dragHandle}
+          accessibilityLabel="Drag to reorder">
+          <Ionicons name="reorder-three" size={24} color={Colors.textFaint} />
+        </Pressable>
+      ) : null}
     </Pressable>
   );
 }
@@ -93,12 +116,14 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   pressed: { backgroundColor: Colors.surface },
+  dragging: { backgroundColor: Colors.surfaceAlt },
   left: { flex: 1, gap: 4, paddingRight: Spacing.md },
   symbol: { fontSize: 16 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   name: { flexShrink: 1, color: Colors.textFaint },
   right: { alignItems: 'flex-end', gap: 4, minWidth: 96 },
   star: { paddingLeft: Spacing.md },
+  dragHandle: { paddingLeft: Spacing.md, paddingVertical: 4 },
   changePill: {
     minWidth: 74,
     alignItems: 'center',

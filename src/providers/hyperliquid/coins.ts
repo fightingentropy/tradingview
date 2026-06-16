@@ -34,12 +34,15 @@ function quoteFromCtx(
   const prevClose = Number(ctx.prevDayPx);
   const change24hPct =
     Number.isFinite(prevClose) && prevClose !== 0 ? ((last - prevClose) / prevClose) * 100 : null;
+  // `funding` is only present on perp contexts (hourly rate, as a string).
+  const funding = 'funding' in ctx && ctx.funding != null ? Number(ctx.funding) : null;
   return {
     instrumentId,
     last,
     prevClose: Number.isFinite(prevClose) ? prevClose : null,
     change24hPct,
     dayVolume: Number(ctx.dayNtlVlm) || null,
+    funding: Number.isFinite(funding) ? funding : null,
     ts,
   };
 }

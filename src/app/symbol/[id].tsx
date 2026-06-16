@@ -1,23 +1,30 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useIsRestoring } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { IndicatorMenu } from '@/components/IndicatorMenu';
 import { PriceChart, type ChartType } from '@/components/PriceChart';
+import { RangeBar } from '@/components/RangeBar';
 import { RsiPane } from '@/components/RsiPane';
 import { useSymbolMenu } from '@/components/SymbolMenu';
-import { TimeframeBar } from '@/components/TimeframeBar';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { VenueBadge } from '@/components/VenueBadge';
 import { Colors, Spacing } from '@/constants/theme';
-import { DEFAULT_INTERVAL } from '@/domain/intervals';
-import type { Candle, CandleInterval } from '@/domain/types';
+import { DEFAULT_RANGE, resolveRange, type RangeKey } from '@/domain/ranges';
+import type { Candle } from '@/domain/types';
 import { useCandles } from '@/data/useCandles';
 import { useMarkets } from '@/data/useMarkets';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
-import { formatCompact, formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
+import {
+  formatCompact,
+  formatFundingApr,
+  formatPercent,
+  formatPrice,
+  priceDecimalsFor,
+} from '@/lib/format';
 import { useChartSettings } from '@/store/chartSettings';
 import { useLivePrice } from '@/store/livePrices';
 import { useWatchlists } from '@/store/watchlists';
@@ -25,15 +32,17 @@ import { useWatchlists } from '@/store/watchlists';
 export default function SymbolScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading: marketsLoading } = useMarkets();
-  const instrument = id ? data?.byId.get(id) : undefined;
+  const isRestoring = useIsRestoring();
+  const instrument = id ? data?.byId[id] : undefined;
   const quote = id ? data?.quotes[id] : undefined;
 
-  const [interval, setInterval] = useState<CandleInterval>(DEFAULT_INTERVAL);
+  const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);
   const [chartType, setChartType] = useState<ChartType>('candle');
+  const { interval, fetch: fetchCount, visible } = resolveRange(range);
 
   useLivePriceFeed(instrument ? [instrument] : []);
   const live = useLivePrice(instrument?.coinKey);
-  const { data: candleData, isLoading: candlesLoading } = useCandles(instrument, interval);
+  const { data: candleData, isLoading: candlesLoading } = useCandles(instrument, interval, fetchCount);
   const candles: Candle[] = candleData ?? [];
 
   const activeId = useWatchlists((s) => s.activeId);
@@ -51,7 +60,11 @@ export default function SymbolScreen() {
       <Screen>
         <Stack.Screen options={{ headerShown: true, title: id ?? 'Symbol' }} />
         <View style={styles.center}>
-          {marketsLoading ? <ActivityIndicator color={Colors.accent} /> : <AppText muted>Not found</AppText>}
+          {marketsLoading || isRestoring ? (
+            <ActivityIndicator color={Colors.accent} />
+          ) : (
+            <AppText muted>Not found</AppText>
+          )}
         </View>
       </Screen>
     );
@@ -65,6 +78,11 @@ export default function SymbolScreen() {
       : (quote?.change24hPct ?? null);
   const up = (changePct ?? 0) >= 0;
   const decimals = priceDecimalsFor(instrument.priceDecimals, last);
+
+  // Funding rate (perps only). Positive = longs pay shorts (red); negative = shorts pay longs (green).
+  const funding = quote?.funding ?? null;
+  const fundingColor =
+    funding == null || funding === 0 ? Colors.textMuted : funding > 0 ? Colors.down : Colors.up;
 
   return (
     <Screen edges={['bottom']}>
@@ -99,9 +117,24 @@ export default function SymbolScreen() {
         <AppText variant="title" numeric>
           {formatPrice(last, decimals)}
         </AppText>
-        <AppText variant="label" numeric color={changePct === null ? Colors.textMuted : up ? Colors.up : Colors.down}>
-          {formatPercent(changePct)} {quote?.dayVolume ? `· Vol ${formatCompact(quote.dayVolume)}` : ''}
-        </AppText>
+        <View style={styles.metaRow}>
+          <AppText
+            variant="label"
+            numeric
+            color={changePct === null ? Colors.textMuted : up ? Colors.up : Colors.down}>
+            {formatPercent(changePct)}
+          </AppText>
+          {quote?.dayVolume ? (
+            <AppText variant="label" numeric muted>
+              · Vol {formatCompact(quote.dayVolume)}
+            </AppText>
+          ) : null}
+          {funding != null ? (
+            <AppText variant="label" numeric color={fundingColor}>
+              · Funding {formatFundingApr(funding)} APR
+            </AppText>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.chartArea}>
@@ -116,11 +149,14 @@ export default function SymbolScreen() {
             type={chartType}
             smaPeriods={smaPeriods}
             showVolume={volume}
+            visibleCount={visible}
           />
         )}
       </View>
 
-      {rsi && candles.length > 0 ? <RsiPane candles={candles} period={rsiPeriod} /> : null}
+      {rsi && candles.length > 0 ? (
+        <RsiPane candles={candles} period={rsiPeriod} visibleCount={visible} />
+      ) : null}
 
       <View style={styles.controls}>
         <Pressable
@@ -134,7 +170,7 @@ export default function SymbolScreen() {
         </Pressable>
         <IndicatorMenu />
         <View style={styles.timeframeWrap}>
-          <TimeframeBar value={interval} onChange={setInterval} />
+          <RangeBar value={range} onChange={setRange} />
         </View>
       </View>
     </Screen>
@@ -147,6 +183,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: 4 },
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   name: { flexShrink: 1 },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.xs, rowGap: 2 },
   chartArea: { flex: 1, marginTop: Spacing.sm },
   controls: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.sm },
   typeToggle: {

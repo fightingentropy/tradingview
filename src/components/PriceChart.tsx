@@ -50,6 +50,12 @@ interface Props {
   smaPeriods?: number[];
   /** Draw volume bars in a band along the bottom of the chart. */
   showVolume?: boolean;
+  /**
+   * Render only the last N candles (keeps them thick on wide date ranges).
+   * Indicators are still computed across the full lead-included series, so
+   * SMA 200 keeps drawing even when fewer bars are visible.
+   */
+  visibleCount?: number;
 }
 
 const smaColor = (period: number) => Indicators.sma[period] ?? Colors.textMuted;
@@ -60,22 +66,28 @@ export function PriceChart({
   type,
   smaPeriods = [],
   showVolume = false,
+  visibleCount,
 }: Props) {
+  const start = visibleCount != null ? Math.max(0, candles.length - visibleCount) : 0;
+  const shown = useMemo(() => candles.slice(start), [candles, start]);
+
   const data = useMemo<ChartDatum[]>(
-    () => candles.map((c, i) => ({ x: i, open: c.o, high: c.h, low: c.l, close: c.c })),
-    [candles],
+    () => shown.map((c, i) => ({ x: i, open: c.o, high: c.h, low: c.l, close: c.c })),
+    [shown],
   );
 
+  // SMA over the full series (including the off-screen lead), then sliced to the
+  // visible window so a 200-period line still renders on a short range.
   const smaSeries = useMemo(() => {
     const closes = candles.map((c) => c.c);
     const out: Record<number, (number | null)[]> = {};
-    for (const p of smaPeriods) out[p] = sma(closes, p);
+    for (const p of smaPeriods) out[p] = sma(closes, p).slice(start);
     return out;
-  }, [candles, smaPeriods]);
+  }, [candles, smaPeriods, start]);
 
   const volMax = useMemo(
-    () => (showVolume ? candles.reduce((m, c) => Math.max(m, c.v), 0) : 0),
-    [candles, showVolume],
+    () => (showVolume ? shown.reduce((m, c) => Math.max(m, c.v), 0) : 0),
+    [shown, showVolume],
   );
 
   const { state } = useChartPressState({ x: 0, y: { open: 0, high: 0, low: 0, close: 0 } });
@@ -91,8 +103,8 @@ export function PriceChart({
     },
   );
 
-  const legendIndex = activeIndex !== null ? activeIndex : candles.length - 1;
-  const legend = candles[legendIndex];
+  const legendIndex = activeIndex !== null ? activeIndex : shown.length - 1;
+  const legend = shown[legendIndex];
 
   if (data.length === 0) {
     return <View style={styles.fill} />;
@@ -134,7 +146,7 @@ export function PriceChart({
         {({ points, chartBounds, yScale }) => (
           <>
             {showVolume ? (
-              <VolumeBars candles={candles} xs={points.close} bounds={chartBounds} max={volMax} />
+              <VolumeBars candles={shown} xs={points.close} bounds={chartBounds} max={volMax} />
             ) : null}
             {type === 'candle' ? (
               <Candlestick

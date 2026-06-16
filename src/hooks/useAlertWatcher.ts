@@ -29,7 +29,7 @@ export function AlertWatcher() {
       new Set(alerts.filter((a) => a.triggeredAt == null).map((a) => a.instrumentId)),
     );
     return ids
-      .map((id) => markets.byId.get(id))
+      .map((id) => markets.byId[id])
       .filter((i): i is Instrument => i !== undefined);
   }, [markets, alerts]);
 
@@ -47,7 +47,7 @@ export function AlertWatcher() {
       if (!m) return;
       const active = useAlerts.getState().alerts.filter((a) => a.triggeredAt == null);
       for (const a of active) {
-        const inst = m.byId.get(a.instrumentId);
+        const inst = m.byId[a.instrumentId];
         if (!inst || !a.anchorPrice) continue;
         const price = prices[inst.coinKey];
         if (price == null) continue;

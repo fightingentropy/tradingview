@@ -4,5 +4,6 @@ import type { CandleInterval } from '@/domain/types';
 export const queryKeys = {
   instruments: () => ['instruments'] as const,
   quotes: (ids: string[]) => ['quotes', [...ids].sort().join(',')] as const,
-  candles: (id: string, interval: CandleInterval) => ['candles', id, interval] as const,
+  candles: (id: string, interval: CandleInterval, count: number) =>
+    ['candles', id, interval, count] as const,
 };
