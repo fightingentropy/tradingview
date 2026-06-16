@@ -52,6 +52,20 @@ export function formatPercent(value: number | string | null | undefined): string
 }
 
 /**
+ * Signed absolute price change, e.g. `+2.47`, `-15.44`. Always carries an explicit
+ * sign so it can sit next to a signed percent in watchlist rows. Returns '' when
+ * the change can't be computed (so the caller can render the percent alone).
+ */
+export function formatSignedPrice(
+  value: number | string | null | undefined,
+  decimals?: number,
+): string {
+  const n = toNum(value);
+  if (n === null) return '';
+  return (n >= 0 ? '+' : '-') + formatPrice(Math.abs(n), decimals);
+}
+
+/**
  * Annualise an hourly perp funding rate (a fraction, e.g. 0.0000458) into a
  * signed APR percentage: +40.13%, -11.20%, 0.00%. Hyperliquid charges funding
  * hourly, so APR = hourlyRate × 24 × 365.

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "tradingview",
+    "name": "TradingView",
     "slug": "tradingview",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,17 +8,15 @@
     "scheme": "tradingview",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.erlinhoxha.tradingview",
       "supportsTablet": true
     },
     "android": {
       "package": "com.tradingview.app",
       "adaptiveIcon": {
-        "backgroundColor": "#0B0E13",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#131722",
+        "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false
     },

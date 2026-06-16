@@ -47,6 +47,11 @@ export default function RootLayout() {
                 }}>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="symbol/[id]" options={{ headerShown: false }} />
+                <Stack.Screen name="lists" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="add-symbols"
+                  options={{ headerShown: false, presentation: 'modal' }}
+                />
               </Stack>
             </SymbolMenuProvider>
             <AlertWatcher />

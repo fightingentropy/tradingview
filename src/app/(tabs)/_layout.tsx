@@ -11,15 +11,16 @@ export default function TabsLayout() {
         headerTitleStyle: { color: Colors.text, fontWeight: '700' },
         headerTintColor: Colors.text,
         headerShadowVisible: false,
-        tabBarStyle: { backgroundColor: Colors.surface, borderTopColor: Colors.border },
-        tabBarActiveTintColor: Colors.accent,
+        tabBarStyle: { backgroundColor: Colors.background, borderTopColor: Colors.border },
+        tabBarActiveTintColor: Colors.text,
         tabBarInactiveTintColor: Colors.textMuted,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Watchlist',
-          tabBarIcon: ({ color, size }) => <Ionicons name="star" color={color} size={size} />,
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="bookmark" color={color} size={size} />,
         }}
       />
       <Tabs.Screen

@@ -52,11 +52,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pill: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.surface,
+    backgroundColor: 'transparent',
   },
-  pillActive: { backgroundColor: Colors.surfaceAlt, borderWidth: 1, borderColor: Colors.border },
+  pillActive: { backgroundColor: Colors.surfaceAlt },
   addPill: { paddingHorizontal: Spacing.sm },
 });

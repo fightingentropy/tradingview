@@ -4,11 +4,11 @@
 import { Platform } from 'react-native';
 
 export const Colors = {
-  background: '#0B0E13',
+  background: '#000000',
   surface: '#141A22',
   surfaceAlt: '#1C2530',
   surfacePress: '#222C39',
-  border: '#232B36',
+  border: '#1B212B',
   text: '#EAECEF',
   textMuted: '#8A929E',
   textFaint: '#5A626E',
