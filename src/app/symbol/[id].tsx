@@ -38,7 +38,7 @@ export default function SymbolScreen() {
 
   const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);
   const [chartType, setChartType] = useState<ChartType>('candle');
-  const { interval, fetch: fetchCount, visible } = resolveRange(range);
+  const { interval, fetch: fetchCount, visible, axis } = resolveRange(range);
 
   useLivePriceFeed(instrument ? [instrument] : []);
   const live = useLivePrice(instrument?.coinKey);
@@ -150,6 +150,7 @@ export default function SymbolScreen() {
             smaPeriods={smaPeriods}
             showVolume={volume}
             visibleCount={visible}
+            axisKind={axis}
           />
         )}
       </View>

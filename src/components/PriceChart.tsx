@@ -24,7 +24,7 @@ import { AppText } from '@/components/ui/AppText';
 import { Colors, Indicators, Spacing } from '@/constants/theme';
 import { sma } from '@/domain/indicators';
 import type { Candle } from '@/domain/types';
-import { formatPrice } from '@/lib/format';
+import { formatChartAxisLabel, formatPrice, type AxisTickKind } from '@/lib/format';
 
 export type ChartType = 'candle' | 'line';
 
@@ -56,7 +56,12 @@ interface Props {
    * SMA 200 keeps drawing even when fewer bars are visible.
    */
   visibleCount?: number;
+  /** Time-axis label granularity for the visible range (hours, days, …). */
+  axisKind?: AxisTickKind;
 }
+
+/** Roughly how many time labels to print across the bottom axis. */
+const AXIS_TICKS = 5;
 
 const smaColor = (period: number) => Indicators.sma[period] ?? Colors.textMuted;
 
@@ -67,6 +72,7 @@ export function PriceChart({
   smaPeriods = [],
   showVolume = false,
   visibleCount,
+  axisKind,
 }: Props) {
   const start = visibleCount != null ? Math.max(0, candles.length - visibleCount) : 0;
   const shown = useMemo(() => candles.slice(start), [candles, start]);
@@ -75,6 +81,33 @@ export function PriceChart({
     () => shown.map((c, i) => ({ x: i, open: c.o, high: c.h, low: c.l, close: c.c })),
     [shown],
   );
+
+  // Scale the price axis to the visible candles (plus a little headroom) rather
+  // than to the indicator overlays. SMA 200 on a strong trend sits far below the
+  // bars; letting it set the domain squashes the candles into a sliver, so we
+  // anchor on the price action and clamp the SMA lines to the band (below).
+  const yDomain = useMemo<[number, number] | undefined>(() => {
+    if (shown.length === 0) return undefined;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const c of shown) {
+      if (c.l < lo) lo = c.l;
+      if (c.h > hi) hi = c.h;
+    }
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return undefined;
+    const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.01 || 1;
+    return [lo - pad, hi + pad];
+  }, [shown]);
+
+  // Evenly spaced time labels sampled from the visible candles' open times.
+  const axisTicks = useMemo(() => {
+    if (!axisKind || shown.length < 2) return [];
+    const n = shown.length;
+    return Array.from({ length: AXIS_TICKS }, (_, k) => {
+      const idx = Math.round((k / (AXIS_TICKS - 1)) * (n - 1));
+      return formatChartAxisLabel(shown[idx].t, axisKind);
+    });
+  }, [shown, axisKind]);
 
   // SMA over the full series (including the off-screen lead), then sliced to the
   // visible window so a 200-period line still renders on a short range.
@@ -135,14 +168,16 @@ export function PriceChart({
         </View>
       ) : null}
 
-      <CartesianChart
-        data={data}
-        xKey="x"
-        yKeys={['high', 'low', 'open', 'close']}
-        chartPressState={pressState}
-        transformState={transform.state}
-        transformConfig={{ pan: { enabled: true }, pinch: { enabled: true } }}
-        domainPadding={{ left: 8, right: 8, top: 24, bottom: 8 }}>
+      <View style={styles.chartFill}>
+        <CartesianChart
+          data={data}
+          xKey="x"
+          yKeys={['high', 'low', 'open', 'close']}
+          domain={yDomain ? { y: yDomain } : undefined}
+          chartPressState={pressState}
+          transformState={transform.state}
+          transformConfig={{ pan: { enabled: true }, pinch: { enabled: true } }}
+          domainPadding={{ left: 8, right: 8, top: 24, bottom: 8 }}>
         {({ points, chartBounds, yScale }) => (
           <>
             {showVolume ? (
@@ -166,13 +201,25 @@ export function PriceChart({
                 values={smaSeries[p] ?? []}
                 xs={points.close}
                 yScale={yScale}
+                bounds={chartBounds}
                 color={smaColor(p)}
               />
             ))}
             <Crosshair state={pressState} bounds={chartBounds} />
           </>
         )}
-      </CartesianChart>
+        </CartesianChart>
+      </View>
+
+      {axisTicks.length > 0 ? (
+        <View style={styles.axisRow} pointerEvents="none">
+          {axisTicks.map((label, i) => (
+            <AppText key={i} variant="caption" muted numeric>
+              {label}
+            </AppText>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -218,11 +265,13 @@ function SmaLine({
   values,
   xs,
   yScale,
+  bounds,
   color,
 }: {
   values: (number | null)[];
   xs: { x: number }[];
   yScale: (v: number) => number;
+  bounds: ChartBounds;
   color: string;
 }) {
   const path = Skia.Path.Make();
@@ -231,7 +280,9 @@ function SmaLine({
     const v = values[i];
     const px = xs[i]?.x;
     if (v == null || px == null) continue;
-    const y = yScale(v);
+    // Domain is anchored to the candles, so an SMA can fall outside it — clamp to
+    // the plot band instead of letting it draw over the axis labels below.
+    const y = Math.max(bounds.top, Math.min(bounds.bottom, yScale(v)));
     if (!started) {
       path.moveTo(px, y);
       started = true;
@@ -317,6 +368,13 @@ function SmaLegendItem({
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  chartFill: { flex: 1 },
+  axisRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingTop: 4,
+  },
   legend: {
     position: 'absolute',
     top: Spacing.sm,

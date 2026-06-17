@@ -78,6 +78,34 @@ export function formatFundingApr(hourlyRate: number | string | null | undefined)
   return `${sign}${apr.toFixed(2)}%`;
 }
 
+/** Granularity of a chart's time axis, chosen per date range. */
+export type AxisTickKind = 'time' | 'day' | 'monthday' | 'month' | 'year';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad2 = (n: number) => (n < 10 ? '0' + n : String(n));
+
+/**
+ * Format a candle's open time (ms epoch) for the chart's x-axis, in the device's
+ * local timezone. The granularity matches the range: intraday shows clock time,
+ * a week shows day-of-month, longer ranges step up to month then year — the way
+ * the TradingView app labels its time axis. Manual (no Intl) for Hermes parity.
+ */
+export function formatChartAxisLabel(t: number, kind: AxisTickKind): string {
+  const d = new Date(t);
+  switch (kind) {
+    case 'time':
+      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    case 'day':
+      return String(d.getDate());
+    case 'monthday':
+      return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+    case 'month':
+      return MONTHS[d.getMonth()];
+    case 'year':
+      return String(d.getFullYear());
+  }
+}
+
 /** Compact notation for volumes / market caps: 1.2K, 3.4M, 5.6B, 1.2T. */
 export function formatCompact(value: number | string | null | undefined): string {
   const n = toNum(value);
