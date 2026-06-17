@@ -1,5 +1,4 @@
 import {
-  Circle,
   DashPathEffect,
   Group,
   Line as SkiaLine,
@@ -8,17 +7,24 @@ import {
   vec,
 } from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { useAnimatedReaction, useDerivedValue, runOnJS } from 'react-native-reanimated';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { Gesture } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedProps,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useDerivedValue,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 import {
   Candlestick,
   CartesianChart,
   Line,
-  useChartPressState,
   useChartTransformState,
   type ChartBounds,
-  type ChartPressState,
 } from 'victory-native';
 
 import { AppText } from '@/components/ui/AppText';
@@ -45,10 +51,8 @@ interface ChartDatum {
   [key: string]: number;
 }
 
-type PressState = ChartPressState<{
-  x: number;
-  y: { open: number; high: number; low: number; close: number };
-}>;
+/** Plot geometry mirrored into shared values so the crosshair gesture can read it on the UI thread. */
+type Bounds = { top: number; bottom: number; left: number; right: number };
 
 interface Props {
   candles: Candle[];
@@ -70,8 +74,46 @@ interface Props {
 
 /** Roughly how many time labels to print across the bottom axis. */
 const AXIS_TICKS = 5;
+/** Height of the floating price label that rides the horizontal crosshair. */
+const PRICE_PILL_H = 22;
+
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
 const smaColor = (period: number) => Indicators.sma[period] ?? Colors.textMuted;
+
+/** Index of the candle whose x-pixel is nearest the touch — runs on the UI thread. */
+function nearestIndex(xs: number[], x: number): number {
+  'worklet';
+  let best = -1;
+  let bestD = 1e12;
+  for (let i = 0; i < xs.length; i++) {
+    const d = x > xs[i] ? x - xs[i] : xs[i] - x;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** Group-thousands price formatter that is safe to run inside a reanimated worklet (no regex). */
+function formatPriceWorklet(v: number, decimals: number): string {
+  'worklet';
+  if (!Number.isFinite(v)) return '';
+  const neg = v < 0;
+  const fixed = Math.abs(v).toFixed(decimals);
+  const dot = fixed.indexOf('.');
+  const intPart = dot === -1 ? fixed : fixed.slice(0, dot);
+  const fracPart = dot === -1 ? '' : fixed.slice(dot);
+  let grouped = '';
+  let count = 0;
+  for (let i = intPart.length - 1; i >= 0; i--) {
+    grouped = intPart[i] + grouped;
+    count++;
+    if (count % 3 === 0 && i > 0) grouped = ',' + grouped;
+  }
+  return (neg ? '-' : '') + grouped + fracPart;
+}
 
 export function PriceChart({
   candles,
@@ -82,10 +124,8 @@ export function PriceChart({
   visibleCount,
   axisKind,
 }: Props) {
-  // While a finger is pressing the chart, hold the candle series steady. victory-native
-  // resets its press gesture every time `data` changes, so a live websocket tick would
-  // otherwise drop the crosshair after a second or two. We snapshot on press-down and
-  // resume live candles the instant the finger lifts.
+  // While a finger is pressing the chart, hold the candle series steady so live
+  // websocket ticks can't shift the bar under the crosshair (or reset gestures).
   const [pressing, setPressing] = useState(false);
   const candlesRef = useRef(candles);
   candlesRef.current = candles;
@@ -142,19 +182,42 @@ export function PriceChart({
     [shown, showVolume],
   );
 
-  const { state } = useChartPressState({ x: 0, y: { open: 0, high: 0, low: 0, close: 0 } });
-  const pressState = state as unknown as PressState;
   const transform = useChartTransformState();
 
-  // Mirror the crosshair's matched index into React state for the OHLC legend,
-  // and tick the Taptic Engine each time the press crosses onto a new candle —
-  // the light "selection" feedback the TradingView app gives while scrubbing.
+  // ----- Crosshair state, driven by our own long-press pan (not victory's press
+  // state, which snaps Y to the close). The vertical line snaps to the nearest
+  // candle; the horizontal line + price pill follow the finger freely. -----
+  const crossActive = useSharedValue(false);
+  const crossX = useSharedValue(0); // snapped candle x, px
+  const crossY = useSharedValue(0); // raw finger y, px (clamped to plot band)
+  const crossIdx = useSharedValue(-1);
+  const xPositionsSV = useSharedValue<number[]>([]);
+  const boundsSV = useSharedValue<Bounds>({ top: 0, bottom: 0, left: 0, right: 0 });
+  const priceMSV = useSharedValue(0); // price = m*y + b  (pixel→price, linear)
+  const priceBSV = useSharedValue(0);
+
+  // Plot geometry is only available inside the chart's render-prop, which runs
+  // during React render — where writing to a shared value is illegal. So stash it
+  // in a ref there and flush it to the shared values in a post-commit effect.
+  const geomRef = useRef<{ xs: number[]; bounds: Bounds; m: number; b: number }>({
+    xs: [],
+    bounds: { top: 0, bottom: 0, left: 0, right: 0 },
+    m: 0,
+    b: 0,
+  });
+  useEffect(() => {
+    const g = geomRef.current;
+    xPositionsSV.value = g.xs;
+    boundsSV.value = g.bounds;
+    priceMSV.value = g.m;
+    priceBSV.value = g.b;
+  });
+
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const onScrub = useCallback((index: number) => {
     if (index >= 0) {
       if (!pressingRef.current) {
-        // Press just went down — freeze the series at this instant so live ticks
-        // can't reset the gesture out from under the finger.
+        // Press just went down — freeze the series at this instant.
         pressingRef.current = true;
         frozenRef.current = candlesRef.current;
         setPressing(true);
@@ -169,11 +232,67 @@ export function PriceChart({
       setActiveIndex(null);
     }
   }, []);
+
+  // Mirror the matched candle into React state for the legend + haptics. Only the
+  // index crosses to JS, so the haptic ticks per candle, not per pixel of drag.
   useAnimatedReaction(
-    () => (state.isActive.value ? state.matchedIndex.value : -1),
+    () => (crossActive.value ? crossIdx.value : -1),
     (cur, prev) => {
       if (cur !== prev) runOnJS(onScrub)(cur);
     },
+  );
+
+  const crossGesture = useMemo(() => {
+    const pan = Gesture.Pan()
+      .activateAfterLongPress(160)
+      .onStart((e) => {
+        'worklet';
+        crossActive.value = true;
+        const xs = xPositionsSV.value;
+        if (xs.length > 0) {
+          const idx = nearestIndex(xs, e.x);
+          if (idx >= 0) {
+            crossIdx.value = idx;
+            crossX.value = xs[idx];
+          }
+        }
+        const b = boundsSV.value;
+        crossY.value = e.y < b.top ? b.top : e.y > b.bottom ? b.bottom : e.y;
+      })
+      .onUpdate((e) => {
+        'worklet';
+        const xs = xPositionsSV.value;
+        if (xs.length > 0) {
+          const idx = nearestIndex(xs, e.x);
+          if (idx >= 0) {
+            crossIdx.value = idx;
+            crossX.value = xs[idx];
+          }
+        }
+        const b = boundsSV.value;
+        crossY.value = e.y < b.top ? b.top : e.y > b.bottom ? b.bottom : e.y;
+      })
+      .onFinalize(() => {
+        'worklet';
+        crossActive.value = false;
+        crossIdx.value = -1;
+      });
+    // customGestures expects a ComposedGesture; Race around the single pan satisfies that.
+    return Gesture.Race(pan);
+    // Shared values are stable refs, so this gesture only needs to be built once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pillStyle = useAnimatedStyle(() => ({
+    opacity: crossActive.value ? 1 : 0,
+    transform: [{ translateY: crossY.value - PRICE_PILL_H / 2 }],
+  }));
+  const priceProps = useAnimatedProps(
+    () =>
+      ({
+        text: formatPriceWorklet(priceMSV.value * crossY.value + priceBSV.value, priceDecimals),
+      }) as object,
+    [priceDecimals],
   );
 
   const scrubbing = activeIndex !== null;
@@ -241,41 +360,75 @@ export function PriceChart({
           xKey="x"
           yKeys={['high', 'low', 'open', 'close']}
           domain={yDomain ? { y: yDomain } : undefined}
-          chartPressState={pressState}
+          customGestures={crossGesture}
           transformState={transform.state}
           transformConfig={{ pan: { enabled: true }, pinch: { enabled: true } }}
           domainPadding={{ left: 8, right: 8, top: 24, bottom: 8 }}>
-        {({ points, chartBounds, yScale }) => (
-          <>
-            {showVolume ? (
-              <VolumeBars candles={shown} xs={points.close} bounds={chartBounds} max={volMax} />
-            ) : null}
-            {type === 'candle' ? (
-              <Candlestick
-                openPoints={points.open}
-                highPoints={points.high}
-                lowPoints={points.low}
-                closePoints={points.close}
-                chartBounds={chartBounds}
-                candleColors={{ positive: Colors.up, negative: Colors.down }}
-              />
-            ) : (
-              <Line points={points.close} color={Colors.accent} strokeWidth={2} curveType="linear" />
-            )}
-            {smaPeriods.map((p) => (
-              <SmaLine
-                key={p}
-                values={smaSeries[p] ?? []}
-                xs={points.close}
-                yScale={yScale}
-                bounds={chartBounds}
-                color={smaColor(p)}
-              />
-            ))}
-            <Crosshair state={pressState} bounds={chartBounds} />
-          </>
-        )}
+          {({ points, chartBounds, yScale }) => {
+            // Capture plot geometry for the crosshair gesture + price pill. This runs
+            // during render, so we can't touch shared values here — stash it in a ref
+            // and let the post-commit effect push it onto the UI thread.
+            const xs: number[] = [];
+            for (let i = 0; i < points.close.length; i++) xs.push(points.close[i].x as number);
+            const invert = (yScale as unknown as { invert?: (n: number) => number }).invert;
+            const vTop = invert ? invert(chartBounds.top) : 0;
+            const vBottom = invert ? invert(chartBounds.bottom) : 0;
+            const span = chartBounds.bottom - chartBounds.top;
+            const m = span !== 0 ? (vBottom - vTop) / span : 0;
+            geomRef.current = {
+              xs,
+              bounds: {
+                top: chartBounds.top,
+                bottom: chartBounds.bottom,
+                left: chartBounds.left,
+                right: chartBounds.right,
+              },
+              m,
+              b: vTop - m * chartBounds.top,
+            };
+
+            return (
+              <>
+                {showVolume ? (
+                  <VolumeBars candles={shown} xs={points.close} bounds={chartBounds} max={volMax} />
+                ) : null}
+                {type === 'candle' ? (
+                  <Candlestick
+                    openPoints={points.open}
+                    highPoints={points.high}
+                    lowPoints={points.low}
+                    closePoints={points.close}
+                    chartBounds={chartBounds}
+                    candleColors={{ positive: Colors.up, negative: Colors.down }}
+                  />
+                ) : (
+                  <Line points={points.close} color={Colors.accent} strokeWidth={2} curveType="linear" />
+                )}
+                {smaPeriods.map((p) => (
+                  <SmaLine
+                    key={p}
+                    values={smaSeries[p] ?? []}
+                    xs={points.close}
+                    yScale={yScale}
+                    bounds={chartBounds}
+                    color={smaColor(p)}
+                  />
+                ))}
+                <Crosshair x={crossX} y={crossY} active={crossActive} bounds={boundsSV} />
+              </>
+            );
+          }}
         </CartesianChart>
+
+        <Animated.View style={[styles.pricePill, pillStyle]} pointerEvents="none">
+          <AnimatedTextInput
+            style={styles.pricePillText}
+            editable={false}
+            defaultValue=""
+            animatedProps={priceProps}
+            underlineColorAndroid="transparent"
+          />
+        </Animated.View>
       </View>
 
       {axisTicks.length > 0 ? (
@@ -361,18 +514,23 @@ function SmaLine({
   return <Path path={path} style="stroke" strokeWidth={1.5} color={color} />;
 }
 
-function Crosshair({ state, bounds }: { state: PressState; bounds: ChartBounds }) {
-  const top = bounds.top;
-  const bottom = bounds.bottom;
-  const left = bounds.left;
-  const right = bounds.right;
-
-  const vTop = useDerivedValue(() => vec(state.x.position.value, top));
-  const vBottom = useDerivedValue(() => vec(state.x.position.value, bottom));
-  const hLeft = useDerivedValue(() => vec(left, state.y.close.position.value));
-  const hRight = useDerivedValue(() => vec(right, state.y.close.position.value));
-  const dot = useDerivedValue(() => vec(state.x.position.value, state.y.close.position.value));
-  const opacity = useDerivedValue(() => (state.isActive.value ? 1 : 0));
+/** TradingView-style crosshair: vertical line snapped to the candle, horizontal line at the finger. */
+function Crosshair({
+  x,
+  y,
+  active,
+  bounds,
+}: {
+  x: SharedValue<number>;
+  y: SharedValue<number>;
+  active: SharedValue<boolean>;
+  bounds: SharedValue<Bounds>;
+}) {
+  const vTop = useDerivedValue(() => vec(x.value, bounds.value.top));
+  const vBottom = useDerivedValue(() => vec(x.value, bounds.value.bottom));
+  const hLeft = useDerivedValue(() => vec(bounds.value.left, y.value));
+  const hRight = useDerivedValue(() => vec(bounds.value.right, y.value));
+  const opacity = useDerivedValue(() => (active.value ? 1 : 0));
 
   return (
     <Group opacity={opacity}>
@@ -382,7 +540,6 @@ function Crosshair({ state, bounds }: { state: PressState; bounds: ChartBounds }
       <SkiaLine p1={hLeft} p2={hRight} color={Colors.textMuted} strokeWidth={1}>
         <DashPathEffect intervals={[4, 4]} />
       </SkiaLine>
-      <Circle c={dot} r={4} color={Colors.accent} />
     </Group>
   );
 }
@@ -452,4 +609,25 @@ const styles = StyleSheet.create({
   legendRow: { flexDirection: 'row', gap: Spacing.md },
   stampRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center', marginTop: 1 },
   ohlcItem: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+  // Floating price label on the right edge that rides the horizontal crosshair.
+  pricePill: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    height: PRICE_PILL_H,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    backgroundColor: '#363A45',
+    zIndex: 3,
+  },
+  pricePillText: {
+    minWidth: 58,
+    padding: 0,
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
 });
