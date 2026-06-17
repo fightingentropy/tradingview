@@ -13,6 +13,22 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 const perpPriceDecimals = (szDecimals: number) => clamp(6 - szDecimals, 0, 6);
 const spotPriceDecimals = (szDecimals: number) => clamp(8 - szDecimals, 0, 8);
 
+/**
+ * Even within the Unit + HL-native set there are dead wrappers (UBONK, UVIRT,
+ * UAVAX… at ~0 volume), so we still apply a 24h-volume floor. PURR/USDC is the
+ * only `isCanonical` pair and is always kept; HYPE/USDC ($160M+/day) is a
+ * non-canonical `@index` listing that clears the floor on its own.
+ */
+const SPOT_MIN_DAY_VOLUME = 100_000;
+
+/**
+ * Spot tokens we hide even though they pass the Unit/native filter: the dollar
+ * stablecoins (USDH/USDE/USDT0) are near-identical $1.00 rows that just clutter the
+ * list — USDC, the one that matters, is the quote currency and has no pair of its own —
+ * and UFART was explicitly unwanted.
+ */
+const SPOT_HIDE = new Set(['USDH', 'USDE', 'USDT0', 'UFART']);
+
 const COMMODITIES = new Set([
   'GOLD', 'SILVER', 'OIL', 'WTI', 'BRENT', 'NATGAS', 'GAS', 'ALUMINIUM',
   'COPPER', 'PLATINUM', 'PALLADIUM', 'WHEAT', 'CORN', 'SUGAR',
@@ -98,14 +114,33 @@ export function buildSpot([meta, ctxs]: SpotMetaAndAssetCtxs): {
   const quotes: Record<string, Quote> = {};
   const tokenByIndex = new Map(meta.tokens.map((t) => [t.index, t]));
 
-  meta.universe.forEach((u, i) => {
-    if (!u.isCanonical) return;
-    const ctx = ctxs[i];
+  meta.universe.forEach((u) => {
+    // Spot asset contexts are keyed by the pair's asset index, NOT its position
+    // in `universe` — the two arrays aren't parallel (ctxs is longer and
+    // sparse). Indexing by position mispaired every non-canonical pair with
+    // another coin's price/volume (e.g. WOW rendered HYPE's $72 / $157M and an
+    // impossible % change). PURR only survived because its position == index 0.
+    const ctx = ctxs[u.index];
     if (!ctx) return;
 
     const baseToken = tokenByIndex.get(u.tokens[0]);
     const quoteToken = tokenByIndex.get(u.tokens[1]);
     const base = baseToken?.name ?? u.name.split('/')[0];
+    const quoteName = quoteToken?.name ?? 'USDC';
+
+    // Only USDC-quoted spot from Unit (U-prefixed wrappers: UBTC/UETH/USOL/…) or
+    // Hyperliquid itself (HYPE, PURR). Hides trade.xyz's tokenized equities and
+    // the community long-tail the user doesn't want in the spot list. The USDC
+    // filter also dedupes tokens that list against several quotes (e.g. HYPE).
+    const isUnit = /^U[A-Z]/.test(base);
+    if (quoteName !== 'USDC' || (!isUnit && base !== 'HYPE' && base !== 'PURR')) return;
+    // ...minus the stablecoin/unwanted rows we explicitly suppress.
+    if (SPOT_HIDE.has(base)) return;
+
+    // Drop dead wrappers by volume; PURR (canonical) and the flagships always pass.
+    const dayVolume = Number(ctx.dayNtlVlm) || 0;
+    if (!u.isCanonical && dayVolume < SPOT_MIN_DAY_VOLUME) return;
+
     const coinKey = `@${u.index}`;
     const id = `hl:spot:${coinKey}`;
     const quote = quoteFromCtx(id, ctx, ts);
@@ -116,11 +151,12 @@ export function buildSpot([meta, ctxs]: SpotMetaAndAssetCtxs): {
       source: 'hyperliquid',
       assetClass: 'crypto-spot',
       symbol: base,
-      name: u.name,
+      // u.name is the raw "@107" for non-canonical pairs — show the pair instead.
+      name: `${base}/${quoteName}`,
       venue: 'Hyperliquid',
       priceDecimals: spotPriceDecimals(baseToken?.szDecimals ?? 4),
       coinKey,
-      quoteCurrency: quoteToken?.name ?? 'USDC',
+      quoteCurrency: quoteName,
     };
     instruments.push(instrument);
     quotes[id] = quote;

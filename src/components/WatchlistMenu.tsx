@@ -1,13 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui/AppText';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Spacing } from '@/constants/theme';
 
 export type SortKey = 'manual' | 'symbol' | 'price' | 'change';
 export type SortDir = 'asc' | 'desc';
+
+// iOS 26 Liquid Glass when the OS supports it; otherwise a solid material card.
+const LIQUID_GLASS = isLiquidGlassAvailable();
 
 interface Props {
   visible: boolean;
@@ -27,7 +31,6 @@ type RowProps = {
   label: string;
   onPress: () => void;
   accessory?: React.ReactNode;
-  danger?: boolean;
 };
 
 function MenuRow({ icon, label, onPress, accessory }: RowProps) {
@@ -36,7 +39,7 @@ function MenuRow({ icon, label, onPress, accessory }: RowProps) {
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       accessibilityRole="button">
-      <Ionicons name={icon} size={20} color={Colors.text} style={styles.rowIcon} />
+      <Ionicons name={icon} size={19} color={Colors.text} style={styles.rowIcon} />
       <AppText style={styles.rowLabel} numberOfLines={1}>
         {label}
       </AppText>
@@ -54,8 +57,11 @@ const SORT_OPTIONS: { key: SortKey; label: string; icon: keyof typeof Ionicons.g
 
 /**
  * The `•••` overflow menu from the TradingView watchlist: a top-left dropdown
- * with Edit / Sort by (its own page) / News, then a "Watchlists" section. Built
- * as a fade Modal anchored under the header so it reads as a popover.
+ * with Edit / Sort by (its own page) / News, then a "Watchlists" section.
+ *
+ * Rendered as an in-tree overlay (not a nested Pressable card) so the iOS 26
+ * Liquid Glass material samples the watchlist content behind it for a real
+ * frosted look. Falls back to a solid material card on older iOS.
  */
 export function WatchlistMenu({
   visible,
@@ -79,119 +85,134 @@ export function WatchlistMenu({
 
   const dirIcon = sortDir === 'asc' ? 'arrow-up' : 'arrow-down';
 
+  const content =
+    page === 'main' ? (
+      <>
+        <AppText style={styles.header} numberOfLines={1}>
+          {listName}
+        </AppText>
+        <MenuRow icon="create-outline" label="Edit" onPress={onEdit} />
+        <MenuRow
+          icon="swap-vertical-outline"
+          label="Sort by"
+          onPress={() => setPage('sort')}
+          accessory={
+            <View style={styles.sortAccessory}>
+              {sortKey !== 'manual' ? (
+                <Ionicons name={dirIcon} size={15} color={Colors.textMuted} />
+              ) : null}
+              <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+            </View>
+          }
+        />
+        <MenuRow icon="newspaper-outline" label="News by watchlist" onPress={onNews} />
+
+        <View style={styles.divider} />
+        <AppText style={styles.sectionLabel}>Watchlists</AppText>
+        <MenuRow icon="list-outline" label="All watchlists" onPress={onAllWatchlists} />
+        <MenuRow icon="add" label="Create new list" onPress={onCreate} />
+      </>
+    ) : (
+      <>
+        <Pressable
+          onPress={() => setPage('main')}
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+          <Ionicons name="chevron-back" size={18} color={Colors.text} style={styles.rowIcon} />
+          <AppText style={styles.rowLabel}>Sort by</AppText>
+        </Pressable>
+        <View style={styles.divider} />
+        {SORT_OPTIONS.map((opt) => {
+          const active = sortKey === opt.key;
+          return (
+            <MenuRow
+              key={opt.key}
+              icon={opt.icon}
+              label={opt.label}
+              onPress={() => onSort(opt.key)}
+              accessory={
+                active && opt.key !== 'manual' ? (
+                  <Ionicons name={dirIcon} size={16} color={Colors.accent} />
+                ) : active ? (
+                  <Ionicons name="checkmark" size={16} color={Colors.accent} />
+                ) : null
+              }
+            />
+          );
+        })}
+      </>
+    );
+
+  const cardStyle = [styles.card, { top: insets.top + 46 }];
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        {/* Stop propagation so taps inside the card don't dismiss it. */}
-        <Pressable
-          style={[styles.card, { top: insets.top + 46 }]}
-          onPress={(e) => e.stopPropagation()}>
-          {page === 'main' ? (
-            <>
-              <AppText style={styles.header} numberOfLines={1}>
-                {listName}
-              </AppText>
-              <MenuRow icon="create-outline" label="Edit" onPress={onEdit} />
-              <MenuRow
-                icon="swap-vertical-outline"
-                label="Sort by"
-                onPress={() => setPage('sort')}
-                accessory={
-                  <View style={styles.sortAccessory}>
-                    {sortKey !== 'manual' ? (
-                      <Ionicons name={dirIcon} size={15} color={Colors.textMuted} />
-                    ) : null}
-                    <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-                  </View>
-                }
-              />
-              <MenuRow icon="newspaper-outline" label="News by watchlist" onPress={onNews} />
-
-              <View style={styles.divider} />
-              <AppText style={styles.sectionLabel}>Watchlists</AppText>
-              <MenuRow icon="list-outline" label="All watchlists" onPress={onAllWatchlists} />
-              <MenuRow icon="add" label="Create new list" onPress={onCreate} />
-            </>
-          ) : (
-            <>
-              <Pressable
-                onPress={() => setPage('main')}
-                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-                <Ionicons name="chevron-back" size={18} color={Colors.text} style={styles.rowIcon} />
-                <AppText style={styles.rowLabel}>Sort by</AppText>
-              </Pressable>
-              <View style={styles.divider} />
-              {SORT_OPTIONS.map((opt) => {
-                const active = sortKey === opt.key;
-                return (
-                  <MenuRow
-                    key={opt.key}
-                    icon={opt.icon}
-                    label={opt.label}
-                    onPress={() => onSort(opt.key)}
-                    accessory={
-                      active && opt.key !== 'manual' ? (
-                        <Ionicons name={dirIcon} size={16} color={Colors.accent} />
-                      ) : active ? (
-                        <Ionicons name="checkmark" size={16} color={Colors.accent} />
-                      ) : null
-                    }
-                  />
-                );
-              })}
-            </>
-          )}
-        </Pressable>
-      </Pressable>
+      <Pressable
+        style={[StyleSheet.absoluteFill, styles.backdrop]}
+        onPress={onClose}
+        accessibilityLabel="Dismiss menu"
+      />
+      {LIQUID_GLASS ? (
+        <GlassView style={cardStyle} glassEffectStyle="regular" colorScheme="dark">
+          {content}
+        </GlassView>
+      ) : (
+        <View style={[cardStyle, styles.cardSolid]}>{content}</View>
+      )}
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  backdrop: { backgroundColor: 'rgba(0,0,0,0.4)' },
   card: {
     position: 'absolute',
     left: Spacing.sm,
     width: 256,
-    backgroundColor: '#262A33',
-    borderRadius: Radius.lg,
-    paddingVertical: Spacing.sm,
+    borderRadius: 18,
+    paddingVertical: 6,
+    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    // A faint top-edge highlight reads as the lit rim of glass.
+    borderColor: 'rgba(255,255,255,0.14)',
     shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
   },
+  // Fallback (no Liquid Glass): a near-opaque dark material.
+  cardSolid: { backgroundColor: 'rgba(28,34,43,0.97)' },
   header: {
     fontSize: 13,
     color: Colors.textMuted,
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xs,
-    paddingBottom: Spacing.sm,
+    paddingTop: 8,
+    paddingBottom: 6,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
+    height: 46,
     paddingHorizontal: Spacing.lg,
   },
-  rowPressed: { backgroundColor: Colors.surfacePress },
-  rowIcon: { width: 24 },
-  rowLabel: { flex: 1, fontSize: 16, color: Colors.text, marginLeft: Spacing.sm },
+  rowPressed: { backgroundColor: 'rgba(255,255,255,0.10)' },
+  rowIcon: { width: 26 },
+  rowLabel: { flex: 1, fontSize: 16, color: Colors.text, marginLeft: 6, fontWeight: '500' },
   rowAccessory: { marginLeft: Spacing.sm },
   sortAccessory: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: Colors.border,
-    marginVertical: Spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginVertical: 5,
   },
   sectionLabel: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
     color: Colors.textFaint,
+    textTransform: 'uppercase',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xs,
-    paddingBottom: 2,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
 });

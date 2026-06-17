@@ -109,9 +109,11 @@ export default function MarketsScreen() {
   );
 
   return (
-    <Screen>
+    // No top inset: the Tabs navigator already renders a "Markets" header that
+    // consumes the safe area — a second inset here is what left the big gap.
+    <Screen edges={[]}>
       <View style={styles.searchWrap}>
-        <Ionicons name="search" size={16} color={Colors.textMuted} />
+        <Ionicons name="search" size={18} color={Colors.textMuted} />
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -136,19 +138,12 @@ export default function MarketsScreen() {
               key={f.key}
               onPress={() => setFilter(f.key)}
               style={[styles.chip, active && styles.chipActive]}>
-              <AppText variant="caption" color={active ? Colors.text : Colors.textMuted}>
+              <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
                 {f.label}
               </AppText>
             </Pressable>
           );
         })}
-        {activeList ? (
-          <View style={styles.addingTo}>
-            <AppText variant="caption" muted>
-              Adding to {activeList.name}
-            </AppText>
-          </View>
-        ) : null}
       </View>
 
       {isLoading || isRestoring ? (
@@ -179,7 +174,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     backgroundColor: Colors.surface,
   },
-  input: { flex: 1, color: Colors.text, fontSize: 15 },
+  input: { flex: 1, color: Colors.text, fontSize: 16, fontWeight: '500' },
   chips: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -189,11 +184,12 @@ const styles = StyleSheet.create({
   },
   chip: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: Radius.pill,
     backgroundColor: Colors.surface,
   },
-  chipActive: { backgroundColor: Colors.surfaceAlt, borderWidth: 1, borderColor: Colors.border },
-  addingTo: { marginLeft: 'auto' },
+  chipActive: { backgroundColor: Colors.surfaceAlt },
+  chipLabel: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
+  chipLabelActive: { color: Colors.text },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

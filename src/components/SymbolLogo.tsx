@@ -110,12 +110,57 @@ function initialsFor(symbol: string): string {
 }
 
 /**
- * TradingView serves crypto logos reliably keyed by `XTVC<SYMBOL>`. We only try
- * for crypto markets; stocks/indices/perps fall back to the initials circle
- * (their logos aren't derivable from the ticker alone).
+ * Spot token -> the coin whose brand art we render. Unit wrappers map to the asset
+ * they wrap (UBTC -> BTC), so we show the same icon Hyperliquid's own app does; the
+ * HL-native tokens map to themselves. Hyperliquid's coin CDN serves art by *base*
+ * name (coins/BTC.svg), not the wrapper name (coins/UBTC.svg returns the SPA shell).
+ */
+const SPOT_BASE: Record<string, string> = {
+  HYPE: 'HYPE',
+  PURR: 'PURR',
+  UBTC: 'BTC',
+  UETH: 'ETH',
+  UZEC: 'ZEC',
+  USOL: 'SOL',
+  UXPL: 'XPL',
+  UPUMP: 'PUMP',
+};
+/**
+ * Bases we pull from TradingView instead of Hyperliquid's coin CDN: HL's ETH art is a
+ * flat single-tone diamond that reads as the wrong icon, so we use TradingView's proper
+ * multi-tone Ethereum mark.
+ */
+const SPOT_TV_BASE = new Set(['ETH']);
+
+/**
+ * Best logo URL for a spot coin. Mapped tokens use Hyperliquid's own art (matching the
+ * trade.xyz / HL app), except the few whose HL art is poor (see SPOT_TV_BASE). Unmapped
+ * coins try their own name on the HL CDN (covers USDC and future HL-native tokens);
+ * anything the CDN lacks decodes as the SPA shell and falls to the initials circle.
+ */
+function spotArtUrl(symbol: string): string | null {
+  const sym = symbol.trim();
+  if (!sym) return null;
+  const base = SPOT_BASE[sym.toUpperCase()];
+  if (base) {
+    return SPOT_TV_BASE.has(base)
+      ? `https://s3-symbol-logo.tradingview.com/crypto/XTVC${base}.svg`
+      : `https://app.hyperliquid.xyz/coins/${base}.svg`;
+  }
+  return `https://app.hyperliquid.xyz/coins/${encodeURIComponent(sym)}.svg`;
+}
+
+function spotCoinUrl(instrument: Instrument): string | null {
+  return instrument.assetClass === 'crypto-spot' ? spotArtUrl(instrument.symbol) : null;
+}
+
+/**
+ * TradingView serves crypto logos reliably keyed by `XTVC<SYMBOL>`. Used for crypto
+ * perps; stocks/indices fall back to a mapped logo or the initials circle (their logos
+ * aren't derivable from the ticker alone). Spot art is handled by spotCoinUrl above.
  */
 function cryptoLogoUrl(instrument: Instrument): string | null {
-  if (instrument.assetClass !== 'crypto-perp' && instrument.assetClass !== 'crypto-spot') return null;
+  if (instrument.assetClass !== 'crypto-perp') return null;
   const sym = instrument.symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
   return sym ? `https://s3-symbol-logo.tradingview.com/crypto/XTVC${sym}.svg` : null;
 }
@@ -127,24 +172,44 @@ function stockLogoUrl(instrument: Instrument): string | null {
 }
 
 /**
- * Crypto logo for a bare coin ticker (spot balances carry no Instrument). Uses
- * TradingView's `XTVC<SYMBOL>` crypto art (verified for USDC/HYPE/USDT…); an
- * unknown coin 404s and falls back to the coloured initials circle.
+ * Logo for a bare coin ticker (spot balances carry no Instrument). Resolves through the
+ * same spot-art mapping as the markets list, so a UBTC balance shows BTC's icon and USDC
+ * shows its own; an unknown coin falls back to the coloured initials circle.
  */
 function coinLogoUrl(coin: string): string | null {
-  const sym = coin.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return sym ? `https://s3-symbol-logo.tradingview.com/crypto/XTVC${sym}.svg` : null;
+  return spotArtUrl(coin);
 }
 
-/** HYPE perp + trade.xyz indices use Hyperliquid's own coin art, keyed by coinKey. */
+/** HYPE perp + the two trade.xyz indices use tuned Hyperliquid coin art (with a brand bg). */
 function hyperliquidLogoUrl(instrument: Instrument): string | null {
   if (!(instrument.coinKey in HL_LOGO_BG)) return null;
   return `https://app.hyperliquid.xyz/coins/${encodeURIComponent(instrument.coinKey)}.svg`;
 }
 
-/** Best available logo: Hyperliquid art first, then crypto, then mapped stocks. */
+/**
+ * Every trade.xyz market (the `xyz:` HIP-3 dex) carries brand art on Hyperliquid's
+ * coin CDN — equities, commodities, indices and FX alike. Used as the catch-all for
+ * xyz tickers we don't brand explicitly (SKHX, MRVL, GOLD, SILVER, SMSN, WDC, …).
+ */
+function xyzCoinUrl(instrument: Instrument): string | null {
+  return instrument.coinKey.startsWith('xyz:')
+    ? `https://app.hyperliquid.xyz/coins/${encodeURIComponent(instrument.coinKey)}.svg`
+    : null;
+}
+
+/**
+ * Best available logo, in priority order: tuned HL art (HYPE/indices) → HL coin art for
+ * spot (Unit + native) → crypto coin art for perps → a mapped brand logo (NVDA, TSLA…) →
+ * the trade.xyz coin CDN for any remaining xyz token.
+ */
 function logoUrl(instrument: Instrument): string | null {
-  return hyperliquidLogoUrl(instrument) ?? cryptoLogoUrl(instrument) ?? stockLogoUrl(instrument);
+  return (
+    hyperliquidLogoUrl(instrument) ??
+    spotCoinUrl(instrument) ??
+    cryptoLogoUrl(instrument) ??
+    stockLogoUrl(instrument) ??
+    xyzCoinUrl(instrument)
+  );
 }
 
 /**
@@ -174,7 +239,12 @@ function SymbolLogoImpl({
   const fontSize = initials.length >= 3 ? size * 0.3 : size * 0.36;
   // Hyperliquid marks are full-bleed (and HYPE's is a transparent glyph), so sit
   // them on the brand colour and drop the initials that would otherwise peek through.
-  const hlBg = showImage && instrument ? HL_LOGO_BG[instrument.coinKey] : undefined;
+  // Spot HYPE's coinKey is the raw `@index`, so fall back to matching by symbol —
+  // otherwise its glyph renders nearly invisible on the plain teal circle.
+  const hlBg =
+    showImage && instrument
+      ? HL_LOGO_BG[instrument.coinKey] ?? HL_LOGO_BG[symbol.toUpperCase()]
+      : undefined;
   const backgroundColor = hlBg ?? colorFor(symbol);
 
   return (

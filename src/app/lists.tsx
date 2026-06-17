@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Reanimated, { LinearTransition } from 'react-native-reanimated';
 
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
@@ -23,8 +25,12 @@ export default function ListsScreen() {
   const activeId = useWatchlists((s) => s.activeId);
   const setActive = useWatchlists((s) => s.setActive);
   const createList = useWatchlists((s) => s.createList);
+  const deleteList = useWatchlists((s) => s.deleteList);
   const active = lists.find((l) => l.id === activeId);
   const { data } = useMarkets();
+
+  // The app always needs at least one list, so the final one isn't swipe-deletable.
+  const canDelete = lists.length > 1;
 
   const onSelect = (id: string) => {
     setActive(id);
@@ -62,9 +68,8 @@ export default function ListsScreen() {
       <ScrollView contentContainerStyle={styles.listContent}>
         {lists.map((l) => {
           const isActive = l.id === activeId;
-          return (
+          const row = (
             <Pressable
-              key={l.id}
               onPress={() => onSelect(l.id)}
               style={({ pressed }) => [
                 styles.row,
@@ -78,6 +83,30 @@ export default function ListsScreen() {
                 {previewFor(l.symbolIds, data?.byId) || 'Empty list'}
               </AppText>
             </Pressable>
+          );
+          return (
+            <Reanimated.View key={l.id} layout={LinearTransition.duration(220)}>
+              {canDelete ? (
+                <ReanimatedSwipeable
+                  friction={2}
+                  rightThreshold={40}
+                  overshootRight={false}
+                  renderRightActions={() => (
+                    <Pressable
+                      style={styles.deleteAction}
+                      onPress={() => deleteList(l.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete ${l.name} list`}>
+                      <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+                      <AppText style={styles.deleteLabel}>Delete</AppText>
+                    </Pressable>
+                  )}>
+                  {row}
+                </ReanimatedSwipeable>
+              ) : (
+                row
+              )}
+            </Reanimated.View>
           );
         })}
       </ScrollView>
@@ -111,8 +140,18 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
+    // Opaque so the row slides cleanly over the red Delete action when swiped.
+    backgroundColor: Colors.background,
   },
   rowActive: { backgroundColor: '#E8EAED' },
+  deleteAction: {
+    width: 88,
+    backgroundColor: Colors.down,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  deleteLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
   rowPressed: { backgroundColor: Colors.surface },
   name: { fontSize: 20, fontWeight: '700', color: Colors.text },
   nameActive: { color: '#0B0E11' },

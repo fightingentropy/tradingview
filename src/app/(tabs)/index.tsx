@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useIsRestoring } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import ReorderableList, {
   reorderItems,
   useIsActive,
@@ -129,7 +129,7 @@ export default function WatchlistScreen() {
   const createList = useWatchlists((s) => s.createList);
   const active = lists.find((l) => l.id === activeId) ?? lists[0];
 
-  const { data, isLoading, isError, refetch, isRefetching } = useMarkets();
+  const { data, isLoading, isError, refetch, isFetching } = useMarkets();
   // True while the persisted cache is rehydrating; queries are paused so isLoading
   // is false. Without this the empty-state branch flashes before the cache lands.
   const isRestoring = useIsRestoring();
@@ -141,6 +141,37 @@ export default function WatchlistScreen() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [sortKey, setSortKey] = useState<SortKey>('manual');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  // Pull-to-refresh is tracked separately from react-query's background fetching so
+  // the cold-launch refetch doesn't pop the RefreshControl spinner at the top —
+  // which insets the list, shoving rows down and snapping them back. Only a user
+  // pull shows the spinner.
+  const [pulling, setPulling] = useState(false);
+  const onPullRefresh = useCallback(async () => {
+    setPulling(true);
+    try {
+      await refetch();
+    } finally {
+      setPulling(false);
+    }
+  }, [refetch]);
+
+  // Cold launch renders the persisted rows immediately but dimmed (no spinner, no
+  // layout shift) until the first markets fetch since launch settles, then fades
+  // them in. Flips once per launch; later 60s background refetches stay silent.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!settled && !isRestoring && data && !isFetching) setSettled(true);
+  }, [settled, isRestoring, data, isFetching]);
+  const dimmed = !settled && instruments.length > 0;
+  const dim = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.timing(dim, {
+      toValue: dimmed ? 0.4 : 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [dimmed, dim]);
 
   const onPress = useCallback(
     (instrument: Instrument) => {
@@ -305,22 +336,24 @@ export default function WatchlistScreen() {
           <AppText muted>Add symbols from the Markets tab.</AppText>
         </View>
       ) : (
-        <ReorderableList
-          data={instruments}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          getItemLayout={getItemLayout}
-          onReorder={onReorder}
-          dragEnabled={editing}
-          shouldUpdateActiveItem
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={refetch}
-              tintColor={Colors.textMuted}
-            />
-          }
-        />
+        <Animated.View style={[styles.listWrap, { opacity: dim }]}>
+          <ReorderableList
+            data={instruments}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            getItemLayout={getItemLayout}
+            onReorder={onReorder}
+            dragEnabled={editing}
+            shouldUpdateActiveItem
+            refreshControl={
+              <RefreshControl
+                refreshing={pulling}
+                onRefresh={onPullRefresh}
+                tintColor={Colors.textMuted}
+              />
+            }
+          />
+        </Animated.View>
       )}
 
       <WatchlistMenu
@@ -364,5 +397,6 @@ const styles = StyleSheet.create({
   },
   editTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  listWrap: { flex: 1 },
   retry: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg },
 });
