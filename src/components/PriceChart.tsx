@@ -484,6 +484,10 @@ export function PriceChart({
                     lowPoints={points.low}
                     closePoints={points.close}
                     chartBounds={chartBounds}
+                    // Size bars to the visible window, not the full rendered set —
+                    // otherwise victory divides the width by all the (mostly
+                    // off-screen) history candles and draws them hair-thin.
+                    candleCount={visibleCount}
                     candleColors={{ positive: Colors.up, negative: Colors.down }}
                   />
                 ) : (
