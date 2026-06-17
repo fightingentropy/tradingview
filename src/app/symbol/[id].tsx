@@ -9,10 +9,11 @@ import { PriceChart, type ChartType } from '@/components/PriceChart';
 import { RangeBar } from '@/components/RangeBar';
 import { RsiPane } from '@/components/RsiPane';
 import { useSymbolMenu } from '@/components/SymbolMenu';
+import { TradeTicket } from '@/components/TradeTicket';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { VenueBadge } from '@/components/VenueBadge';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { DEFAULT_RANGE, resolveRange, type RangeKey } from '@/domain/ranges';
 import type { Candle } from '@/domain/types';
 import { useCandles } from '@/data/useCandles';
@@ -38,6 +39,7 @@ export default function SymbolScreen() {
 
   const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);
   const [chartType, setChartType] = useState<ChartType>('candle');
+  const [ticketSide, setTicketSide] = useState<'buy' | 'sell' | null>(null);
   const { interval, fetch: fetchCount, visible, render, axis } = resolveRange(range);
 
   useLivePriceFeed(instrument ? [instrument] : []);
@@ -78,6 +80,11 @@ export default function SymbolScreen() {
       : (quote?.change24hPct ?? null);
   const up = (changePct ?? 0) >= 0;
   const decimals = priceDecimalsFor(instrument.priceDecimals, last);
+
+  // Trading covers Hyperliquid perps AND the trade.xyz (HIP-3) dex — the venues we can
+  // sign orders for. Both resolve their order asset-id from the cached meta by coinKey.
+  const isHlTradable =
+    instrument.id.startsWith('hl:perp:') || instrument.id.startsWith('hl:xyz:');
 
   // Funding rate (perps only). Positive = longs pay shorts (red); negative = shorts pay longs (green).
   const funding = quote?.funding ?? null;
@@ -177,6 +184,34 @@ export default function SymbolScreen() {
           <RangeBar value={range} onChange={setRange} />
         </View>
       </View>
+
+      {isHlTradable ? (
+        <View style={styles.tradeBar}>
+          <Pressable style={[styles.tradeBtn, styles.sellBtn]} onPress={() => setTicketSide('sell')}>
+            <AppText variant="label" color="#FFFFFF">
+              Sell
+            </AppText>
+          </Pressable>
+          <Pressable style={[styles.tradeBtn, styles.buyBtn]} onPress={() => setTicketSide('buy')}>
+            <AppText variant="label" color="#04150E">
+              Buy
+            </AppText>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {isHlTradable ? (
+        <TradeTicket
+          key={ticketSide ?? 'closed'}
+          visible={ticketSide !== null}
+          onClose={() => setTicketSide(null)}
+          coin={instrument.coinKey}
+          symbol={instrument.symbol}
+          markPx={last ?? 0}
+          priceDecimals={decimals}
+          initialSide={ticketSide ?? 'buy'}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -197,4 +232,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   timeframeWrap: { flex: 1 },
+  tradeBar: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  tradeBtn: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md },
+  sellBtn: { backgroundColor: Colors.down },
+  buyBtn: { backgroundColor: Colors.up },
 });

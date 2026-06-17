@@ -126,6 +126,16 @@ function stockLogoUrl(instrument: Instrument): string | null {
   return id ? `https://s3-symbol-logo.tradingview.com/${id}.svg` : null;
 }
 
+/**
+ * Crypto logo for a bare coin ticker (spot balances carry no Instrument). Uses
+ * TradingView's `XTVC<SYMBOL>` crypto art (verified for USDC/HYPE/USDT…); an
+ * unknown coin 404s and falls back to the coloured initials circle.
+ */
+function coinLogoUrl(coin: string): string | null {
+  const sym = coin.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return sym ? `https://s3-symbol-logo.tradingview.com/crypto/XTVC${sym}.svg` : null;
+}
+
 /** HYPE perp + trade.xyz indices use Hyperliquid's own coin art, keyed by coinKey. */
 function hyperliquidLogoUrl(instrument: Instrument): string | null {
   if (!(instrument.coinKey in HL_LOGO_BG)) return null;
@@ -142,16 +152,27 @@ function logoUrl(instrument: Instrument): string | null {
  * available (over a coloured initials circle that shows while it loads or if it
  * 404s), and a coloured initials circle for everything else.
  */
-function SymbolLogoImpl({ instrument, size = 40 }: { instrument: Instrument; size?: number }) {
-  const url = logoUrl(instrument);
+function SymbolLogoImpl({
+  instrument,
+  coin,
+  size = 40,
+}: {
+  /** Full catalog instrument (markets/positions). */
+  instrument?: Instrument;
+  /** Bare coin ticker fallback when there's no Instrument (spot balances). */
+  coin?: string;
+  size?: number;
+}) {
+  const symbol = instrument?.symbol ?? coin ?? '?';
+  const url = instrument ? logoUrl(instrument) : coin ? coinLogoUrl(coin) : null;
   const [failed, setFailed] = useState(false);
   const showImage = !!url && !failed;
-  const initials = INDEX_LABEL[instrument.symbol.toUpperCase()] ?? initialsFor(instrument.symbol);
+  const initials = INDEX_LABEL[symbol.toUpperCase()] ?? initialsFor(symbol);
   const fontSize = initials.length >= 3 ? size * 0.3 : size * 0.36;
   // Hyperliquid marks are full-bleed (and HYPE's is a transparent glyph), so sit
   // them on the brand colour and drop the initials that would otherwise peek through.
-  const hlBg = showImage ? HL_LOGO_BG[instrument.coinKey] : undefined;
-  const backgroundColor = hlBg ?? colorFor(instrument.symbol);
+  const hlBg = showImage && instrument ? HL_LOGO_BG[instrument.coinKey] : undefined;
+  const backgroundColor = hlBg ?? colorFor(symbol);
 
   return (
     <View

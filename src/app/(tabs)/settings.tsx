@@ -2,14 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 import { Fragment } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import { HlAccountCard } from '@/components/HlAccountCard';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatPrice } from '@/lib/format';
 import { fetchStockQuotes } from '@/providers/stocks/client';
 import { useAlerts } from '@/store/alerts';
+import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
 function StatusRow({ label, detail, color }: { label: string; detail: string; color: string }) {
@@ -31,6 +33,8 @@ export default function SettingsScreen() {
   const alerts = useAlerts((s) => s.alerts);
   const removeAlert = useAlerts((s) => s.remove);
   const clearAlerts = useAlerts((s) => s.clearAll);
+  const hideSmallBalances = usePreferences((s) => s.hideSmallBalances);
+  const setHideSmallBalances = usePreferences((s) => s.setHideSmallBalances);
 
   const stocksHealth = useQuery({
     queryKey: ['stocks-health'],
@@ -56,7 +60,35 @@ export default function SettingsScreen() {
 
   return (
     <Screen>
-      <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <AppText variant="caption" muted style={styles.sectionLabel}>
+          HYPERLIQUID ACCOUNT
+        </AppText>
+        <HlAccountCard />
+
+        <AppText variant="caption" muted style={styles.sectionLabel}>
+          DISPLAY
+        </AppText>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <AppText variant="body">Hide small balances</AppText>
+              <AppText variant="caption" muted>
+                Hide spot balances worth under ${SMALL_BALANCE_USD}.
+              </AppText>
+            </View>
+            <Switch
+              value={hideSmallBalances}
+              onValueChange={setHideSmallBalances}
+              trackColor={{ false: Colors.surfaceAlt, true: Colors.accent }}
+              ios_backgroundColor={Colors.surfaceAlt}
+            />
+          </View>
+        </View>
+
         <AppText variant="caption" muted style={styles.sectionLabel}>
           DATA SOURCES
         </AppText>
@@ -137,7 +169,7 @@ export default function SettingsScreen() {
             Data: Hyperliquid + trade.xyz + Twelve Data + Cboe
           </AppText>
         </View>
-      </View>
+      </ScrollView>
     </Screen>
   );
 }
@@ -154,6 +186,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  rowText: { flex: 1, gap: 2, paddingRight: Spacing.md },
   alertText: { flex: 1, gap: 2 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.border, marginLeft: Spacing.lg },
