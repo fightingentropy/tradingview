@@ -1,4 +1,5 @@
 import type { AssetClass, Instrument, Quote } from '@/domain/types';
+import { toNum } from '@/lib/format';
 
 import type {
   MetaAndAssetCtxs,
@@ -25,24 +26,26 @@ function classifyXyz(sym: string): AssetClass {
   return 'equity-perp';
 }
 
+/** Returns null when the context has no finite price, so callers can skip the instrument. */
 function quoteFromCtx(
   instrumentId: string,
   ctx: PerpAssetCtx | SpotAssetCtx,
   ts: number,
-): Quote {
-  const last = Number(ctx.markPx ?? ctx.midPx);
-  const prevClose = Number(ctx.prevDayPx);
+): Quote | null {
+  const last = toNum(ctx.markPx ?? ctx.midPx);
+  if (last === null) return null;
+  const prevClose = toNum(ctx.prevDayPx);
   const change24hPct =
-    Number.isFinite(prevClose) && prevClose !== 0 ? ((last - prevClose) / prevClose) * 100 : null;
+    prevClose !== null && prevClose !== 0 ? ((last - prevClose) / prevClose) * 100 : null;
   // `funding` is only present on perp contexts (hourly rate, as a string).
-  const funding = 'funding' in ctx && ctx.funding != null ? Number(ctx.funding) : null;
+  const funding = 'funding' in ctx ? toNum(ctx.funding) : null;
   return {
     instrumentId,
     last,
-    prevClose: Number.isFinite(prevClose) ? prevClose : null,
+    prevClose,
     change24hPct,
     dayVolume: Number(ctx.dayNtlVlm) || null,
-    funding: Number.isFinite(funding) ? funding : null,
+    funding,
     ts,
   };
 }
@@ -65,6 +68,8 @@ export function buildPerps(
     const display = isXyz ? u.name.replace(/^xyz:/, '') : u.name;
     // u.name is already `xyz:NAME` for the xyz dex, so `hl:${u.name}` => `hl:xyz:NAME`.
     const id = isXyz ? `hl:${u.name}` : `hl:perp:${u.name}`;
+    const quote = quoteFromCtx(id, ctx, ts);
+    if (!quote) return; // no finite price → skip the instrument
     const instrument: Instrument = {
       id,
       source: 'hyperliquid',
@@ -77,7 +82,7 @@ export function buildPerps(
       quoteCurrency: 'USDC',
     };
     instruments.push(instrument);
-    quotes[id] = quoteFromCtx(id, ctx, ts);
+    quotes[id] = quote;
   });
 
   return { instruments, quotes };
@@ -103,6 +108,8 @@ export function buildSpot([meta, ctxs]: SpotMetaAndAssetCtxs): {
     const base = baseToken?.name ?? u.name.split('/')[0];
     const coinKey = `@${u.index}`;
     const id = `hl:spot:${coinKey}`;
+    const quote = quoteFromCtx(id, ctx, ts);
+    if (!quote) return; // no finite price → skip the instrument
 
     const instrument: Instrument = {
       id,
@@ -116,7 +123,7 @@ export function buildSpot([meta, ctxs]: SpotMetaAndAssetCtxs): {
       quoteCurrency: quoteToken?.name ?? 'USDC',
     };
     instruments.push(instrument);
-    quotes[id] = quoteFromCtx(id, ctx, ts);
+    quotes[id] = quote;
   });
 
   return { instruments, quotes };

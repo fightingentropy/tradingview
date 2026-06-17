@@ -19,6 +19,9 @@ export async function GET(request: Request) {
     `&interval=${encodeURIComponent(interval)}&outputsize=240&order=ASC&apikey=${key}`;
   try {
     const res = await fetch(upstream);
+    if (!res.ok) {
+      return Response.json({ error: `upstream ${res.status}` }, { status: 502 });
+    }
     const data = await res.json();
     return Response.json(data, {
       headers: { 'Cache-Control': 'public, max-age=60' },

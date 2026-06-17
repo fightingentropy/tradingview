@@ -64,6 +64,17 @@ export const useAlerts = create<AlertsState>()(
     {
       name: 'alerts-v1',
       storage: createJSONStorage(() => mmkvStorage),
+      version: 1,
+      // Coerce a stale/garbage persisted shape into a valid one: `alerts` must be
+      // an array, and each entry must carry a string `id` so consumers can map/
+      // filter them safely. Malformed entries are dropped.
+      migrate: (persisted) => {
+        const s = (persisted ?? {}) as Partial<AlertsState>;
+        const alerts = (Array.isArray(s.alerts) ? s.alerts : []).filter(
+          (a): a is PriceAlert => !!a && typeof a.id === 'string',
+        );
+        return { ...s, alerts } as AlertsState;
+      },
     },
   ),
 );

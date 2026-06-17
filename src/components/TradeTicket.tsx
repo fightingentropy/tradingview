@@ -18,7 +18,8 @@ import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { useHlAccount } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
 import { placeOrder, type OrderResult } from '@/lib/hyperliquid/exchange';
-import { formatPrice } from '@/lib/format';
+import { formatPrice, usd } from '@/lib/format';
+import { queryKeys } from '@/lib/queryKeys';
 import { useHlConnection } from '@/store/hlConnection';
 
 type Side = 'buy' | 'sell';
@@ -101,7 +102,7 @@ export function TradeTicket({
       }),
     onSuccess: (res) => {
       setResult(res);
-      qc.invalidateQueries({ queryKey: ['hl-account'] });
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
     },
     onError: (e: unknown) => {
       Alert.alert('Order failed', e instanceof Error ? e.message : 'Unknown error');
@@ -131,7 +132,7 @@ export function TradeTicket({
         : `$${formatPrice(num(limitPrice), priceDecimals)} (limit)`;
     Alert.alert(
       `${verb} ${label}?`,
-      `${verb} ${sizeStr} ≈ $${formatPrice(notional, 2)}\nat ${priceStr}` +
+      `${verb} ${sizeStr} ≈ ${usd(notional)}\nat ${priceStr}` +
         (reduceOnly ? '\nReduce-only' : '') +
         (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet order.'),
       [
@@ -271,9 +272,9 @@ export function TradeTicket({
               <AppText variant="caption" muted style={styles.convertLine}>
                 {sizeMode === 'usd'
                   ? `≈ ${coinSize > 0 ? Number(coinSize.toFixed(assetMeta?.szDecimals ?? 4)) : 0} ${label}`
-                  : `≈ $${formatPrice(notional, 2)}`}
+                  : `≈ ${usd(notional)}`}
                 {account
-                  ? `   ·   Available $${formatPrice(account.availableUsdc ?? account.withdrawable, 2)}`
+                  ? `   ·   Available ${usd(account.availableUsdc ?? account.withdrawable)}`
                   : ''}
               </AppText>
 

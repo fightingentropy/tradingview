@@ -22,6 +22,10 @@ import { useInstrumentsByIds, useMarkets } from '@/data/useMarkets';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useWatchlists } from '@/store/watchlists';
 
+// SymbolRow is fixed-height: 40px logo + 13px padding top/bottom + a hairline
+// bottom border. Kept here so getItemLayout can skip per-row measurement.
+const ROW_HEIGHT = 66 + StyleSheet.hairlineWidth;
+
 // White TradingView glyph as a local SVG data-URI (expo-image renders SVG), so the
 // header mark is the reference's bare white logo with no network dependency.
 const TV_MARK =
@@ -257,6 +261,16 @@ export default function WatchlistScreen() {
     [data?.quotes, onPress, editing, selected, onToggleSelect],
   );
 
+  // Rows are fixed-height, so skip per-row measurement on layout.
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<Instrument> | null | undefined, index: number) => ({
+      length: ROW_HEIGHT,
+      offset: ROW_HEIGHT * index,
+      index,
+    }),
+    [],
+  );
+
   const headerName = useMemo(() => active?.name ?? 'Watchlist', [active?.name]);
 
   return (
@@ -295,6 +309,7 @@ export default function WatchlistScreen() {
           data={instruments}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          getItemLayout={getItemLayout}
           onReorder={onReorder}
           dragEnabled={editing}
           shouldUpdateActiveItem

@@ -9,6 +9,9 @@ export interface MarketsData {
   instruments: Instrument[];
   // Plain record (not a Map) so the whole snapshot survives JSON persistence.
   byId: Record<string, Instrument>;
+  // O(1) coin → instrument lookup (e.g. resolving a position's "BTC"/"xyz:SNDK").
+  // Maps aren't JSON-serializable, so this is rebuilt by the queryFn each load.
+  byCoinKey: Map<string, Instrument>;
   quotes: Record<string, Quote>;
 }
 
@@ -24,8 +27,12 @@ async function loadAllMarkets(): Promise<MarketsData> {
     }
   }
   const byId: Record<string, Instrument> = {};
-  for (const i of instruments) byId[i.id] = i;
-  return { instruments, byId, quotes };
+  const byCoinKey = new Map<string, Instrument>();
+  for (const i of instruments) {
+    byId[i.id] = i;
+    byCoinKey.set(i.coinKey, i);
+  }
+  return { instruments, byId, byCoinKey, quotes };
 }
 
 /** Full instrument catalog + 24h snapshot quotes, refreshed periodically. */
@@ -34,7 +41,10 @@ export function useMarkets() {
     queryKey: queryKeys.instruments(),
     queryFn: loadAllMarkets,
     staleTime: 20_000,
-    refetchInterval: 30_000,
+    // Live last-prices arrive over the websocket; this 24h snapshot only needs an
+    // occasional refresh, and not at all while the app is backgrounded.
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 }
 

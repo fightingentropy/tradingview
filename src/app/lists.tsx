@@ -49,7 +49,12 @@ export default function ListsScreen() {
         <View pointerEvents="none" style={styles.titleWrap}>
           <AppText style={styles.title}>List</AppText>
         </View>
-        <Pressable hitSlop={10} onPress={onCreate} style={styles.add}>
+        <Pressable
+          hitSlop={10}
+          onPress={onCreate}
+          style={styles.add}
+          accessibilityRole="button"
+          accessibilityLabel="New list">
           <Ionicons name="add" size={28} color={Colors.text} />
         </Pressable>
       </View>

@@ -6,7 +6,7 @@
  * Every call here moves real funds on mainnet — callers must gate it behind an
  * explicit user confirmation.
  */
-import { HL_API, type HlNetwork } from './info';
+import { fetchWithTimeout, HL_API, type HlNetwork } from './info';
 import { getAgentKey } from './keyStore';
 import { priceToWire, signL1Action, sizeToWire } from './sign';
 
@@ -28,17 +28,30 @@ export interface OrderResult {
 
 const DEFAULT_SLIPPAGE = 0.05;
 
+/**
+ * Strictly-increasing nonce. Hyperliquid rejects a reused nonce, so two orders
+ * fired in the same millisecond (a close-then-reverse, or a quick retry) must
+ * not collide on `Date.now()`. We hand out the later of wall-clock time and
+ * lastNonce + 1, then remember it.
+ */
+let lastNonce = 0;
+function nextNonce(): number {
+  lastNonce = Math.max(Date.now(), lastNonce + 1);
+  return lastNonce;
+}
+
 async function exchangePost(
   network: HlNetwork,
   action: object,
   signature: object,
   nonce: number,
 ): Promise<unknown[]> {
-  const res = await fetch(`${HL_API[network]}/exchange`, {
+  const res = await fetchWithTimeout(`${HL_API[network]}/exchange`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, nonce, signature, vaultAddress: null }),
   });
+  if (!res.ok) throw new Error(`Hyperliquid exchange ${res.status}`);
   const json = (await res.json()) as {
     status?: string;
     response?: string | { data?: { statuses?: unknown[] } };
@@ -57,6 +70,9 @@ async function exchangePost(
     (s): s is { error: string } => !!s && typeof s === 'object' && 'error' in s,
   );
   if (errored) throw new Error(errored.error);
+  // status:'ok' with no statuses means the order neither rested nor filled —
+  // don't report a phantom success to the caller.
+  if (statuses.length === 0) throw new Error('Hyperliquid returned no order status');
   return statuses;
 }
 
@@ -119,11 +135,13 @@ export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
     t: { limit: { tif } },
   };
   const action = { type: 'order', orders: [order], grouping: 'na' };
-  const nonce = Date.now();
+  const nonce = nextNonce();
   const signature = signL1Action(key, action, nonce, isMainnet, null);
 
   const statuses = await exchangePost(p.network, action, signature, nonce);
-  return normalizeStatus(statuses[0]);
+  const first = statuses[0];
+  if (first === undefined) throw new Error('Hyperliquid returned no order status');
+  return normalizeStatus(first);
 }
 
 export interface MarketCloseParams {

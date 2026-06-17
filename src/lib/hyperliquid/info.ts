@@ -25,6 +25,28 @@ export const XYZ_DEX = 'xyz';
 const PERP_DEX_OFFSET_BASE = 100000;
 const PERP_DEX_OFFSET_STEP = 10000;
 
+/**
+ * fetch with an AbortController-backed timeout. A hung request (no response,
+ * not just a slow one) would otherwise leave a trade/account call pending
+ * forever; this rejects with a clear error after `ms`. Shared with exchange.ts.
+ */
+export async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  ms = 15000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (controller.signal.aborted) throw new Error(`Hyperliquid request timed out after ${ms}ms`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface HlPosition {
   coin: string;
   /** Which perp dex holds it: the default crypto dex or the trade.xyz (HIP-3) dex. */
@@ -99,7 +121,7 @@ export interface HlAssetMeta {
 }
 
 async function infoRequest<T>(network: HlNetwork, body: object): Promise<T> {
-  const res = await fetch(`${HL_API[network]}/info`, {
+  const res = await fetchWithTimeout(`${HL_API[network]}/info`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -189,14 +211,6 @@ export interface HlUserRole {
  */
 export async function fetchUserRole(address: string, network: HlNetwork = 'mainnet'): Promise<HlUserRole> {
   return infoRequest<HlUserRole>(network, { type: 'userRole', user: address });
-}
-
-/** Live mark prices keyed by coin (the `allMids` feed). */
-export async function fetchHlMids(network: HlNetwork = 'mainnet'): Promise<Record<string, number>> {
-  const mids = await infoRequest<Record<string, string>>(network, { type: 'allMids' });
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(mids)) out[k] = n(v);
-  return out;
 }
 
 interface RawSpotState {

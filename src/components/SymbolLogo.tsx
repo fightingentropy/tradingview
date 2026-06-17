@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { Instrument } from '@/domain/types';
@@ -166,6 +166,9 @@ function SymbolLogoImpl({
   const symbol = instrument?.symbol ?? coin ?? '?';
   const url = instrument ? logoUrl(instrument) : coin ? coinLogoUrl(coin) : null;
   const [failed, setFailed] = useState(false);
+  // Reset on url change so a recycled FlashList cell doesn't stay stuck on the
+  // initials after a prior row's logo 404'd.
+  useEffect(() => setFailed(false), [url]);
   const showImage = !!url && !failed;
   const initials = INDEX_LABEL[symbol.toUpperCase()] ?? initialsFor(symbol);
   const fontSize = initials.length >= 3 ? size * 0.3 : size * 0.36;

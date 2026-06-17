@@ -2,7 +2,7 @@ import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsRestoring } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { SymbolLogo } from '@/components/SymbolLogo';
@@ -44,6 +44,13 @@ const TYPE_LABEL: Record<AssetClass, string> = {
   index: 'index',
 };
 
+// Instrument + precomputed lowercased searchable text, so typing doesn't lowercase
+// the whole catalog on every keystroke (the field is memoized once per snapshot).
+interface Searchable {
+  instrument: Instrument;
+  haystack: string;
+}
+
 function AddRow({
   instrument,
   added,
@@ -72,7 +79,11 @@ function AddRow({
           {TYPE_LABEL[instrument.assetClass]}
         </AppText>
       </View>
-      <Pressable hitSlop={12} onPress={() => onToggle(instrument)} style={styles.addBtn}>
+      <Pressable
+        hitSlop={12}
+        onPress={() => onToggle(instrument)}
+        style={styles.addBtn}
+        accessibilityLabel={`${added ? 'Remove' : 'Add'} ${instrument.symbol}`}>
         <Ionicons
           name={added ? 'checkmark-circle' : 'add'}
           size={added ? 24 : 28}
@@ -90,22 +101,42 @@ export default function AddSymbolsScreen() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
 
+  // Debounce the raw input so a 300-item filter+sort runs once typing settles,
+  // not on every keystroke. The TextInput stays driven by `search` for instant echo.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(id);
+  }, [search]);
+
   const activeId = useWatchlists((s) => s.activeId);
   const activeList = useWatchlists((s) => s.lists.find((l) => l.id === s.activeId));
   const toggle = useWatchlists((s) => s.toggle);
   const watched = useMemo(() => new Set(activeList?.symbolIds ?? []), [activeList?.symbolIds]);
 
+  // Lowercase symbol+name once per snapshot, not per keystroke.
+  const searchable = useMemo<Searchable[]>(
+    () =>
+      data?.instruments.map((instrument) => ({
+        instrument,
+        haystack: `${instrument.symbol} ${instrument.name}`.toLowerCase(),
+      })) ?? [],
+    [data],
+  );
+
   const results = useMemo(() => {
     if (!data) return [];
-    const q = search.trim().toLowerCase();
-    const out = data.instruments.filter((i) => {
-      if (!matchesFilter(i, filter)) return false;
-      if (!q) return true;
-      return i.symbol.toLowerCase().includes(q) || i.name.toLowerCase().includes(q);
-    });
+    const q = debouncedSearch.trim().toLowerCase();
+    const out = searchable
+      .filter(({ instrument, haystack }) => {
+        if (!matchesFilter(instrument, filter)) return false;
+        if (!q) return true;
+        return haystack.includes(q);
+      })
+      .map(({ instrument }) => instrument);
     out.sort((a, b) => (data.quotes[b.id]?.dayVolume ?? 0) - (data.quotes[a.id]?.dayVolume ?? 0));
     return out.slice(0, 300);
-  }, [data, search, filter]);
+  }, [data, searchable, debouncedSearch, filter]);
 
   const onToggle = useCallback((i: Instrument) => toggle(activeId, i.id), [toggle, activeId]);
 
@@ -126,7 +157,7 @@ export default function AddSymbolsScreen() {
             style={styles.input}
           />
           {search ? (
-            <Pressable hitSlop={8} onPress={() => setSearch('')}>
+            <Pressable hitSlop={8} onPress={() => setSearch('')} accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
             </Pressable>
           ) : null}

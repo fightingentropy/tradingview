@@ -19,8 +19,6 @@ export const Colors = {
   warning: '#F0B90B',
 } as const;
 
-export type ColorName = keyof typeof Colors;
-
 /** Indicator/overlay line colors, kept distinct from price up/down. */
 export const Indicators: { sma: Record<number, string>; rsi: string } = {
   /** Distinct line color per SMA period. */
@@ -55,7 +53,7 @@ export const FontSize = {
 
 /** Monospaced/tabular fonts keep streaming numbers from jittering. */
 export const Fonts = Platform.select({
-  ios: { sans: 'system-ui', rounded: 'ui-rounded', mono: 'ui-monospace' },
-  default: { sans: 'normal', rounded: 'normal', mono: 'monospace' },
-  web: { sans: 'system-ui', rounded: 'system-ui', mono: 'ui-monospace' },
-}) as { sans: string; rounded: string; mono: string };
+  ios: { mono: 'ui-monospace' },
+  default: { mono: 'monospace' },
+  web: { mono: 'ui-monospace' },
+}) as { mono: string };

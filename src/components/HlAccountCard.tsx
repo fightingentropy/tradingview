@@ -1,16 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTradingAddress } from '@/data/useHlAccount';
 import type { HlNetwork } from '@/lib/hyperliquid/info';
 import { isValidPrivateKey, setAgentKey } from '@/lib/hyperliquid/keyStore';
-import { addressFromPrivateKey } from '@/lib/hyperliquid/sign';
+import { addressFromPrivateKey, toChecksumAddress } from '@/lib/hyperliquid/sign';
 import { isHexAddress, useHlConnection } from '@/store/hlConnection';
 
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+/** EIP-55 checksum, then truncate for display: `0xAbC1…9FdE`. */
+const short = (a: string) => {
+  const c = toChecksumAddress(a);
+  return `${c.slice(0, 6)}…${c.slice(-4)}`;
+};
 
 /**
  * Connect / manage the Hyperliquid account from Settings. The public address
@@ -70,8 +74,10 @@ function ConnectedCard({
   onDisconnect: () => void;
 }) {
   // The account we actually read (master behind the agent key), which may differ
-  // from what was typed. Falls back to the stored address while resolving.
-  const { data: resolved } = useTradingAddress();
+  // from what was typed. While resolving we show the entered address; if resolution
+  // fails we say so rather than silently presenting a possibly-wrong account.
+  const { data: resolved, isError, isFetching } = useTradingAddress();
+  const resolveFailed = isError && !resolved;
   const shownAddress = resolved ?? address;
   return (
     <>
@@ -81,9 +87,18 @@ function ConnectedCard({
             <View style={[styles.dot, { backgroundColor: demo ? Colors.warning : Colors.up }]} />
             <AppText variant="body">{demo ? 'Demo account' : 'Connected'}</AppText>
           </View>
-          <AppText variant="caption" muted style={styles.addr}>
-            {short(shownAddress)}
-          </AppText>
+          {resolveFailed ? (
+            <AppText variant="caption" color={Colors.down} style={styles.addr}>
+              Couldn’t resolve account
+            </AppText>
+          ) : (
+            <View style={styles.rowLeft}>
+              {isFetching && !resolved ? <ActivityIndicator size="small" color={Colors.textMuted} /> : null}
+              <AppText variant="caption" muted style={styles.addr}>
+                {short(shownAddress)}
+              </AppText>
+            </View>
+          )}
         </View>
         <View style={styles.divider} />
         <View style={styles.row}>

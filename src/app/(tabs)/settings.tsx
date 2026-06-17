@@ -143,7 +143,11 @@ export default function SettingsScreen() {
                         : `Armed from ${formatPrice(a.anchorPrice)}`}
                     </AppText>
                   </View>
-                  <Pressable hitSlop={8} onPress={() => removeAlert(a.id)}>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => removeAlert(a.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete alert">
                     <Ionicons name="trash-outline" size={18} color={Colors.textMuted} />
                   </Pressable>
                 </View>

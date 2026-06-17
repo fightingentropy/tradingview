@@ -14,13 +14,11 @@ import { useHlAccount } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
 import { marketClose, reversePosition } from '@/lib/hyperliquid/exchange';
 import type { HlPosition, HlSpotBalance } from '@/lib/hyperliquid/info';
-import { formatCompact, formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
+import { formatCompact, formatPercent, formatPrice, priceDecimalsFor, signedUsd, usd } from '@/lib/format';
+import { queryKeys } from '@/lib/queryKeys';
 import type { Instrument } from '@/domain/types';
 import { DEMO_ADDRESS, useHlConnection } from '@/store/hlConnection';
 import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
-
-const usd = (v: number) => '$' + formatPrice(Math.abs(v), 2);
-const signedUsd = (v: number) => (v >= 0 ? '+' : '-') + '$' + formatPrice(Math.abs(v), 2);
 
 /** Shown in place of any account value when privacy mode is on. */
 const MASK = '••••••';
@@ -75,7 +73,7 @@ export default function AccountScreen() {
   // Resolve a position's coin to a real catalog instrument (logo + chart link + decimals).
   // `coinKey` matches both default perps ("BTC") and trade.xyz coins ("xyz:SNDK").
   const instrumentForCoin = useCallback(
-    (coin: string): Instrument | undefined => markets?.instruments.find((i) => i.coinKey === coin),
+    (coin: string): Instrument | undefined => markets?.byCoinKey.get(coin),
     [markets],
   );
 
@@ -92,7 +90,7 @@ export default function AccountScreen() {
         markPx: p.markPx,
       });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['hl-account'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() }),
     onError: (e: unknown) =>
       Alert.alert('Close failed', e instanceof Error ? e.message : 'Unknown error'),
   });
@@ -110,7 +108,7 @@ export default function AccountScreen() {
         markPx: p.markPx,
       });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['hl-account'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() }),
     onError: (e: unknown) =>
       Alert.alert('Reverse failed', e instanceof Error ? e.message : 'Unknown error'),
   });

@@ -59,7 +59,11 @@ function Banner({ toast }: { toast: AlertToast }) {
             {toast.message}
           </AppText>
         </View>
-        <Pressable hitSlop={10} onPress={() => dismiss(toast.id)}>
+        <Pressable
+          hitSlop={10}
+          onPress={() => dismiss(toast.id)}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss">
           <Ionicons name="close" size={18} color={Colors.textMuted} />
         </Pressable>
       </Pressable>

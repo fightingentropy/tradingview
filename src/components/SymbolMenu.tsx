@@ -315,11 +315,19 @@ function AlertRow({
           </View>
         )}
         {triggered && onRearm ? (
-          <Pressable hitSlop={8} onPress={onRearm}>
+          <Pressable
+            hitSlop={8}
+            onPress={onRearm}
+            accessibilityRole="button"
+            accessibilityLabel="Re-arm alert">
             <Ionicons name="refresh" size={18} color={Colors.accent} />
           </Pressable>
         ) : null}
-        <Pressable hitSlop={8} onPress={onRemove}>
+        <Pressable
+          hitSlop={8}
+          onPress={onRemove}
+          accessibilityRole="button"
+          accessibilityLabel="Delete alert">
           <Ionicons name="trash-outline" size={18} color={Colors.textMuted} />
         </Pressable>
       </View>

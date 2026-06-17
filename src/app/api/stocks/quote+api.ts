@@ -16,6 +16,9 @@ export async function GET(request: Request) {
   const upstream = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbols)}&apikey=${key}`;
   try {
     const res = await fetch(upstream);
+    if (!res.ok) {
+      return Response.json({ error: `upstream ${res.status}` }, { status: 502 });
+    }
     const data = await res.json();
     return Response.json(data, {
       headers: { 'Cache-Control': 'public, max-age=15' },

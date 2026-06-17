@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchHlAccount, fetchUserRole, type HlAccount, type HlNetwork } from '@/lib/hyperliquid/info';
 import { getAgentKey } from '@/lib/hyperliquid/keyStore';
 import { addressFromPrivateKey } from '@/lib/hyperliquid/sign';
+import { queryKeys } from '@/lib/queryKeys';
 import { useHlConnection } from '@/store/hlConnection';
 
 /**
@@ -41,7 +42,9 @@ async function resolveTradingAddress(entered: string | null, network: HlNetwork)
 
 /**
  * The master account address we read for the current connection. Stable mapping,
- * so it's cached aggressively and only re-resolved when the inputs change.
+ * so it's cached aggressively and only re-resolved when the inputs change. Returns
+ * the full query result so callers can read `isError`/`isFetching` and react to a
+ * failed/in-flight resolution rather than silently trusting the entered address.
  */
 export function useTradingAddress() {
   const address = useHlConnection((s) => s.address);
@@ -66,8 +69,10 @@ export function useHlAccount() {
   const { data: account } = useTradingAddress();
 
   return useQuery<HlAccount>({
-    queryKey: ['hl-account', network, account],
-    queryFn: () => fetchHlAccount(account!, network),
+    queryKey: queryKeys.hlAccount(network, account ?? ''),
+    // Guarded value rather than a non-null assertion: the query is enabled-gated on
+    // `account`, but resolve the address inside the closure so TS stays sound.
+    queryFn: () => fetchHlAccount(account as string, network),
     enabled: !!account,
     refetchInterval: 5_000,
     staleTime: 4_000,

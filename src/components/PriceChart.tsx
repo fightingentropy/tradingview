@@ -8,7 +8,7 @@ import {
   vec,
 } from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -205,12 +205,23 @@ export function PriceChart({
 
   // SMA over the full series (including the off-screen lead), then sliced to the
   // visible window so a 200-period line still renders on a short range.
+  //
+  // The websocket swaps `activeCandles` for a new array every tick, but the SMA
+  // only moves when the bar count or the latest close changes. Key the memo on a
+  // stable signature (length + last close/timestamp + periods + start) so an
+  // identity-only change skips the ~400-bar-per-period recompute.
+  const lastClose = activeCandles.length ? activeCandles[activeCandles.length - 1].c : null;
+  const lastStamp = activeCandles.length ? activeCandles[activeCandles.length - 1].t : null;
+  const smaKey = smaPeriods.join(',');
   const smaSeries = useMemo(() => {
     const closes = activeCandles.map((c) => c.c);
     const out: Record<number, (number | null)[]> = {};
     for (const p of smaPeriods) out[p] = sma(closes, p).slice(start);
     return out;
-  }, [activeCandles, smaPeriods, start]);
+    // `activeCandles` identity churns every tick; the signature below captures
+    // every input that actually changes the computed series.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCandles.length, lastClose, lastStamp, smaKey, start]);
 
   const volMax = useMemo(
     () => (showVolume ? shown.reduce((m, c) => Math.max(m, c.v), 0) : 0),
@@ -238,14 +249,21 @@ export function PriceChart({
   // Plot geometry is only available inside the chart's render-prop, which runs
   // during React render — where writing to a shared value is illegal. So stash it
   // in a ref there and flush it to the shared values in a post-commit effect.
-  const geomRef = useRef<{ xs: number[]; bounds: Bounds; m: number; b: number }>({
+  // `sig` is a cheap signature of the geometry (set in the render-prop) so the
+  // effect can skip the four shared-value writes when nothing moved — otherwise a
+  // live-tick re-render would re-push identical geometry onto the UI thread.
+  const geomRef = useRef<{ xs: number[]; bounds: Bounds; m: number; b: number; sig: string }>({
     xs: [],
     bounds: { top: 0, bottom: 0, left: 0, right: 0 },
     m: 0,
     b: 0,
+    sig: '',
   });
+  const flushedSigRef = useRef('');
   useEffect(() => {
     const g = geomRef.current;
+    if (g.sig === flushedSigRef.current) return;
+    flushedSigRef.current = g.sig;
     xPositionsSV.value = g.xs;
     boundsSV.value = g.bounds;
     priceMSV.value = g.m;
@@ -460,6 +478,13 @@ export function PriceChart({
             const vBottom = invert ? invert(chartBounds.bottom) : 0;
             const span = chartBounds.bottom - chartBounds.top;
             const m = span !== 0 ? (vBottom - vTop) / span : 0;
+            const b = vTop - m * chartBounds.top;
+            // Candle x-positions move together under pan (the matrix translate is
+            // applied separately), so count + endpoints capture any geometry change;
+            // bounds + the pixel→price coefficients cover the y-scale refit.
+            const sig =
+              `${xs.length}|${xs[0] ?? 0}|${xs[xs.length - 1] ?? 0}|` +
+              `${chartBounds.top}|${chartBounds.bottom}|${chartBounds.left}|${chartBounds.right}|${m}|${b}`;
             geomRef.current = {
               xs,
               bounds: {
@@ -469,7 +494,8 @@ export function PriceChart({
                 right: chartBounds.right,
               },
               m,
-              b: vTop - m * chartBounds.top,
+              b,
+              sig,
             };
 
             return (
@@ -539,8 +565,22 @@ export function PriceChart({
   );
 }
 
+/** True when two pixel-position arrays describe the same plot geometry. */
+function sameXs(a: { x: number }[], b: { x: number }[]): boolean {
+  // Candle x-positions translate together under pan (the matrix moves them as a
+  // group), so length + endpoints uniquely identify the layout without an O(n) scan.
+  if (a.length !== b.length) return false;
+  if (a.length === 0) return true;
+  return a[0].x === b[0].x && a[a.length - 1].x === b[a.length - 1].x;
+}
+
+/** True when two chart-bounds rects are identical. */
+function sameBounds(a: ChartBounds, b: ChartBounds): boolean {
+  return a.top === b.top && a.bottom === b.bottom && a.left === b.left && a.right === b.right;
+}
+
 /** Volume bars packed into a band along the bottom of the price area. */
-function VolumeBars({
+const VolumeBars = memo(function VolumeBars({
   candles,
   xs,
   bounds,
@@ -573,10 +613,17 @@ function VolumeBars({
       <Path path={up} color={Colors.up} />
     </Group>
   );
-}
+},
+// victory hands us fresh `xs`/`bounds` objects every render; skip the re-tessellation
+// unless the data (candles), pixel layout, band, or max volume actually changed.
+(prev, next) =>
+  prev.candles === next.candles &&
+  prev.max === next.max &&
+  sameBounds(prev.bounds, next.bounds) &&
+  sameXs(prev.xs, next.xs));
 
 /** A single simple-moving-average overlay line, scaled onto the price axis. */
-function SmaLine({
+const SmaLine = memo(function SmaLine({
   values,
   xs,
   yScale,
@@ -607,7 +654,18 @@ function SmaLine({
   }
   if (!started) return null;
   return <Path path={path} style="stroke" strokeWidth={1.5} color={color} />;
-}
+},
+// `values` is referentially stable (memoized upstream), so an identity check tells
+// us whether the SMA data moved. victory recreates `xs`/`bounds`/`yScale` each
+// render; probe the scale at two points to catch a y-domain refit, and compare the
+// pixel layout by content — so a crosshair/legend re-render doesn't redraw the line.
+(prev, next) =>
+  prev.values === next.values &&
+  prev.color === next.color &&
+  sameBounds(prev.bounds, next.bounds) &&
+  sameXs(prev.xs, next.xs) &&
+  prev.yScale(0) === next.yScale(0) &&
+  prev.yScale(1) === next.yScale(1));
 
 /**
  * TradingView-style crosshair: vertical line snapped to the candle, horizontal

@@ -16,7 +16,6 @@ function groupThousands(intDigits: string): string {
 /** Pick a sensible number of decimals for a price when none is provided. */
 export function inferDecimals(n: number): number {
   const a = Math.abs(n);
-  if (a >= 1000) return 2;
   if (a >= 1) return 2;
   if (a >= 0.1) return 4;
   if (a >= 0.01) return 5;
@@ -36,6 +35,11 @@ export function formatPrice(
   const body = groupThousands(int) + (frac ? '.' + frac : '');
   return (n < 0 ? '-' : '') + body;
 }
+
+/** Absolute USD amount, e.g. `$1,234.50`. */
+export const usd = (v: number) => '$' + formatPrice(Math.abs(v), 2);
+/** Signed USD amount, e.g. `+$12.30`, `-$4.00`. */
+export const signedUsd = (v: number) => (v >= 0 ? '+' : '-') + '$' + formatPrice(Math.abs(v), 2);
 
 /** Blend an instrument's declared decimals with magnitude-based inference for clean output. */
 export function priceDecimalsFor(declared: number, price: number | null | undefined): number {

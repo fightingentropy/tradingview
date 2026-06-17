@@ -101,6 +101,27 @@ export const useWatchlists = create<WatchlistState>()(
     {
       name: 'watchlists-v3',
       storage: createJSONStorage(() => mmkvStorage),
+      version: 1,
+      // Coerce a stale/garbage persisted shape into a valid one: `lists` must be
+      // an array of lists, each with a string `id`/`name` and an array `symbolIds`.
+      // Malformed entries are dropped so consumers can read `list.symbolIds` safely.
+      migrate: (persisted) => {
+        const s = (persisted ?? {}) as Partial<WatchlistState>;
+        const lists = (Array.isArray(s.lists) ? s.lists : [])
+          .filter((l): l is Watchlist => !!l && typeof l.id === 'string' && typeof l.name === 'string')
+          .map((l) => ({
+            ...l,
+            symbolIds: Array.isArray(l.symbolIds)
+              ? l.symbolIds.filter((x): x is string => typeof x === 'string')
+              : [],
+          }));
+        const safeLists = lists.length ? lists : freshDefaults();
+        const activeId =
+          typeof s.activeId === 'string' && safeLists.some((l) => l.id === s.activeId)
+            ? s.activeId
+            : safeLists[0].id;
+        return { ...s, lists: safeLists, activeId } as WatchlistState;
+      },
     },
   ),
 );

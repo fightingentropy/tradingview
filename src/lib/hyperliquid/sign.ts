@@ -99,6 +99,22 @@ export function addressFromPrivateKey(privateKey: string): string {
   return '0x' + bytesToHex(hash.slice(-20));
 }
 
+/**
+ * EIP-55 checksummed form of a 0x address: each hex letter is upper-cased when
+ * the matching nibble of keccak256(lowercase-hex) is ≥ 8. Accepts any input
+ * case and returns the canonical mixed-case `0x…` for display.
+ */
+export function toChecksumAddress(address: string): string {
+  const lower = strip0x(address).toLowerCase();
+  const hashHex = bytesToHex(keccak_256(utf8ToBytes(lower)));
+  let out = '0x';
+  for (let i = 0; i < lower.length; i++) {
+    const c = lower[i];
+    out += c >= 'a' && c <= 'f' && parseInt(hashHex[i], 16) >= 8 ? c.toUpperCase() : c;
+  }
+  return out;
+}
+
 // ─── Wire formatting ─────────────────────────────────────────────────────────
 // Hyperliquid order prices/sizes are decimal strings with strict precision:
 //   sizes  → at most szDecimals decimals

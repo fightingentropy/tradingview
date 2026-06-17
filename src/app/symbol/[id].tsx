@@ -99,7 +99,11 @@ export default function SymbolScreen() {
           title: instrument.symbol,
           headerRight: () => (
             <View style={styles.headerActions}>
-              <Pressable hitSlop={12} onPress={() => openMenu(instrument)}>
+              <Pressable
+                hitSlop={12}
+                onPress={() => openMenu(instrument)}
+                accessibilityRole="button"
+                accessibilityLabel="Set price alert">
                 <Ionicons name="notifications-outline" size={21} color={Colors.textMuted} />
               </Pressable>
               <Pressable hitSlop={12} onPress={() => toggle(activeId, instrument.id)}>
@@ -172,7 +176,9 @@ export default function SymbolScreen() {
       <View style={styles.controls}>
         <Pressable
           style={styles.typeToggle}
-          onPress={() => setChartType((t) => (t === 'candle' ? 'line' : 'candle'))}>
+          onPress={() => setChartType((t) => (t === 'candle' ? 'line' : 'candle'))}
+          accessibilityRole="button"
+          accessibilityLabel="Toggle chart type">
           <Ionicons
             name={chartType === 'candle' ? 'stats-chart' : 'pulse'}
             size={18}

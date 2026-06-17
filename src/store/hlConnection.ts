@@ -38,7 +38,12 @@ export const useHlConnection = create<HlConnectionState>()(
       hasKey: false,
       demo: false,
       setAddress: (address) =>
-        set({ address: address && isHexAddress(address) ? address.trim() : address, demo: false }),
+        set((s) => ({
+          // Only adopt a valid 0x address; an invalid string must not become the
+          // active account (keep the previous address). Explicit null clears it.
+          address: address === null ? null : isHexAddress(address) ? address.trim() : s.address,
+          demo: false,
+        })),
       setNetwork: (network) => set({ network }),
       refreshKey: () => set({ hasKey: hasAgentKey() }),
       connectDemo: (address) => set({ address, demo: true, hasKey: false }),

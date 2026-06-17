@@ -16,10 +16,6 @@ const registry: Record<Source, MarketDataProvider | undefined> = {
   cboe: cboeProvider,
 };
 
-export function registerProvider(provider: MarketDataProvider) {
-  registry[provider.source] = provider;
-}
-
 export function getProvider(source: Source): MarketDataProvider | undefined {
   return registry[source];
 }

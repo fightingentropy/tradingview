@@ -40,6 +40,22 @@ export const useChartSettings = create<ChartSettingsState>()(
     {
       name: 'chart-settings-v2',
       storage: createJSONStorage(() => mmkvStorage),
+      version: 1,
+      // Coerce a stale/garbage persisted shape into safe defaults: `smaPeriods`
+      // must be a numeric array, the toggles booleans, and `rsiPeriod` a finite
+      // number, so the chart can read them without guards.
+      migrate: (persisted) => {
+        const s = (persisted ?? {}) as Partial<ChartSettingsState>;
+        return {
+          ...s,
+          smaPeriods: Array.isArray(s.smaPeriods)
+            ? s.smaPeriods.filter((p): p is number => Number.isFinite(p))
+            : [],
+          volume: typeof s.volume === 'boolean' ? s.volume : false,
+          rsi: typeof s.rsi === 'boolean' ? s.rsi : false,
+          rsiPeriod: Number.isFinite(s.rsiPeriod) ? (s.rsiPeriod as number) : 14,
+        } as ChartSettingsState;
+      },
     },
   ),
 );

@@ -21,6 +21,10 @@ export function RsiPane({
   /** Show only the last N points (computed over the full lead-included series). */
   visibleCount?: number;
 }) {
+  // The websocket replaces the candle array on every tick, but RSI only moves when
+  // the bar count or the latest close changes. Key the memo on a stable signature
+  // (length + last timestamp/close + period) so an identity-only change is a no-op.
+  const lastCandle = candles.length ? candles[candles.length - 1] : null;
   const data = useMemo(() => {
     const values = rsi(
       candles.map((c) => c.c),
@@ -33,7 +37,10 @@ export function RsiPane({
       if (v != null) out.push({ x: i - start, rsi: v });
     }
     return out;
-  }, [candles, period, visibleCount]);
+    // `candles` identity churns every tick; the signature below captures every
+    // input that actually changes the series.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candles.length, lastCandle?.t, lastCandle?.c, period, visibleCount]);
 
   const last = data.length ? data[data.length - 1].rsi : null;
   const lastColor =
