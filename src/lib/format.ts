@@ -106,6 +106,20 @@ export function formatChartAxisLabel(t: number, kind: AxisTickKind): string {
   }
 }
 
+/**
+ * Fuller timestamp for the scrub tooltip — e.g. `Jun 16, 18:50` on intraday
+ * ranges, `Jun 16, 2026` once candles span days. Mirrors the date the
+ * TradingView app prints above the OHLC when you press a candle.
+ */
+export function formatCandleStamp(t: number, kind: AxisTickKind): string {
+  const d = new Date(t);
+  const md = `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  if (kind === 'time' || kind === 'day') return `${md}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  if (kind === 'year') return String(d.getFullYear());
+  if (kind === 'month') return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  return `${md}, ${d.getFullYear()}`;
+}
+
 /** Compact notation for volumes / market caps: 1.2K, 3.4M, 5.6B, 1.2T. */
 export function formatCompact(value: number | string | null | undefined): string {
   const n = toNum(value);

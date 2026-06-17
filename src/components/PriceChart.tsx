@@ -7,7 +7,8 @@ import {
   Skia,
   vec,
 } from '@shopify/react-native-skia';
-import { useMemo, useState } from 'react';
+import * as Haptics from 'expo-haptics';
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useAnimatedReaction, useDerivedValue, runOnJS } from 'react-native-reanimated';
 import {
@@ -24,7 +25,14 @@ import { AppText } from '@/components/ui/AppText';
 import { Colors, Indicators, Spacing } from '@/constants/theme';
 import { sma } from '@/domain/indicators';
 import type { Candle } from '@/domain/types';
-import { formatChartAxisLabel, formatPrice, type AxisTickKind } from '@/lib/format';
+import {
+  formatCandleStamp,
+  formatChartAxisLabel,
+  formatPercent,
+  formatPrice,
+  formatSignedPrice,
+  type AxisTickKind,
+} from '@/lib/format';
 
 export type ChartType = 'candle' | 'line';
 
@@ -127,17 +135,31 @@ export function PriceChart({
   const pressState = state as unknown as PressState;
   const transform = useChartTransformState();
 
-  // Mirror the crosshair's matched index into React state for the OHLC legend.
+  // Mirror the crosshair's matched index into React state for the OHLC legend,
+  // and tick the Taptic Engine each time the press crosses onto a new candle —
+  // the light "selection" feedback the TradingView app gives while scrubbing.
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const onScrub = useCallback((index: number) => {
+    setActiveIndex(index >= 0 ? index : null);
+    if (index >= 0) Haptics.selectionAsync().catch(() => {});
+  }, []);
   useAnimatedReaction(
     () => (state.isActive.value ? state.matchedIndex.value : -1),
     (cur, prev) => {
-      if (cur !== prev) runOnJS(setActiveIndex)(cur >= 0 ? cur : null);
+      if (cur !== prev) runOnJS(onScrub)(cur);
     },
   );
 
-  const legendIndex = activeIndex !== null ? activeIndex : shown.length - 1;
+  const scrubbing = activeIndex !== null;
+  const legendIndex = scrubbing ? activeIndex! : shown.length - 1;
   const legend = shown[legendIndex];
+
+  // Period-over-period change for the highlighted candle (vs the prior close,
+  // reaching into the off-screen lead for the first visible bar).
+  const prevClose =
+    legend != null ? (start + legendIndex - 1 >= 0 ? candles[start + legendIndex - 1].c : legend.o) : null;
+  const legendChange = legend && prevClose != null ? legend.c - prevClose : null;
+  const legendChangePct = legendChange != null && prevClose ? (legendChange / prevClose) * 100 : null;
 
   if (data.length === 0) {
     return <View style={styles.fill} />;
@@ -163,6 +185,21 @@ export function PriceChart({
                   decimals={priceDecimals}
                 />
               ))}
+            </View>
+          ) : null}
+          {scrubbing ? (
+            <View style={styles.stampRow}>
+              <AppText variant="caption" muted numeric>
+                {formatCandleStamp(legend.t, axisKind ?? 'time')}
+              </AppText>
+              {legendChange != null ? (
+                <AppText
+                  variant="caption"
+                  numeric
+                  color={legendChange >= 0 ? Colors.up : Colors.down}>
+                  {formatSignedPrice(legendChange, priceDecimals)} {formatPercent(legendChangePct)}
+                </AppText>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -383,5 +420,6 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   legendRow: { flexDirection: 'row', gap: Spacing.md },
+  stampRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center', marginTop: 1 },
   ohlcItem: { flexDirection: 'row', gap: 4, alignItems: 'center' },
 });
