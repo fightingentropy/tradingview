@@ -8,7 +8,7 @@ import {
   vec,
 } from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useAnimatedReaction, useDerivedValue, runOnJS } from 'react-native-reanimated';
 import {
@@ -82,8 +82,19 @@ export function PriceChart({
   visibleCount,
   axisKind,
 }: Props) {
-  const start = visibleCount != null ? Math.max(0, candles.length - visibleCount) : 0;
-  const shown = useMemo(() => candles.slice(start), [candles, start]);
+  // While a finger is pressing the chart, hold the candle series steady. victory-native
+  // resets its press gesture every time `data` changes, so a live websocket tick would
+  // otherwise drop the crosshair after a second or two. We snapshot on press-down and
+  // resume live candles the instant the finger lifts.
+  const [pressing, setPressing] = useState(false);
+  const candlesRef = useRef(candles);
+  candlesRef.current = candles;
+  const frozenRef = useRef<Candle[]>(candles);
+  const pressingRef = useRef(false);
+  const activeCandles = pressing ? frozenRef.current : candles;
+
+  const start = visibleCount != null ? Math.max(0, activeCandles.length - visibleCount) : 0;
+  const shown = useMemo(() => activeCandles.slice(start), [activeCandles, start]);
 
   const data = useMemo<ChartDatum[]>(
     () => shown.map((c, i) => ({ x: i, open: c.o, high: c.h, low: c.l, close: c.c })),
@@ -120,11 +131,11 @@ export function PriceChart({
   // SMA over the full series (including the off-screen lead), then sliced to the
   // visible window so a 200-period line still renders on a short range.
   const smaSeries = useMemo(() => {
-    const closes = candles.map((c) => c.c);
+    const closes = activeCandles.map((c) => c.c);
     const out: Record<number, (number | null)[]> = {};
     for (const p of smaPeriods) out[p] = sma(closes, p).slice(start);
     return out;
-  }, [candles, smaPeriods, start]);
+  }, [activeCandles, smaPeriods, start]);
 
   const volMax = useMemo(
     () => (showVolume ? shown.reduce((m, c) => Math.max(m, c.v), 0) : 0),
@@ -140,8 +151,23 @@ export function PriceChart({
   // the light "selection" feedback the TradingView app gives while scrubbing.
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const onScrub = useCallback((index: number) => {
-    setActiveIndex(index >= 0 ? index : null);
-    if (index >= 0) Haptics.selectionAsync().catch(() => {});
+    if (index >= 0) {
+      if (!pressingRef.current) {
+        // Press just went down — freeze the series at this instant so live ticks
+        // can't reset the gesture out from under the finger.
+        pressingRef.current = true;
+        frozenRef.current = candlesRef.current;
+        setPressing(true);
+      }
+      setActiveIndex(index);
+      Haptics.selectionAsync().catch(() => {});
+    } else {
+      if (pressingRef.current) {
+        pressingRef.current = false;
+        setPressing(false);
+      }
+      setActiveIndex(null);
+    }
   }, []);
   useAnimatedReaction(
     () => (state.isActive.value ? state.matchedIndex.value : -1),
@@ -157,7 +183,11 @@ export function PriceChart({
   // Period-over-period change for the highlighted candle (vs the prior close,
   // reaching into the off-screen lead for the first visible bar).
   const prevClose =
-    legend != null ? (start + legendIndex - 1 >= 0 ? candles[start + legendIndex - 1].c : legend.o) : null;
+    legend != null
+      ? start + legendIndex - 1 >= 0
+        ? activeCandles[start + legendIndex - 1].c
+        : legend.o
+      : null;
   const legendChange = legend && prevClose != null ? legend.c - prevClose : null;
   const legendChangePct = legendChange != null && prevClose ? (legendChange / prevClose) * 100 : null;
 
