@@ -40,9 +40,17 @@ export const rangeLabel = (key: RangeKey) => RANGES[key].label;
 /**
  * Extra leading candles fetched beyond the visible window so moving averages
  * (notably SMA 200) can be computed from real history instead of vanishing on
- * short ranges. The chart shows only the last `visible` candles.
+ * short ranges. These sit before the rendered window, off the left edge.
  */
 const SMA_LEAD = 200;
+
+/**
+ * Older candles rendered to the left of the visible window so you can drag the
+ * chart back through history instead of hitting empty space. They're drawn (and
+ * have valid moving averages, since SMA_LEAD precedes them) but start off-screen;
+ * `viewport` scopes the initial view to just the last `visible` candles.
+ */
+const PAN_HISTORY = 150;
 
 const ytdVisibleDays = () => {
   const now = new Date();
@@ -57,10 +65,14 @@ const ytdVisibleDays = () => {
 export function resolveRange(key: RangeKey): {
   interval: CandleInterval;
   fetch: number;
+  /** Candles initially in view (the viewport window). */
   visible: number;
+  /** Candles actually rendered (visible + pannable history). */
+  render: number;
   axis: AxisTickKind;
 } {
   const meta = RANGES[key];
   const visible = key === 'YTD' ? ytdVisibleDays() : meta.count;
-  return { interval: meta.interval, visible, fetch: visible + SMA_LEAD, axis: meta.axis };
+  const render = visible + PAN_HISTORY;
+  return { interval: meta.interval, visible, render, fetch: render + SMA_LEAD, axis: meta.axis };
 }

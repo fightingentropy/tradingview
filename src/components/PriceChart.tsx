@@ -2,6 +2,7 @@ import {
   DashPathEffect,
   Group,
   Line as SkiaLine,
+  type Matrix4,
   Path,
   Skia,
   vec,
@@ -63,11 +64,16 @@ interface Props {
   /** Draw volume bars in a band along the bottom of the chart. */
   showVolume?: boolean;
   /**
-   * Render only the last N candles (keeps them thick on wide date ranges).
-   * Indicators are still computed across the full lead-included series, so
-   * SMA 200 keeps drawing even when fewer bars are visible.
+   * Candles initially in view — the chart opens scrolled to the last N (keeps
+   * them thick) via the `viewport`, and you can drag back to reveal the rest.
    */
   visibleCount?: number;
+  /**
+   * Candles actually rendered (visible + pannable history). Defaults to
+   * `visibleCount`. Indicators are computed across the full lead-included series,
+   * so SMA 200 keeps drawing even on the oldest rendered bars.
+   */
+  renderCount?: number;
   /** Time-axis label granularity for the visible range (hours, days, …). */
   axisKind?: AxisTickKind;
 }
@@ -122,6 +128,7 @@ export function PriceChart({
   smaPeriods = [],
   showVolume = false,
   visibleCount,
+  renderCount,
   axisKind,
 }: Props) {
   // While a finger is pressing the chart, hold the candle series steady so live
@@ -133,7 +140,11 @@ export function PriceChart({
   const pressingRef = useRef(false);
   const activeCandles = pressing ? frozenRef.current : candles;
 
-  const start = visibleCount != null ? Math.max(0, activeCandles.length - visibleCount) : 0;
+  // Render `renderCount` candles (visible window + pannable history); everything
+  // before `start` stays off-screen as moving-average lead.
+  const renderWindow = renderCount ?? visibleCount;
+  const start =
+    renderWindow != null ? Math.max(0, activeCandles.length - renderWindow) : 0;
   const shown = useMemo(() => activeCandles.slice(start), [activeCandles, start]);
 
   const data = useMemo<ChartDatum[]>(
@@ -141,32 +152,56 @@ export function PriceChart({
     [shown],
   );
 
-  // Scale the price axis to the visible candles (plus a little headroom) rather
-  // than to the indicator overlays. SMA 200 on a strong trend sits far below the
-  // bars; letting it set the domain squashes the candles into a sliver, so we
-  // anchor on the price action and clamp the SMA lines to the band (below).
+  const R = shown.length;
+
+  // Which candles are on screen, as `[lo, hi]` indices into `shown`. A pan updates
+  // this (via the reaction below) so the y-scale and time labels follow the scroll;
+  // null means "not panned" and falls back to the opening viewport window.
+  const [visWin, setVisWin] = useState<[number, number] | null>(null);
+  const winLo = visWin
+    ? Math.max(0, Math.min(visWin[0], R - 1))
+    : visibleCount != null
+      ? Math.max(0, R - visibleCount)
+      : 0;
+  const winHi = visWin ? Math.max(winLo, Math.min(visWin[1], R - 1)) : Math.max(0, R - 1);
+
+  // Open scrolled to the last `visibleCount` candles; the rest of `data` extends
+  // to the left so a horizontal drag pans back through history (see transformConfig).
+  const viewport = useMemo<{ x: [number, number] } | undefined>(() => {
+    if (visibleCount == null || shown.length <= visibleCount) return undefined;
+    return { x: [shown.length - visibleCount, shown.length - 1] };
+  }, [shown.length, visibleCount]);
+
+  // Scale the price axis to the candles *currently on screen* (plus a little
+  // headroom), not the indicator overlays or the off-screen history — so panning
+  // back through time refits the bars instead of squashing them. SMA lines are
+  // clamped to the band (below) when they fall outside it.
   const yDomain = useMemo<[number, number] | undefined>(() => {
-    if (shown.length === 0) return undefined;
+    if (R === 0) return undefined;
     let lo = Infinity;
     let hi = -Infinity;
-    for (const c of shown) {
+    for (let i = winLo; i <= winHi; i++) {
+      const c = shown[i];
+      if (!c) continue;
       if (c.l < lo) lo = c.l;
       if (c.h > hi) hi = c.h;
     }
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return undefined;
     const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.01 || 1;
     return [lo - pad, hi + pad];
-  }, [shown]);
+  }, [shown, winLo, winHi, R]);
 
-  // Evenly spaced time labels sampled from the visible candles' open times.
+  // Evenly spaced time labels sampled across the on-screen window, so they track
+  // the candles as you pan back through history.
   const axisTicks = useMemo(() => {
-    if (!axisKind || shown.length < 2) return [];
-    const n = shown.length;
+    if (!axisKind || winHi - winLo < 1) return [];
+    const span = winHi - winLo;
     return Array.from({ length: AXIS_TICKS }, (_, k) => {
-      const idx = Math.round((k / (AXIS_TICKS - 1)) * (n - 1));
-      return formatChartAxisLabel(shown[idx].t, axisKind);
+      const idx = winLo + Math.round((k / (AXIS_TICKS - 1)) * span);
+      const c = shown[idx];
+      return c ? formatChartAxisLabel(c.t, axisKind) : '';
     });
-  }, [shown, axisKind]);
+  }, [shown, axisKind, winLo, winHi]);
 
   // SMA over the full series (including the off-screen lead), then sliced to the
   // visible window so a 200-period line still renders on a short range.
@@ -195,6 +230,10 @@ export function PriceChart({
   const boundsSV = useSharedValue<Bounds>({ top: 0, bottom: 0, left: 0, right: 0 });
   const priceMSV = useSharedValue(0); // price = m*y + b  (pixel→price, linear)
   const priceBSV = useSharedValue(0);
+  // Last on-screen window pushed to JS, so the pan reaction only re-renders when
+  // a candle actually enters or leaves the view (not every pixel of the drag).
+  const lastLoSV = useSharedValue(-1);
+  const lastHiSV = useSharedValue(-1);
 
   // Plot geometry is only available inside the chart's render-prop, which runs
   // during React render — where writing to a shared value is illegal. So stash it
@@ -212,6 +251,45 @@ export function PriceChart({
     priceMSV.value = g.m;
     priceBSV.value = g.b;
   });
+
+  // As the chart pans, work out which candle indices are on screen (undo the
+  // matrix's x-translate/scale over the pre-transform candle positions) and push
+  // the window to JS — but only when it changes by a whole candle, so the y-scale
+  // and time labels refit per bar without re-rendering on every frame.
+  useAnimatedReaction(
+    () => {
+      const m = transform.state.matrix.value;
+      return { tx: m ? (m[3] ?? 0) : 0, sx: m && m[0] ? m[0] : 1 };
+    },
+    ({ tx, sx }) => {
+      const xs = xPositionsSV.value;
+      const b = boundsSV.value;
+      const n = xs.length;
+      if (n === 0) return;
+      const loX = (b.left - tx) / sx;
+      const hiX = (b.right - tx) / sx;
+      let lo = -1;
+      let hi = -1;
+      for (let i = 0; i < n; i++) {
+        if (xs[i] >= loX && xs[i] <= hiX) {
+          if (lo < 0) lo = i;
+          hi = i;
+        }
+      }
+      if (lo < 0) {
+        lo = 0;
+        hi = n - 1;
+      }
+      // Pad by a bar each side so an edge candle's wick still counts toward the range.
+      if (lo > 0) lo -= 1;
+      if (hi < n - 1) hi += 1;
+      if (lo !== lastLoSV.value || hi !== lastHiSV.value) {
+        lastLoSV.value = lo;
+        lastHiSV.value = hi;
+        runOnJS(setVisWin)([lo, hi]);
+      }
+    },
+  );
 
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const onScrub = useCallback((index: number) => {
@@ -242,35 +320,38 @@ export function PriceChart({
     },
   );
 
+  // Map a finger point to the crosshair: snap x to the nearest candle and track y
+  // freely. Candle x-positions are pre-transform, so undo the pan's x-translate
+  // (matrix[3]) / x-scale (matrix[0]) before snapping — keeps the crosshair on the
+  // right bar after the chart has been dragged back through history.
+  const applyTouch = (px: number, py: number) => {
+    'worklet';
+    const m = transform.state.matrix.value;
+    const tx = m ? (m[3] ?? 0) : 0;
+    const sx = m && m[0] ? m[0] : 1;
+    const xs = xPositionsSV.value;
+    if (xs.length > 0) {
+      const idx = nearestIndex(xs, (px - tx) / sx);
+      if (idx >= 0) {
+        crossIdx.value = idx;
+        crossX.value = xs[idx];
+      }
+    }
+    const b = boundsSV.value;
+    crossY.value = py < b.top ? b.top : py > b.bottom ? b.bottom : py;
+  };
+
   const crossGesture = useMemo(() => {
     const pan = Gesture.Pan()
       .activateAfterLongPress(160)
       .onStart((e) => {
         'worklet';
         crossActive.value = true;
-        const xs = xPositionsSV.value;
-        if (xs.length > 0) {
-          const idx = nearestIndex(xs, e.x);
-          if (idx >= 0) {
-            crossIdx.value = idx;
-            crossX.value = xs[idx];
-          }
-        }
-        const b = boundsSV.value;
-        crossY.value = e.y < b.top ? b.top : e.y > b.bottom ? b.bottom : e.y;
+        applyTouch(e.x, e.y);
       })
       .onUpdate((e) => {
         'worklet';
-        const xs = xPositionsSV.value;
-        if (xs.length > 0) {
-          const idx = nearestIndex(xs, e.x);
-          if (idx >= 0) {
-            crossIdx.value = idx;
-            crossX.value = xs[idx];
-          }
-        }
-        const b = boundsSV.value;
-        crossY.value = e.y < b.top ? b.top : e.y > b.bottom ? b.bottom : e.y;
+        applyTouch(e.x, e.y);
       })
       .onFinalize(() => {
         'worklet';
@@ -360,9 +441,13 @@ export function PriceChart({
           xKey="x"
           yKeys={['high', 'low', 'open', 'close']}
           domain={yDomain ? { y: yDomain } : undefined}
+          viewport={viewport}
           customGestures={crossGesture}
           transformState={transform.state}
-          transformConfig={{ pan: { enabled: true }, pinch: { enabled: true } }}
+          // Horizontal-only pan = scroll back through history; no pinch zoom (the
+          // date-range buttons set the zoom level, and x-only keeps the crosshair
+          // math to a single translate).
+          transformConfig={{ pan: { enabled: true, dimensions: 'x' }, pinch: { enabled: false } }}
           domainPadding={{ left: 8, right: 8, top: 24, bottom: 8 }}>
           {({ points, chartBounds, yScale }) => {
             // Capture plot geometry for the crosshair gesture + price pill. This runs
@@ -414,7 +499,13 @@ export function PriceChart({
                     color={smaColor(p)}
                   />
                 ))}
-                <Crosshair x={crossX} y={crossY} active={crossActive} bounds={boundsSV} />
+                <Crosshair
+                  x={crossX}
+                  y={crossY}
+                  active={crossActive}
+                  bounds={boundsSV}
+                  matrix={transform.state.matrix}
+                />
               </>
             );
           }}
@@ -514,22 +605,33 @@ function SmaLine({
   return <Path path={path} style="stroke" strokeWidth={1.5} color={color} />;
 }
 
-/** TradingView-style crosshair: vertical line snapped to the candle, horizontal line at the finger. */
+/**
+ * TradingView-style crosshair: vertical line snapped to the candle, horizontal
+ * line tracking the finger. It's drawn inside the chart's pan-transformed group,
+ * so the vertical line (at a candle's pre-transform x) rides along when you pan,
+ * while the horizontal line undoes the x-translate so it always spans full width.
+ */
 function Crosshair({
   x,
   y,
   active,
   bounds,
+  matrix,
 }: {
   x: SharedValue<number>;
   y: SharedValue<number>;
   active: SharedValue<boolean>;
   bounds: SharedValue<Bounds>;
+  matrix: SharedValue<Matrix4>;
 }) {
+  const tx = useDerivedValue(() => {
+    const m = matrix.value;
+    return m ? (m[3] ?? 0) : 0;
+  });
   const vTop = useDerivedValue(() => vec(x.value, bounds.value.top));
   const vBottom = useDerivedValue(() => vec(x.value, bounds.value.bottom));
-  const hLeft = useDerivedValue(() => vec(bounds.value.left, y.value));
-  const hRight = useDerivedValue(() => vec(bounds.value.right, y.value));
+  const hLeft = useDerivedValue(() => vec(bounds.value.left - tx.value, y.value));
+  const hRight = useDerivedValue(() => vec(bounds.value.right - tx.value, y.value));
   const opacity = useDerivedValue(() => (active.value ? 1 : 0));
 
   return (

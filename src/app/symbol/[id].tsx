@@ -38,7 +38,7 @@ export default function SymbolScreen() {
 
   const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);
   const [chartType, setChartType] = useState<ChartType>('candle');
-  const { interval, fetch: fetchCount, visible, axis } = resolveRange(range);
+  const { interval, fetch: fetchCount, visible, render, axis } = resolveRange(range);
 
   useLivePriceFeed(instrument ? [instrument] : []);
   const live = useLivePrice(instrument?.coinKey);
@@ -144,12 +144,15 @@ export default function SymbolScreen() {
           </View>
         ) : (
           <PriceChart
+            // Remount on range change so the history-pan offset resets to the latest.
+            key={range}
             candles={candles}
             priceDecimals={decimals}
             type={chartType}
             smaPeriods={smaPeriods}
             showVolume={volume}
             visibleCount={visible}
+            renderCount={render}
             axisKind={axis}
           />
         )}
