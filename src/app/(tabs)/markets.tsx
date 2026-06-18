@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { SortControl } from '@/components/SortControl';
 import { SymbolRow } from '@/components/SymbolRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
@@ -12,6 +13,7 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import type { AssetClass, Instrument } from '@/domain/types';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useMarkets } from '@/data/useMarkets';
+import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
 type Filter = 'all' | 'crypto' | 'stocks' | 'spot';
@@ -22,18 +24,6 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'stocks', label: 'Stocks' },
   { key: 'spot', label: 'Spot' },
 ];
-
-/** Row order: 'default' = by 24h volume (as before); 'gainers'/'losers' = by 24h %. */
-type SortMode = 'default' | 'gainers' | 'losers';
-
-const SORT_META: Record<SortMode, { icon: 'swap-vertical' | 'arrow-up' | 'arrow-down'; color: string }> = {
-  default: { icon: 'swap-vertical', color: Colors.textMuted },
-  gainers: { icon: 'arrow-up', color: Colors.up },
-  losers: { icon: 'arrow-down', color: Colors.down },
-};
-
-const nextSort = (s: SortMode): SortMode =>
-  s === 'default' ? 'gainers' : s === 'gainers' ? 'losers' : 'default';
 
 const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'equity', 'commodity', 'index', 'fx']);
 
@@ -57,7 +47,9 @@ export default function MarketsScreen() {
   const isRestoring = useIsRestoring();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
-  const [sort, setSort] = useState<SortMode>('default');
+  // Persisted so the chosen order survives app restarts.
+  const sort = usePreferences((s) => s.marketsSort);
+  const setSort = usePreferences((s) => s.setMarketsSort);
 
   // Debounce the raw input so a 300-item filter+sort runs once typing settles,
   // not on every keystroke. The TextInput stays driven by `search` for instant echo.
@@ -175,21 +167,7 @@ export default function MarketsScreen() {
         </View>
 
         {/* Cycle row order: default (by volume) → % gainers → % losers. */}
-        <Pressable
-          onPress={() => setSort(nextSort)}
-          hitSlop={6}
-          style={[styles.sortBtn, sort !== 'default' && styles.sortBtnActive]}
-          accessibilityRole="button"
-          accessibilityLabel={
-            sort === 'gainers'
-              ? 'Sorted by top gainers'
-              : sort === 'losers'
-                ? 'Sorted by top losers'
-                : 'Sort by 24h percent change'
-          }>
-          <Ionicons name={SORT_META[sort].icon} size={14} color={SORT_META[sort].color} />
-          <AppText style={[styles.sortLabel, { color: SORT_META[sort].color }]}>%</AppText>
-        </Pressable>
+        <SortControl value={sort} onChange={setSort} />
       </View>
 
       {isLoading || isRestoring ? (
@@ -238,16 +216,5 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: Colors.surfaceAlt },
   chipLabel: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
   chipLabelActive: { color: Colors.text },
-  sortBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.surface,
-  },
-  sortBtnActive: { backgroundColor: Colors.surfaceAlt },
-  sortLabel: { fontSize: 13, fontWeight: '700' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

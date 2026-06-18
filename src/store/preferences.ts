@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import type { SortMode } from '@/components/SortControl';
 import { mmkvStorage } from '@/lib/mmkv';
 
 /** USD threshold below which a balance counts as "dust". */
@@ -16,6 +17,12 @@ interface PreferencesState {
   /** Privacy mode: mask account values/amounts behind dots (eye toggle). Off by default. */
   privacyMode: boolean;
   setPrivacyMode: (value: boolean) => void;
+  /** Markets-tab row order (default = by volume). Remembered across launches. */
+  marketsSort: SortMode;
+  setMarketsSort: (value: SortMode) => void;
+  /** Watchlist row order (default = the list's manual order). Remembered across launches. */
+  watchlistSort: SortMode;
+  setWatchlistSort: (value: SortMode) => void;
 }
 
 export const usePreferences = create<PreferencesState>()(
@@ -25,6 +32,10 @@ export const usePreferences = create<PreferencesState>()(
       setHideSmallBalances: (value) => set({ hideSmallBalances: value }),
       privacyMode: false,
       setPrivacyMode: (value) => set({ privacyMode: value }),
+      marketsSort: 'default',
+      setMarketsSort: (value) => set({ marketsSort: value }),
+      watchlistSort: 'default',
+      setWatchlistSort: (value) => set({ watchlistSort: value }),
     }),
     {
       name: 'preferences-v1',

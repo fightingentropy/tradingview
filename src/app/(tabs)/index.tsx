@@ -11,6 +11,7 @@ import ReorderableList, {
   type ReorderableListReorderEvent,
 } from 'react-native-reorderable-list';
 
+import { SortControl } from '@/components/SortControl';
 import { SymbolRow } from '@/components/SymbolRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
@@ -20,6 +21,7 @@ import { Colors, Spacing } from '@/constants/theme';
 import type { Instrument, Quote } from '@/domain/types';
 import { useInstrumentsByIds, useMarkets } from '@/data/useMarkets';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
+import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
 // SymbolRow is fixed-height: 40px logo + 13px padding top/bottom + a hairline
@@ -141,6 +143,26 @@ export default function WatchlistScreen() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [sortKey, setSortKey] = useState<SortKey>('manual');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Quick glass % sort (persisted). Non-destructive: it reorders the *view* only,
+  // leaving the saved manual order intact as 'default'.
+  const watchlistSort = usePreferences((s) => s.watchlistSort);
+  const setWatchlistSort = usePreferences((s) => s.setWatchlistSort);
+
+  // While editing we always show the raw manual order so drag-to-reorder operates on
+  // real positions rather than a sorted snapshot.
+  const displayed = useMemo(() => {
+    if (editing || watchlistSort === 'default') return instruments;
+    const arr = [...instruments];
+    arr.sort((a, b) => {
+      const ca = data?.quotes[a.id]?.change24hPct;
+      const cb = data?.quotes[b.id]?.change24hPct;
+      if (ca == null && cb == null) return 0;
+      if (ca == null) return 1;
+      if (cb == null) return -1;
+      return watchlistSort === 'gainers' ? cb - ca : ca - cb;
+    });
+    return arr;
+  }, [instruments, editing, watchlistSort, data]);
 
   // Pull-to-refresh is tracked separately from react-query's background fetching so
   // the cold-launch refetch doesn't pop the RefreshControl spinner at the top —
@@ -317,7 +339,16 @@ export default function WatchlistScreen() {
         <WatchlistHeader onMore={() => setMenuOpen(true)} onAdd={onAdd} />
       )}
 
-      {!editing ? <WatchlistTabs /> : null}
+      {!editing ? (
+        <View style={styles.tabsRow}>
+          <View style={styles.tabsFlex}>
+            <WatchlistTabs />
+          </View>
+          <View style={styles.sortSlot}>
+            <SortControl value={watchlistSort} onChange={setWatchlistSort} />
+          </View>
+        </View>
+      ) : null}
 
       {isLoading || isRestoring ? (
         <View style={styles.center}>
@@ -338,7 +369,7 @@ export default function WatchlistScreen() {
       ) : (
         <Animated.View style={[styles.listWrap, { opacity: dim }]}>
           <ReorderableList
-            data={instruments}
+            data={displayed}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
             getItemLayout={getItemLayout}
@@ -399,4 +430,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   listWrap: { flex: 1 },
   retry: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg },
+  // Watchlist tabs (scrollable) on the left, the glass % sort pinned on the right.
+  tabsRow: { flexDirection: 'row', alignItems: 'center' },
+  tabsFlex: { flex: 1, minWidth: 0 },
+  sortSlot: { paddingLeft: Spacing.xs, paddingRight: Spacing.md },
 });
