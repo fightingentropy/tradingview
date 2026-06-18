@@ -510,9 +510,17 @@ export interface HlFill {
   dir: string;
   px: number;
   size: number;
-  /** Realized PnL booked by this fill (closes only; 0 for opens). */
+  /**
+   * GROSS realized PnL booked by this fill, BEFORE fees (closes only; 0 for
+   * opens). Hyperliquid reports the fee separately, so net realized = closedPnl − fee.
+   */
   closedPnl: number;
+  /** Total fee in USDC for this fill; a NEGATIVE value is a maker rebate. */
   fee: number;
+  /** True if the fill crossed the book (taker); false = maker (may earn a rebate). */
+  crossed: boolean;
+  /** L1 transaction hash, for an explorer link (may be empty on some fills). */
+  hash: string;
   timestamp: number;
 }
 
@@ -527,6 +535,7 @@ interface RawFill {
   fee?: string;
   oid?: number;
   hash?: string;
+  crossed?: boolean;
 }
 
 /** Recent fills (trade history), newest first, capped to `limit`. Read-only (public address). */
@@ -546,6 +555,8 @@ export async function fetchUserFills(
       size: n(f.sz),
       closedPnl: n(f.closedPnl),
       fee: n(f.fee),
+      crossed: f.crossed ?? false,
+      hash: f.hash ?? '',
       timestamp: f.time,
     }))
     .sort((a, b) => b.timestamp - a.timestamp)

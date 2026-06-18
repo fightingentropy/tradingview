@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MarginSheet } from '@/components/MarginSheet';
 import { SymbolLogo } from '@/components/SymbolLogo';
@@ -48,6 +48,28 @@ function whenLabel(ts: number): string {
   if (d.toDateString() === now.toDateString()) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
+
+/** Fuller timestamp for an expanded row: "Jun 18, 16:45:48". */
+function fullWhen(ts: number): string {
+  const d = new Date(ts);
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+/**
+ * Money for the expanded trade breakdown. Sub-$10 amounts (small PnLs and
+ * sub-cent fees) get up to 4 dp so the gross − fee = net arithmetic visibly
+ * reconciles and tiny fees aren't hidden by cent-rounding; larger amounts stay
+ * at 2 dp. Always at least 2 dp.
+ */
+function moneyExact(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 10 || a === 0) return a.toFixed(2);
+  const trimmed = a.toFixed(4).replace(/0+$/, '');
+  const decimals = trimmed.length - trimmed.indexOf('.') - 1;
+  return decimals < 2 ? a.toFixed(2) : trimmed;
+}
+const usdExact = (v: number) => '$' + moneyExact(v);
+const signMoneyExact = (v: number) => (v >= 0 ? '+' : '-') + '$' + moneyExact(v);
 
 /** A pending "Limit Close" ticket spawned from a position. */
 interface CloseTicket {
@@ -505,7 +527,14 @@ export default function AccountScreen() {
         ) : (
           <View style={styles.list}>
             {fills!.map((f) => (
-              <FillCard key={f.key} f={f} instrument={instrumentForCoin(f.coin)} hidden={privacyMode} />
+              <FillCard
+                key={f.key}
+                f={f}
+                instrument={instrumentForCoin(f.coin)}
+                hidden={privacyMode}
+                expanded={expanded.has('fill:' + f.key)}
+                onToggle={() => toggleExpand('fill:' + f.key)}
+              />
             ))}
           </View>
         )}
@@ -970,19 +999,37 @@ function FillCard({
   f,
   instrument,
   hidden,
+  expanded,
+  onToggle,
 }: {
   f: HlFill;
   instrument: Instrument | undefined;
   hidden: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const symbol = instrument?.symbol ?? cleanCoin(f.coin);
   const decimals = priceDecimalsFor(instrument?.priceDecimals ?? 6, f.px);
   const sideColor = f.side === 'buy' ? Colors.up : Colors.down;
   const pnlColor = f.closedPnl >= 0 ? Colors.up : Colors.down;
   const m = (s: string) => (hidden ? MASK : s);
+
+  const isXyz = f.coin.startsWith('xyz:');
+  const tradeValue = f.px * f.size;
+  const isRebate = f.fee < 0;
+  // Fee shown as its P&L impact: a paid fee is negative, a maker rebate positive.
+  const feeText = signMoneyExact(-f.fee);
+  const netPnl = f.closedPnl - f.fee;
+  const netColor = netPnl >= 0 ? Colors.up : Colors.down;
+  // Only closing fills realize PnL; opens book 0. Show the gross→net split only then.
+  const showPnl = f.closedPnl !== 0 || /close|reduce/i.test(f.dir);
+  const hashValid = /^0x[0-9a-fA-F]{2,}$/.test(f.hash);
+
   return (
     <View style={styles.card}>
-      <View style={styles.cardHead}>
+      <Pressable
+        style={({ pressed }) => [styles.cardHead, pressed && styles.pressed]}
+        onPress={onToggle}>
         {instrument ? (
           <SymbolLogo instrument={instrument} size={40} />
         ) : (
@@ -1000,17 +1047,73 @@ function FillCard({
                 {f.dir}
               </AppText>
             </View>
+            {isXyz ? (
+              <View style={styles.xyzBadge}>
+                <AppText variant="caption" muted>
+                  xyz
+                </AppText>
+              </View>
+            ) : null}
           </View>
           <AppText style={styles.sub} numeric numberOfLines={1}>
             {m(`${qty(f.size)} ${symbol}`)} @ ${formatPrice(f.px, decimals)} · {whenLabel(f.timestamp)}
           </AppText>
         </View>
+        {/* At-a-glance figure is the NET realized PnL (after fees), matching HL's web
+            "Closed PNL"; the gross→fee→net split lives in the expanded detail. */}
         {f.closedPnl !== 0 ? (
-          <AppText style={[styles.pnl, { color: pnlColor }]} numeric numberOfLines={1}>
-            {m(signedUsd(f.closedPnl))}
+          <AppText style={[styles.pnl, { color: netColor }]} numeric numberOfLines={1}>
+            {m(signedUsd(netPnl))}
           </AppText>
         ) : null}
-      </View>
+        <Ionicons
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color={Colors.textFaint}
+          style={styles.chevron}
+        />
+      </Pressable>
+
+      {expanded ? (
+        <View style={styles.detail}>
+          <View style={styles.gridRow}>
+            <Cell label="Trade Value" value={m(usdExact(tradeValue))} />
+            <Cell
+              label={isRebate ? 'Rebate' : 'Fee'}
+              value={m(feeText)}
+              color={isRebate ? Colors.up : undefined}
+            />
+            <Cell label="Type" value={f.crossed ? 'Taker' : 'Maker'} />
+          </View>
+          <View style={styles.gridRow}>
+            <Cell
+              label="Closed PnL"
+              value={showPnl ? m(signMoneyExact(f.closedPnl)) : '—'}
+              color={showPnl ? pnlColor : undefined}
+              sub={showPnl ? 'before fees' : undefined}
+            />
+            <Cell
+              label="Net PnL"
+              value={showPnl ? m(signMoneyExact(netPnl)) : '—'}
+              color={showPnl ? netColor : undefined}
+              sub={showPnl ? 'after fees' : undefined}
+            />
+            <Cell label="Time" value={fullWhen(f.timestamp)} />
+          </View>
+
+          {hashValid ? (
+            <Pressable
+              style={styles.chartLink}
+              onPress={() => Linking.openURL(`https://app.hyperliquid.xyz/explorer/tx/${f.hash}`)}
+              hitSlop={6}>
+              <AppText variant="caption" color={Colors.accent}>
+                View on explorer
+              </AppText>
+              <Ionicons name="open-outline" size={13} color={Colors.accent} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
