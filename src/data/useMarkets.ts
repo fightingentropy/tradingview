@@ -35,6 +35,22 @@ async function loadAllMarkets(): Promise<MarketsData> {
   return { instruments, byId, byCoinKey, quotes };
 }
 
+/**
+ * Guarantee `byCoinKey` is a real `Map` at every consumer. The query cache is
+ * JSON-persisted (see queryClient), and a `Map` isn't JSON-serializable — it
+ * rehydrates as a plain `{}` on a cold start, so calling `.get` on it would throw
+ * (an uncaught render error → hard app crash). Rebuild it from the JSON-safe
+ * `instruments` array on read. A freshly-fetched value already carries a Map and
+ * is returned untouched, so there's no extra allocation or re-render in the steady
+ * state.
+ */
+function withCoinKeyIndex(data: MarketsData): MarketsData {
+  if (data.byCoinKey instanceof Map) return data;
+  const byCoinKey = new Map<string, Instrument>();
+  for (const i of data.instruments) byCoinKey.set(i.coinKey, i);
+  return { ...data, byCoinKey };
+}
+
 /** Full instrument catalog + 24h snapshot quotes, refreshed periodically. */
 export function useMarkets() {
   return useQuery({
@@ -45,6 +61,8 @@ export function useMarkets() {
     // occasional refresh, and not at all while the app is backgrounded.
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
+    // Repair the rehydrated `byCoinKey` Map (see {@link withCoinKeyIndex}).
+    select: withCoinKeyIndex,
   });
 }
 
