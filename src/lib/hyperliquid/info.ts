@@ -16,13 +16,16 @@ export const XYZ_DEX = 'xyz';
 /**
  * Perp order asset-ids (the `a` field in an order action): the default dex uses the
  * bare universe index, while a builder/HIP-3 dex at `perpDexs` index `d` (d ≥ 1) uses
- *   100000 + (d − 1) * 10000 + universeIndex   (Hyperliquid SDK formula).
- * xyz is `perpDexs[1]` → offset 100000. We resolve the index LIVE rather than hardcode
- * it, because a wrong offset routes an order to a DIFFERENT dex's asset (e.g. 110000
- * lands on Felix Exchange, `perpDexs[2]`) — dangerous with real funds. Reads use the
+ *   110000 + (d − 1) * 10000 + universeIndex
+ * This matches the Hyperliquid SDK, which skips the null `perpDexs[0]` then offsets the
+ * i-th builder dex by `110000 + i * 10000`. So xyz (`perpDexs[1]`) → 110000 and Felix
+ * (`perpDexs[2]`) → 120000. (The old base of 100000 sent 100013 for AMZN, which decodes
+ * to perp_dex_index 0 — the null/default dex — and the API rejected it as "Invalid
+ * spot".) We resolve the index LIVE rather than hardcode it, because a wrong offset
+ * routes an order to a DIFFERENT dex's asset — dangerous with real funds. Reads use the
  * `dex` param and don't need this.
  */
-const PERP_DEX_OFFSET_BASE = 100000;
+const PERP_DEX_OFFSET_BASE = 110000;
 const PERP_DEX_OFFSET_STEP = 10000;
 
 /**
@@ -67,6 +70,8 @@ export interface HlPosition {
   liquidationPx: number | null;
   marginUsed: number;
   maxLeverage: number;
+  /** Net funding received since the position opened (positive = collected, negative = paid). */
+  funding: number;
 }
 
 /** A token balance in the spot wallet (separate from perp collateral). */
@@ -146,6 +151,8 @@ interface RawClearinghouse {
       liquidationPx: string | null;
       marginUsed: string;
       maxLeverage: number;
+      // Cumulative funding the trader has *paid* (positive = paid, negative = received).
+      cumFunding?: { allTime: string; sinceOpen: string; sinceChange: string };
     };
   }[];
 }
@@ -154,8 +161,8 @@ const n = (v: string | null | undefined) => toNum(v ?? null) ?? 0;
 
 /**
  * Resolve a builder dex's order-id offset from its live `perpDexs` index:
- * index 0 = default (offset 0); index d ≥ 1 = 100000 + (d − 1) * 10000. Falls back to
- * the first-builder offset (100000) if the list can't be read. Resolving it live (vs a
+ * index 0 = default (offset 0); index d ≥ 1 = 110000 + (d − 1) * 10000. Falls back to
+ * the first-builder offset (110000) if the list can't be read. Resolving it live (vs a
  * hardcoded constant) guards against the dex list being reordered, which would otherwise
  * silently route orders to the wrong dex's asset.
  */
@@ -197,6 +204,47 @@ export async function fetchHlMeta(network: HlNetwork = 'mainnet'): Promise<Recor
     };
   });
   return out;
+}
+
+export interface HlActiveAsset {
+  /** Current leverage set for this asset (1..maxLeverage). */
+  leverage: number;
+  /** Margin mode: true = cross, false = isolated. */
+  isCross: boolean;
+  /** USDC collateral available to open a buy / sell (already nets open orders + margin). */
+  availBuy: number;
+  availSell: number;
+  /** Max order size in coins for a buy / sell at the current leverage. */
+  maxSzBuy: number;
+  maxSzSell: number;
+  markPx: number;
+}
+
+/**
+ * Per-asset trading context for an address: current leverage + margin mode, USDC buying
+ * power, and max order size — exactly what the order ticket needs to show Margin Required,
+ * Available, and the size %. Works for `xyz:NAME` coins directly (no `dex` param needed).
+ */
+export async function fetchActiveAssetData(
+  address: string,
+  coin: string,
+  network: HlNetwork = 'mainnet',
+): Promise<HlActiveAsset> {
+  const d = await infoRequest<{
+    leverage: { type: 'cross' | 'isolated'; value: number };
+    maxTradeSzs: [string, string];
+    availableToTrade: [string, string];
+    markPx: string;
+  }>(network, { type: 'activeAssetData', user: address, coin });
+  return {
+    leverage: d.leverage.value,
+    isCross: d.leverage.type === 'cross',
+    availBuy: n(d.availableToTrade?.[0]),
+    availSell: n(d.availableToTrade?.[1]),
+    maxSzBuy: n(d.maxTradeSzs?.[0]),
+    maxSzSell: n(d.maxTradeSzs?.[1]),
+    markPx: n(d.markPx),
+  };
 }
 
 export interface HlUserRole {
@@ -352,6 +400,8 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
         liquidationPx: p.liquidationPx != null ? n(p.liquidationPx) : null,
         marginUsed: n(p.marginUsed),
         maxLeverage: p.maxLeverage,
+        // HL reports funding *paid*; negate so positive = collected by the trader.
+        funding: -n(p.cumFunding?.sinceOpen),
       });
     }
   });
@@ -376,4 +426,128 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     vaultValue,
     totalEquity,
   };
+}
+
+// ---- Open orders ----------------------------------------------------------
+
+export interface HlOpenOrder {
+  oid: number;
+  coin: string;
+  /** Which dex holds it (cosmetic badge; cancel resolves the asset-id from meta[coin]). */
+  dex: 'default' | 'xyz';
+  side: 'buy' | 'sell';
+  limitPx: number;
+  /** Remaining size in coins. */
+  size: number;
+  /** Original order size in coins. */
+  origSize: number;
+  /** e.g. "Limit", "Stop Market", "Take Profit Limit". */
+  orderType: string;
+  reduceOnly: boolean;
+  isTrigger: boolean;
+  triggerPx: number | null;
+  /** Placed-at, ms since epoch. */
+  timestamp: number;
+}
+
+interface RawFrontendOrder {
+  oid: number;
+  coin: string;
+  side: 'B' | 'A';
+  limitPx: string;
+  sz: string;
+  origSz: string;
+  orderType?: string;
+  reduceOnly?: boolean;
+  isTrigger?: boolean;
+  triggerPx?: string | null;
+  timestamp: number;
+}
+
+function mapFrontendOrder(o: RawFrontendOrder): HlOpenOrder {
+  const trig = o.triggerPx != null ? toNum(o.triggerPx) : null;
+  return {
+    oid: o.oid,
+    coin: o.coin,
+    dex: o.coin.includes(':') ? 'xyz' : 'default',
+    side: o.side === 'B' ? 'buy' : 'sell',
+    limitPx: n(o.limitPx),
+    size: n(o.sz),
+    origSize: n(o.origSz),
+    orderType: o.orderType || 'Limit',
+    reduceOnly: !!o.reduceOnly,
+    isTrigger: !!o.isTrigger,
+    triggerPx: trig && trig > 0 ? trig : null,
+    timestamp: o.timestamp,
+  };
+}
+
+/**
+ * Resting (pending) orders across the default and trade.xyz dexes. We query both and
+ * dedupe by oid — robust whether `frontendOpenOrders` is global or per-dex. Newest first.
+ * Read-only (public address).
+ */
+export async function fetchOpenOrders(address: string, network: HlNetwork = 'mainnet'): Promise<HlOpenOrder[]> {
+  const [base, xyz] = await Promise.all([
+    infoRequest<RawFrontendOrder[]>(network, { type: 'frontendOpenOrders', user: address }),
+    infoRequest<RawFrontendOrder[]>(network, { type: 'frontendOpenOrders', user: address, dex: XYZ_DEX }).catch(
+      () => [] as RawFrontendOrder[],
+    ),
+  ]);
+  const byOid = new Map<number, HlOpenOrder>();
+  for (const o of [...(base ?? []), ...(xyz ?? [])]) byOid.set(o.oid, mapFrontendOrder(o));
+  return [...byOid.values()].sort((a, b) => b.timestamp - a.timestamp);
+}
+
+// ---- Trade history (fills) ------------------------------------------------
+
+export interface HlFill {
+  /** oid + time uniquely identify a fill (one order can fill in several pieces). */
+  key: string;
+  coin: string;
+  side: 'buy' | 'sell';
+  /** Human-readable direction from HL: "Open Long", "Close Short", "Buy", … */
+  dir: string;
+  px: number;
+  size: number;
+  /** Realized PnL booked by this fill (closes only; 0 for opens). */
+  closedPnl: number;
+  fee: number;
+  timestamp: number;
+}
+
+interface RawFill {
+  coin: string;
+  px: string;
+  sz: string;
+  side: 'B' | 'A';
+  time: number;
+  dir?: string;
+  closedPnl?: string;
+  fee?: string;
+  oid?: number;
+  hash?: string;
+}
+
+/** Recent fills (trade history), newest first, capped to `limit`. Read-only (public address). */
+export async function fetchUserFills(
+  address: string,
+  network: HlNetwork = 'mainnet',
+  limit = 60,
+): Promise<HlFill[]> {
+  const raw = await infoRequest<RawFill[]>(network, { type: 'userFills', user: address });
+  return (raw ?? [])
+    .map((f, i): HlFill => ({
+      key: `${f.oid ?? f.hash ?? 'f'}-${f.time}-${i}`,
+      coin: f.coin,
+      side: f.side === 'B' ? 'buy' : 'sell',
+      dir: f.dir || (f.side === 'B' ? 'Buy' : 'Sell'),
+      px: n(f.px),
+      size: n(f.sz),
+      closedPnl: n(f.closedPnl),
+      fee: n(f.fee),
+      timestamp: f.time,
+    }))
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, limit);
 }

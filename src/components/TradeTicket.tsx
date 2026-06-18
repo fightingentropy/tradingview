@@ -1,23 +1,30 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  InputAccessoryView,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
-import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
+import { useActiveAsset } from '@/data/useActiveAsset';
 import { useHlAccount } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
-import { placeOrder, type OrderResult } from '@/lib/hyperliquid/exchange';
+import { placeOrder, updateLeverage, type OrderResult } from '@/lib/hyperliquid/exchange';
 import { formatPrice, usd } from '@/lib/format';
 import { queryKeys } from '@/lib/queryKeys';
 import { useHlConnection } from '@/store/hlConnection';
@@ -44,10 +51,41 @@ export interface TradeTicketProps {
   closing?: boolean;
 }
 
+/** Market orders cross the book as an IOC limit at mark ± this — kept in sync with the order. */
+const MARKET_SLIPPAGE = 0.05;
+
+/** Ties the numeric fields to their keyboard accessory bar (decimal-pads have no Done key). */
+const ACCESSORY_ID = 'trade-ticket-kb';
+
+const LIQUID_GLASS = isLiquidGlassAvailable();
+// Translucent fills so the dark glass reads through the grouped panels.
+const GLASS_FILL = 'rgba(255,255,255,0.06)';
+const GLASS_FILL_STRONG = 'rgba(255,255,255,0.13)';
+const GLASS_INSET = 'rgba(0,0,0,0.28)';
+const GLASS_HAIRLINE = 'rgba(255,255,255,0.10)';
+
+/** The sheet surface: iOS 26 dark Liquid Glass when available, else a near-black panel. */
+function SheetSurface({ style, children }: { style: StyleProp<ViewStyle>; children: ReactNode }) {
+  if (LIQUID_GLASS) {
+    return (
+      <GlassView style={style} glassEffectStyle="regular" colorScheme="dark">
+        {children}
+      </GlassView>
+    );
+  }
+  return <View style={[style, styles.sheetFallback]}>{children}</View>;
+}
+
 const num = (s: string) => {
   const v = Number(s.replace(/[^0-9.]/g, ''));
   return isFinite(v) ? v : 0;
 };
+
+/** A short ladder of leverage presets up to (and including) the asset's max. */
+function levPresets(maxLev: number): number[] {
+  const base = [1, 2, 5, 10, 20].filter((x) => x < maxLev);
+  return Array.from(new Set([...base, Math.max(1, maxLev)])).sort((a, b) => a - b);
+}
 
 export function TradeTicket({
   visible,
@@ -68,29 +106,100 @@ export function TradeTicket({
   const demo = useHlConnection((s) => s.demo);
   const { data: meta } = useHlMeta();
   const { data: account } = useHlAccount();
+  const { data: active } = useActiveAsset(coin);
 
   const [side, setSide] = useState<Side>(initialSide ?? 'buy');
   const [orderType, setOrderType] = useState<OrderType>(initialType ?? 'market');
-  const [sizeMode, setSizeMode] = useState<SizeMode>(initialSizeCoin != null ? 'coin' : 'usd');
+  // Default to sizing in the asset itself (1 AMZN, not $1) — toggle to USD if wanted.
+  const [sizeMode, setSizeMode] = useState<SizeMode>('coin');
   const [amount, setAmount] = useState(initialSizeCoin != null ? String(initialSizeCoin) : '');
   const [limitPrice, setLimitPrice] = useState('');
   // In close mode reduce-only is forced on and not user-toggleable.
   const [reduceOnly, setReduceOnly] = useState(!!closing);
+  // Leverage / margin overrides — null means "follow the account's current setting".
+  const [levOverride, setLevOverride] = useState<number | null>(null);
+  const [crossOverride, setCrossOverride] = useState<boolean | null>(null);
   const [result, setResult] = useState<OrderResult | null>(null);
+  // Which numeric field owns the keyboard, so the accessory steppers nudge the right one.
+  const [focused, setFocused] = useState<'size' | 'limit' | null>(null);
 
   const assetMeta = meta?.[coin];
+  const maxLev = Math.max(1, assetMeta?.maxLeverage ?? 1);
   const refPx = orderType === 'limit' && num(limitPrice) > 0 ? num(limitPrice) : markPx;
+
+  // Effective leverage / margin mode: an explicit user pick wins, else the live
+  // account setting, else a safe default until activeAssetData loads.
+  const leverage = levOverride ?? active?.leverage ?? Math.min(10, maxLev);
+  const isCross = crossOverride ?? active?.isCross ?? true;
+  const userSetLev = levOverride !== null || crossOverride !== null;
+
   const coinSize = sizeMode === 'usd' ? (refPx > 0 ? num(amount) / refPx : 0) : num(amount);
   const notional = coinSize * refPx;
+  const marginRequired = leverage > 0 ? notional / leverage : 0;
   const sideColor = side === 'buy' ? Colors.up : Colors.down;
+
+  // Buying power for this side, and the largest order it supports at this leverage.
+  const avail = active
+    ? side === 'buy'
+      ? active.availBuy
+      : active.availSell
+    : (account?.availableUsdc ?? account?.withdrawable ?? 0);
+  const maxSz = refPx > 0 ? (avail * leverage) / refPx : 0;
+
+  // Estimated liquidation for a *new isolated* position. Cross margin depends on the
+  // whole account, so — like the official app — we show N/A.
+  const liqPrice = useMemo(() => {
+    if (closing || isCross) return null;
+    if (!(notional > 0) || !(refPx > 0) || leverage <= 0) return null;
+    const mmf = 1 / (2 * maxLev); // maintenance margin fraction ≈ half initial at max leverage
+    const s = side === 'buy' ? 1 : -1;
+    const denom = 1 - mmf * s;
+    if (denom === 0) return null;
+    const liq = refPx - (s * refPx * (1 / leverage - mmf)) / denom;
+    return liq > 0 ? liq : null;
+  }, [closing, isCross, notional, refPx, leverage, maxLev, side]);
 
   const tradable = hasKey && !demo;
   const validSize = coinSize > 0 && (orderType === 'market' || num(limitPrice) > 0);
   const canSubmit = tradable && !!assetMeta && validSize;
 
+  const applyPct = (pct: number) => {
+    if (maxSz <= 0) return;
+    const dec = assetMeta?.szDecimals ?? 4;
+    const pow = 10 ** dec;
+    // Round DOWN so 'Max' never overshoots maxSz and trips an exchange reject.
+    const floored = Math.floor(((pct / 100) * maxSz) * pow) / pow;
+    setSizeMode('coin');
+    setAmount(floored > 0 ? String(floored) : '');
+  };
+
+  const dismissKeyboard = () => Keyboard.dismiss();
+
+  // Step the focused field: limit price by one tick, size by 1 coin / $10.
+  const nudge = (dir: 1 | -1) => {
+    if (focused === 'limit') {
+      const tick = 1 / 10 ** priceDecimals;
+      const next = Math.max(0, (num(limitPrice) || markPx) + dir * tick);
+      setLimitPrice(String(Number(next.toFixed(priceDecimals))));
+      return;
+    }
+    const step = sizeMode === 'usd' ? 10 : 1;
+    const dec = sizeMode === 'usd' ? 2 : (assetMeta?.szDecimals ?? 4);
+    const next = Math.max(0, num(amount) + dir * step);
+    setAmount(next > 0 ? String(Number(next.toFixed(dec))) : '');
+  };
+
   const mutation = useMutation({
-    mutationFn: () =>
-      placeOrder({
+    mutationFn: async () => {
+      // If the user changed leverage / margin mode, apply it before the order.
+      const needLevUpdate =
+        !closing &&
+        userSetLev &&
+        (!active || leverage !== active.leverage || isCross !== active.isCross);
+      if (needLevUpdate) {
+        await updateLeverage({ network, assetIndex: assetMeta!.assetIndex, isCross, leverage });
+      }
+      return placeOrder({
         network,
         assetIndex: assetMeta!.assetIndex,
         szDecimals: assetMeta!.szDecimals,
@@ -99,7 +208,9 @@ export function TradeTicket({
         reduceOnly,
         limitPrice: orderType === 'limit' ? num(limitPrice) : undefined,
         markPx,
-      }),
+        slippage: MARKET_SLIPPAGE,
+      });
+    },
     onSuccess: (res) => {
       setResult(res);
       qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
@@ -113,6 +224,8 @@ export function TradeTicket({
     setAmount(initialSizeCoin != null ? String(initialSizeCoin) : '');
     setLimitPrice('');
     setReduceOnly(!!closing);
+    setLevOverride(null);
+    setCrossOverride(null);
     setResult(null);
     mutation.reset();
   };
@@ -130,9 +243,11 @@ export function TradeTicket({
       orderType === 'market'
         ? `~$${formatPrice(markPx, priceDecimals)} (market)`
         : `$${formatPrice(num(limitPrice), priceDecimals)} (limit)`;
+    const levLine = !closing && userSetLev ? `\nLeverage ${leverage}× ${isCross ? 'Cross' : 'Isolated'}` : '';
     Alert.alert(
       `${verb} ${label}?`,
       `${verb} ${sizeStr} ≈ ${usd(notional)}\nat ${priceStr}` +
+        levLine +
         (reduceOnly ? '\nReduce-only' : '') +
         (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet order.'),
       [
@@ -146,13 +261,15 @@ export function TradeTicket({
     );
   };
 
+  const presets = levPresets(maxLev);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
       <Pressable style={styles.backdrop} onPress={close} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.sheetWrap}>
-        <View style={styles.sheet}>
+        <SheetSurface style={styles.sheet}>
           {/* Header */}
           <View style={styles.handle} />
           <View style={styles.headerRow}>
@@ -161,10 +278,10 @@ export function TradeTicket({
               <AppText variant="caption" muted numeric>
                 ${formatPrice(markPx, priceDecimals)}
               </AppText>
-              {assetMeta ? (
+              {!closing && assetMeta ? (
                 <View style={styles.levBadge}>
-                  <AppText variant="caption" muted>
-                    Up to {assetMeta.maxLeverage}x
+                  <AppText variant="caption" color={Colors.text}>
+                    {isCross ? 'Cross' : 'Isolated'} · {leverage}×
                   </AppText>
                 </View>
               ) : null}
@@ -174,7 +291,12 @@ export function TradeTicket({
           {result ? (
             <ResultView coin={label} result={result} priceDecimals={priceDecimals} onDone={close} onAgain={reset} />
           ) : (
-            <>
+            <ScrollView
+              style={styles.body}
+              contentContainerStyle={styles.bodyContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}>
               {/* Buy / Sell — hidden in close mode (the side is fixed to flatten). */}
               {closing ? (
                 <View style={styles.closeBanner}>
@@ -191,9 +313,14 @@ export function TradeTicket({
                       onPress={() => setSide(s)}
                       style={[
                         styles.sideBtn,
-                        side === s && { backgroundColor: (s === 'buy' ? Colors.up : Colors.down) + '22', borderColor: s === 'buy' ? Colors.up : Colors.down },
+                        side === s && {
+                          backgroundColor: (s === 'buy' ? Colors.up : Colors.down) + '22',
+                          borderColor: s === 'buy' ? Colors.up : Colors.down,
+                        },
                       ]}>
-                      <AppText variant="label" color={side === s ? (s === 'buy' ? Colors.up : Colors.down) : Colors.textMuted}>
+                      <AppText
+                        variant="label"
+                        color={side === s ? (s === 'buy' ? Colors.up : Colors.down) : Colors.textMuted}>
                         {s === 'buy' ? 'Buy / Long' : 'Sell / Short'}
                       </AppText>
                     </Pressable>
@@ -215,15 +342,71 @@ export function TradeTicket({
                 ))}
               </View>
 
+              {/* Leverage & margin mode — hidden in close mode. */}
+              {!closing ? (
+                <View style={styles.levCard}>
+                  <View style={styles.levRow}>
+                    <AppText variant="caption" muted>
+                      Margin mode
+                    </AppText>
+                    <View style={styles.marginToggle}>
+                      {([
+                        ['cross', 'Cross'],
+                        ['isolated', 'Isolated'],
+                      ] as const).map(([k, lbl]) => {
+                        const on = (k === 'cross') === isCross;
+                        return (
+                          <Pressable
+                            key={k}
+                            onPress={() => setCrossOverride(k === 'cross')}
+                            style={[styles.marginBtn, on && styles.marginBtnOn]}>
+                            <AppText variant="caption" color={on ? Colors.text : Colors.textMuted}>
+                              {lbl}
+                            </AppText>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                  <View style={styles.levDivider} />
+                  <View style={styles.levRow}>
+                    <AppText variant="caption" muted>
+                      Leverage
+                    </AppText>
+                    <AppText variant="label" numeric color={Colors.text}>
+                      {leverage}×
+                    </AppText>
+                  </View>
+                  <View style={styles.chipRow}>
+                    {presets.map((L) => {
+                      const on = leverage === L;
+                      return (
+                        <Pressable
+                          key={L}
+                          onPress={() => setLevOverride(L)}
+                          style={[styles.chip, on && styles.chipOn]}>
+                          <AppText variant="caption" color={on ? Colors.text : Colors.textMuted}>
+                            {L}×
+                          </AppText>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+
               {/* Limit price */}
               {orderType === 'limit' ? (
                 <Field label="Limit price">
                   <TextInput
                     value={limitPrice}
                     onChangeText={setLimitPrice}
+                    onFocus={() => setFocused('limit')}
                     placeholder={formatPrice(markPx, priceDecimals)}
                     placeholderTextColor={Colors.textFaint}
                     keyboardType="decimal-pad"
+                    keyboardAppearance="dark"
+                    inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
                     style={styles.input}
                   />
                   <AppText variant="caption" muted>
@@ -259,9 +442,12 @@ export function TradeTicket({
                 <TextInput
                   value={amount}
                   onChangeText={setAmount}
+                  onFocus={() => setFocused('size')}
                   placeholder="0.00"
                   placeholderTextColor={Colors.textFaint}
                   keyboardType="decimal-pad"
+                  keyboardAppearance="dark"
+                  inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
                   style={styles.input}
                 />
                 <AppText variant="caption" muted>
@@ -273,23 +459,44 @@ export function TradeTicket({
                 {sizeMode === 'usd'
                   ? `≈ ${coinSize > 0 ? Number(coinSize.toFixed(assetMeta?.szDecimals ?? 4)) : 0} ${label}`
                   : `≈ ${usd(notional)}`}
-                {account
-                  ? `   ·   Available ${usd(account.availableUsdc ?? account.withdrawable)}`
-                  : ''}
               </AppText>
 
-              {/* Reduce-only — locked on when closing. */}
-              <Pressable
-                style={styles.reduceRow}
-                disabled={closing}
-                onPress={() => setReduceOnly((v) => !v)}>
-                <View style={[styles.checkbox, reduceOnly && styles.checkboxOn]}>
-                  {reduceOnly ? <Ionicons name="checkmark" size={13} color={Colors.background} /> : null}
+              {/* Quick size — % of buying power at the selected leverage. */}
+              {!closing ? (
+                <View style={styles.pctRow}>
+                  {[25, 50, 75, 100].map((p) => (
+                    <Pressable
+                      key={p}
+                      onPress={() => applyPct(p)}
+                      disabled={maxSz <= 0}
+                      style={[styles.pctChip, maxSz <= 0 && styles.pctChipDisabled]}>
+                      <AppText variant="caption" color={Colors.text}>
+                        {p === 100 ? 'Max' : `${p}%`}
+                      </AppText>
+                    </Pressable>
+                  ))}
                 </View>
-                <AppText variant="body" muted>
-                  Reduce-only{closing ? ' (closing)' : ''}
-                </AppText>
-              </Pressable>
+              ) : null}
+
+              {/* Order summary */}
+              <View style={styles.infoCard}>
+                <InfoRow label="Order Value" value={notional > 0 ? usd(notional) : '—'} />
+                {!closing ? (
+                  <InfoRow label="Margin Required" value={marginRequired > 0 ? usd(marginRequired) : '—'} />
+                ) : null}
+                {!closing ? (
+                  <InfoRow
+                    label="Liq. Price"
+                    value={liqPrice ? `$${formatPrice(liqPrice, priceDecimals)}` : 'N/A'}
+                    valueColor={liqPrice ? Colors.down : Colors.textMuted}
+                  />
+                ) : null}
+                <InfoRow
+                  label="Slippage"
+                  value={orderType === 'market' ? `Max ${(MARKET_SLIPPAGE * 100).toFixed(0)}%` : '—'}
+                />
+                <InfoRow label="Available" value={usd(avail)} />
+              </View>
 
               {/* Disabled-state hint */}
               {!tradable ? (
@@ -302,7 +509,7 @@ export function TradeTicket({
 
               {/* Submit */}
               <Pressable
-                style={[styles.submit, { backgroundColor: canSubmit ? sideColor : Colors.surfaceAlt }]}
+                style={[styles.submit, { backgroundColor: canSubmit ? sideColor : GLASS_FILL_STRONG }]}
                 onPress={confirm}
                 disabled={!canSubmit || mutation.isPending}>
                 {mutation.isPending ? (
@@ -313,11 +520,51 @@ export function TradeTicket({
                   </AppText>
                 )}
               </Pressable>
-            </>
+            </ScrollView>
           )}
-        </View>
+        </SheetSurface>
+
+        {/* Above-keyboard bar: decimal-pads have no Done key, so this is the only
+            way to dismiss. Steppers nudge the focused field. */}
+        {Platform.OS === 'ios' && !result ? (
+          <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor="#0B0E13">
+            <View style={styles.accessory}>
+              <View style={styles.steppers}>
+                <Pressable onPress={() => nudge(-1)} hitSlop={8} style={styles.stepBtn}>
+                  <Ionicons name="remove" size={20} color={Colors.text} />
+                </Pressable>
+                <View style={styles.stepDivider} />
+                <Pressable onPress={() => nudge(1)} hitSlop={8} style={styles.stepBtn}>
+                  <Ionicons name="add" size={20} color={Colors.text} />
+                </Pressable>
+              </View>
+              <AppText variant="caption" muted>
+                {focused === 'limit' ? 'Limit price' : `Size · ${sizeMode === 'usd' ? 'USD' : label}`}
+              </AppText>
+              <Pressable onPress={dismissKeyboard} hitSlop={8} style={styles.doneBtn}>
+                <Ionicons name="checkmark" size={16} color={Colors.accent} />
+                <AppText variant="label" color={Colors.accent}>
+                  Done
+                </AppText>
+              </Pressable>
+            </View>
+          </InputAccessoryView>
+        ) : null}
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+function InfoRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <View style={styles.infoRow}>
+      <AppText variant="caption" muted>
+        {label}
+      </AppText>
+      <AppText variant="caption" numeric color={valueColor ?? Colors.text}>
+        {value}
+      </AppText>
+    </View>
   );
 }
 
@@ -385,33 +632,42 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000AA' },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000C2' },
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: Radius.lg,
-    borderTopRightRadius: Radius.lg,
+    // Dark Liquid Glass; the faint black scrim deepens it to "black glass" and keeps text legible.
+    backgroundColor: 'rgba(0,0,0,0.20)',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: GLASS_HAIRLINE,
+    overflow: 'hidden',
     padding: Spacing.lg,
     paddingBottom: Spacing.xxl,
     gap: Spacing.md,
+    maxHeight: '92%',
   },
+  // Used only when Liquid Glass isn't available (older iOS) — a near-black solid panel.
+  sheetFallback: { backgroundColor: 'rgba(8,10,14,0.98)' },
+  body: { flexShrink: 1 },
+  bodyContent: { gap: Spacing.md, paddingBottom: Spacing.xs },
   handle: {
     alignSelf: 'center',
-    width: 36,
+    width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.border,
+    backgroundColor: GLASS_FILL_STRONG,
     marginBottom: Spacing.xs,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  levBadge: { backgroundColor: Colors.surfaceAlt, paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.sm },
+  levBadge: { backgroundColor: GLASS_FILL_STRONG, paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.sm },
 
   closeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    backgroundColor: Colors.surfaceAlt,
+    backgroundColor: GLASS_FILL,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -423,38 +679,77 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surfaceAlt,
+    borderColor: GLASS_HAIRLINE,
+    backgroundColor: GLASS_FILL,
   },
 
-  segment: { flexDirection: 'row', backgroundColor: Colors.surfaceAlt, borderRadius: Radius.sm, padding: 3, gap: 3 },
+  segment: { flexDirection: 'row', backgroundColor: GLASS_INSET, borderRadius: Radius.sm, padding: 3, gap: 3 },
   segmentItem: { flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, borderRadius: Radius.sm },
-  segmentItemActive: { backgroundColor: Colors.surfacePress },
+  segmentItemActive: { backgroundColor: GLASS_FILL_STRONG },
 
-  field: { backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.md, gap: 4 },
+  levCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
+  levRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  levDivider: { height: StyleSheet.hairlineWidth, backgroundColor: GLASS_HAIRLINE },
+  marginToggle: { flexDirection: 'row', backgroundColor: GLASS_INSET, borderRadius: Radius.sm, padding: 2, gap: 2 },
+  marginBtn: { paddingHorizontal: Spacing.md, paddingVertical: 5, borderRadius: Radius.sm },
+  marginBtnOn: { backgroundColor: GLASS_FILL_STRONG },
+  chipRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
+  chip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+    backgroundColor: GLASS_FILL,
+    borderWidth: 1,
+    borderColor: GLASS_HAIRLINE,
+    minWidth: 46,
+    alignItems: 'center',
+  },
+  chipOn: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+
+  field: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: 4 },
   fieldHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   inputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  input: { flex: 1, color: Colors.text, fontSize: 22, fontWeight: '700', fontFamily: Fonts.mono, paddingVertical: 2 },
+  // App font (SF Pro) with tabular figures — matches the rest of the app; no monospace.
+  input: { flex: 1, color: Colors.text, fontSize: 24, fontWeight: '700', fontVariant: ['tabular-nums'], paddingVertical: 2 },
   modeToggle: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   convertLine: { marginTop: -Spacing.xs, marginLeft: Spacing.xs },
 
-  reduceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xs },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: Radius.sm,
-    borderWidth: 1.5,
-    borderColor: Colors.textFaint,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxOn: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  pctRow: { flexDirection: 'row', gap: Spacing.sm },
+  pctChip: { flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, borderRadius: Radius.sm, backgroundColor: GLASS_FILL },
+  pctChipDisabled: { opacity: 0.4 },
+
+  infoCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
+  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 
   hint: { marginTop: Spacing.xs },
   submit: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md, marginTop: Spacing.xs, minHeight: 48 },
 
+  accessory: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: 'transparent',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: GLASS_HAIRLINE,
+  },
+  steppers: { flexDirection: 'row', alignItems: 'center', backgroundColor: GLASS_FILL, borderRadius: Radius.sm, overflow: 'hidden' },
+  stepBtn: { paddingHorizontal: Spacing.lg, paddingVertical: 7 },
+  stepDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch', backgroundColor: GLASS_HAIRLINE },
+  doneBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 7,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.accentSoft,
+  },
+
   result: { alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.lg },
   resultBtns: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md, alignSelf: 'stretch' },
   resultBtn: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md },
-  resultBtnGhost: { backgroundColor: Colors.surfaceAlt },
+  resultBtnGhost: { backgroundColor: GLASS_FILL },
 });

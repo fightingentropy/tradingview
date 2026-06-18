@@ -11,5 +11,9 @@ export const queryKeys = {
   hlAccount: (network: HlNetwork, account: string) => ['hl-account', network, account] as const,
   /** Prefix that invalidation targets so it matches any {@link hlAccount} key. */
   hlAccountPrefix: () => ['hl-account'] as const,
+  hlOpenOrders: (network: HlNetwork, account: string) => ['hl-open-orders', network, account] as const,
+  hlOpenOrdersPrefix: () => ['hl-open-orders'] as const,
+  hlFills: (network: HlNetwork, account: string) => ['hl-fills', network, account] as const,
+  hlFillsPrefix: () => ['hl-fills'] as const,
   hlMeta: (network: HlNetwork) => ['hl-meta', network] as const,
 };

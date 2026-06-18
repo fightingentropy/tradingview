@@ -1,6 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { fetchHlAccount, fetchUserRole, type HlAccount, type HlNetwork } from '@/lib/hyperliquid/info';
+import {
+  fetchHlAccount,
+  fetchOpenOrders,
+  fetchUserFills,
+  fetchUserRole,
+  type HlAccount,
+  type HlFill,
+  type HlNetwork,
+  type HlOpenOrder,
+} from '@/lib/hyperliquid/info';
 import { getAgentKey } from '@/lib/hyperliquid/keyStore';
 import { addressFromPrivateKey } from '@/lib/hyperliquid/sign';
 import { queryKeys } from '@/lib/queryKeys';
@@ -76,5 +85,33 @@ export function useHlAccount() {
     enabled: !!account,
     refetchInterval: 5_000,
     staleTime: 4_000,
+  });
+}
+
+/** Resting (pending) orders for the resolved master account. Read-only. */
+export function useHlOpenOrders() {
+  const network = useHlConnection((s) => s.network);
+  const { data: account } = useTradingAddress();
+
+  return useQuery<HlOpenOrder[]>({
+    queryKey: queryKeys.hlOpenOrders(network, account ?? ''),
+    queryFn: () => fetchOpenOrders(account as string, network),
+    enabled: !!account,
+    refetchInterval: 8_000,
+    staleTime: 6_000,
+  });
+}
+
+/** Recent fills (trade history) for the resolved master account. Read-only. */
+export function useHlFills() {
+  const network = useHlConnection((s) => s.network);
+  const { data: account } = useTradingAddress();
+
+  return useQuery<HlFill[]>({
+    queryKey: queryKeys.hlFills(network, account ?? ''),
+    queryFn: () => fetchUserFills(account as string, network),
+    enabled: !!account,
+    refetchInterval: 20_000,
+    staleTime: 15_000,
   });
 }

@@ -144,6 +144,66 @@ export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
   return normalizeStatus(first);
 }
 
+export interface UpdateLeverageParams {
+  network: HlNetwork;
+  /** Order asset-id (same scheme as orders — incl. the xyz 110000+ offset). */
+  assetIndex: number;
+  isCross: boolean;
+  /** Integer leverage, 1..maxLeverage. */
+  leverage: number;
+}
+
+/**
+ * Set the account's leverage + margin mode for an asset (Hyperliquid's `updateLeverage`).
+ * Asset-level setting that applies to the next order and any open position on that asset,
+ * so it's gated behind the same confirm as the order itself. Real funds on mainnet.
+ */
+export async function updateLeverage(p: UpdateLeverageParams): Promise<void> {
+  const key = getAgentKey();
+  if (!key) throw new Error('No API wallet key set. Add one in Settings to trade.');
+
+  const action = {
+    type: 'updateLeverage',
+    asset: p.assetIndex,
+    isCross: p.isCross,
+    leverage: Math.round(p.leverage),
+  };
+  const nonce = nextNonce();
+  const signature = signL1Action(key, action, nonce, p.network === 'mainnet', null);
+
+  const res = await fetchWithTimeout(`${HL_API[p.network]}/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, nonce, signature, vaultAddress: null }),
+  });
+  if (!res.ok) throw new Error(`Hyperliquid exchange ${res.status}`);
+  const json = (await res.json()) as { status?: string; response?: unknown };
+  if (json.status !== 'ok') {
+    throw new Error(
+      typeof json.response === 'string' ? json.response : `Couldn't set leverage (${res.status})`,
+    );
+  }
+}
+
+export interface CancelOrderParams {
+  network: HlNetwork;
+  /** Order asset-id (same scheme as placing — incl. the xyz 110000+ offset). */
+  assetIndex: number;
+  oid: number;
+}
+
+/** Cancel a single resting order. Real funds on mainnet — gate behind a confirm. */
+export async function cancelOrder(p: CancelOrderParams): Promise<void> {
+  const key = getAgentKey();
+  if (!key) throw new Error('No API wallet key set. Add one in Settings to trade.');
+
+  const action = { type: 'cancel', cancels: [{ a: p.assetIndex, o: p.oid }] };
+  const nonce = nextNonce();
+  const signature = signL1Action(key, action, nonce, p.network === 'mainnet', null);
+  // exchangePost throws on a non-ok response or an errored status (e.g. already filled/canceled).
+  await exchangePost(p.network, action, signature, nonce);
+}
+
 export interface MarketCloseParams {
   network: HlNetwork;
   assetIndex: number;

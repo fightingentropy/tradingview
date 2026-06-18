@@ -10,10 +10,10 @@ import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useMarkets } from '@/data/useMarkets';
-import { useHlAccount } from '@/data/useHlAccount';
+import { useHlAccount, useHlFills, useHlOpenOrders } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
-import { marketClose, reversePosition } from '@/lib/hyperliquid/exchange';
-import type { HlPosition, HlSpotBalance } from '@/lib/hyperliquid/info';
+import { cancelOrder, marketClose, reversePosition } from '@/lib/hyperliquid/exchange';
+import type { HlFill, HlOpenOrder, HlPosition, HlSpotBalance } from '@/lib/hyperliquid/info';
 import { formatCompact, formatPercent, formatPrice, priceDecimalsFor, signedUsd, usd } from '@/lib/format';
 import { queryKeys } from '@/lib/queryKeys';
 import type { Instrument } from '@/domain/types';
@@ -38,6 +38,16 @@ function tokenAmt(v: number): string {
 /** Clean ticker for a position coin ("xyz:SNDK" → "SNDK"). */
 const cleanCoin = (coin: string) => coin.replace(/^xyz:/, '');
 
+const pad2 = (n: number) => (n < 10 ? '0' + n : String(n));
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** Compact timestamp: "HH:MM" for today, else "Mon D" (Intl-free for Hermes). */
+function whenLabel(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
 /** A pending "Limit Close" ticket spawned from a position. */
 interface CloseTicket {
   coin: string;
@@ -57,11 +67,13 @@ export default function AccountScreen() {
   const hasKey = useHlConnection((s) => s.hasKey);
   const connectDemo = useHlConnection((s) => s.connectDemo);
   const { data: account, isLoading, isError, refetch } = useHlAccount();
+  const { data: openOrders } = useHlOpenOrders();
+  const { data: fills } = useHlFills();
   const { data: markets } = useMarkets();
   const { data: meta } = useHlMeta();
 
   const tradable = hasKey && !demo;
-  const [tab, setTab] = useState<'positions' | 'balances'>('positions');
+  const [tab, setTab] = useState<'positions' | 'orders' | 'balances' | 'history'>('positions');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [closeTicket, setCloseTicket] = useState<CloseTicket | null>(null);
   const hideSmallBalances = usePreferences((s) => s.hideSmallBalances);
@@ -113,6 +125,20 @@ export default function AccountScreen() {
       Alert.alert('Reverse failed', e instanceof Error ? e.message : 'Unknown error'),
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: (o: HlOpenOrder) => {
+      const m = meta?.[o.coin];
+      if (!m) throw new Error(`No market metadata for ${o.coin}`);
+      return cancelOrder({ network, assetIndex: m.assetIndex, oid: o.oid });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+    },
+    onError: (e: unknown) =>
+      Alert.alert('Cancel failed', e instanceof Error ? e.message : 'Unknown error'),
+  });
+
   const confirmClose = useCallback(
     (p: HlPosition) => {
       if (!tradable) return;
@@ -146,6 +172,24 @@ export default function AccountScreen() {
       );
     },
     [tradable, network, reverseMutation],
+  );
+
+  const confirmCancel = useCallback(
+    (o: HlOpenOrder) => {
+      if (!tradable) return;
+      const sym = cleanCoin(o.coin);
+      const dec = priceDecimalsFor(6, o.limitPx);
+      Alert.alert(
+        'Cancel order?',
+        `Cancel your ${o.side} ${qty(o.size)} ${sym} @ $${formatPrice(o.limitPx, dec)}` +
+          (network === 'mainnet' ? '.' : ' (testnet).'),
+        [
+          { text: 'Keep', style: 'cancel' },
+          { text: 'Cancel order', style: 'destructive', onPress: () => cancelMutation.mutate(o) },
+        ],
+      );
+    },
+    [tradable, network, cancelMutation],
   );
 
   const openLimitClose = useCallback(
@@ -307,20 +351,37 @@ export default function AccountScreen() {
           <Stat label="Exposure" value={mask(usd(account.totalNotional))} />
         </View>
 
-        {/* Positions / Balances tabs */}
-        <View style={styles.tabBar}>
-          <TabButton
-            label="Positions"
-            count={account.positions.length}
-            active={tab === 'positions'}
-            onPress={() => setTab('positions')}
-          />
-          <TabButton
-            label="Balances"
-            count={visibleBalances.length}
-            active={tab === 'balances'}
-            onPress={() => setTab('balances')}
-          />
+        {/* Positions / Orders / Balances / History tabs */}
+        <View style={styles.tabBarWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabBar}>
+            <TabButton
+              label="Positions"
+              count={account.positions.length}
+              active={tab === 'positions'}
+              onPress={() => setTab('positions')}
+            />
+            <TabButton
+              label="Orders"
+              count={openOrders?.length ?? 0}
+              active={tab === 'orders'}
+              onPress={() => setTab('orders')}
+            />
+            <TabButton
+              label="Balances"
+              count={visibleBalances.length}
+              active={tab === 'balances'}
+              onPress={() => setTab('balances')}
+            />
+            <TabButton
+              label="History"
+              count={fills?.length ?? 0}
+              active={tab === 'history'}
+              onPress={() => setTab('history')}
+            />
+          </ScrollView>
         </View>
 
         {tab === 'positions' ? (
@@ -353,25 +414,61 @@ export default function AccountScreen() {
               ))}
             </View>
           )
-        ) : visibleBalances.length > 0 ? (
-          <View style={styles.list}>
-            {visibleBalances.map((b) => (
-              <SpotCard
-                key={b.coin}
-                b={b}
-                instrument={instrumentForCoin(b.coin)}
-                expanded={expanded.has('spot:' + b.coin)}
-                hidden={privacyMode}
-                onToggle={() => toggleExpand('spot:' + b.coin)}
-                onChart={() => openChart(b.coin)}
-              />
-            ))}
-          </View>
-        ) : (
+        ) : tab === 'orders' ? (
+          (openOrders?.length ?? 0) === 0 ? (
+            <View style={styles.noPositions}>
+              <AppText variant="body" muted>
+                No open orders
+              </AppText>
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {openOrders!.map((o) => (
+                <OrderCard
+                  key={o.oid}
+                  o={o}
+                  instrument={instrumentForCoin(o.coin)}
+                  tradable={tradable}
+                  busy={cancelMutation.isPending && cancelMutation.variables?.oid === o.oid}
+                  hidden={privacyMode}
+                  onCancel={() => confirmCancel(o)}
+                />
+              ))}
+            </View>
+          )
+        ) : tab === 'balances' ? (
+          visibleBalances.length > 0 ? (
+            <View style={styles.list}>
+              {visibleBalances.map((b) => (
+                <SpotCard
+                  key={b.coin}
+                  b={b}
+                  instrument={instrumentForCoin(b.coin)}
+                  expanded={expanded.has('spot:' + b.coin)}
+                  hidden={privacyMode}
+                  onToggle={() => toggleExpand('spot:' + b.coin)}
+                  onChart={() => openChart(b.coin)}
+                />
+              ))}
+            </View>
+          ) : (
+            <View style={styles.noPositions}>
+              <AppText variant="body" muted>
+                {hideSmallBalances ? 'No balances over $' + SMALL_BALANCE_USD : 'No spot balances'}
+              </AppText>
+            </View>
+          )
+        ) : (fills?.length ?? 0) === 0 ? (
           <View style={styles.noPositions}>
             <AppText variant="body" muted>
-              {hideSmallBalances ? 'No balances over $' + SMALL_BALANCE_USD : 'No spot balances'}
+              No trade history
             </AppText>
+          </View>
+        ) : (
+          <View style={styles.list}>
+            {fills!.map((f) => (
+              <FillCard key={f.key} f={f} instrument={instrumentForCoin(f.coin)} hidden={privacyMode} />
+            ))}
           </View>
         )}
 
@@ -545,11 +642,15 @@ function PositionCard({
           </View>
           <View style={styles.gridRow}>
             <Cell label="Size" value={m(`${qty(p.size)} ${symbol}`)} />
-            <Cell label="Position Value" value={m(usd(p.positionValue))} />
             <Cell
               label="Margin"
               value={m(usd(p.marginUsed))}
               sub={p.leverageType === 'isolated' ? 'Isolated' : 'Cross'}
+            />
+            <Cell
+              label="Funding"
+              value={m(signedUsd(p.funding))}
+              color={p.funding > 0 ? Colors.up : p.funding < 0 ? Colors.down : undefined}
             />
           </View>
 
@@ -716,6 +817,130 @@ function DetailRow({ label, value, strong }: { label: string; value: string; str
   );
 }
 
+function OrderCard({
+  o,
+  instrument,
+  tradable,
+  busy,
+  hidden,
+  onCancel,
+}: {
+  o: HlOpenOrder;
+  instrument: Instrument | undefined;
+  tradable: boolean;
+  busy: boolean;
+  hidden: boolean;
+  onCancel: () => void;
+}) {
+  const symbol = instrument?.symbol ?? cleanCoin(o.coin);
+  const decimals = priceDecimalsFor(instrument?.priceDecimals ?? 6, o.limitPx);
+  const sideColor = o.side === 'buy' ? Colors.up : Colors.down;
+  const filledPct = o.origSize > o.size ? ((o.origSize - o.size) / o.origSize) * 100 : 0;
+  const typeLabel = o.isTrigger ? `Stop ${o.orderType}`.trim() : o.orderType;
+  const m = (s: string) => (hidden ? MASK : s);
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHead}>
+        {instrument ? (
+          <SymbolLogo instrument={instrument} size={40} />
+        ) : (
+          <View style={styles.coinFallback}>
+            <AppText variant="label">{symbol.slice(0, 3)}</AppText>
+          </View>
+        )}
+        <View style={styles.mid}>
+          <View style={styles.titleRow}>
+            <AppText style={styles.symbol} numberOfLines={1}>
+              {symbol}
+            </AppText>
+            <View style={[styles.sideBadge, { backgroundColor: sideColor + '22' }]}>
+              <AppText variant="caption" color={sideColor}>
+                {o.side === 'buy' ? 'Buy' : 'Sell'}
+              </AppText>
+            </View>
+            {o.reduceOnly ? (
+              <View style={styles.xyzBadge}>
+                <AppText variant="caption" muted>
+                  Reduce
+                </AppText>
+              </View>
+            ) : null}
+          </View>
+          <AppText style={styles.sub} numeric numberOfLines={1}>
+            {m(`${qty(o.size)} ${symbol}`)} @ ${formatPrice(o.limitPx, decimals)}
+          </AppText>
+          <AppText variant="caption" muted numberOfLines={1}>
+            {typeLabel} · {whenLabel(o.timestamp)}
+            {filledPct > 0.5 ? ` · ${filledPct.toFixed(0)}% filled` : ''}
+          </AppText>
+        </View>
+        {busy ? (
+          <ActivityIndicator color={Colors.textMuted} />
+        ) : (
+          <Pressable
+            style={({ pressed }) => [styles.cancelBtn, pressed && tradable && styles.actionBtnPressed]}
+            onPress={onCancel}
+            disabled={!tradable}
+            hitSlop={6}>
+            <AppText variant="label" color={tradable ? Colors.down : Colors.textFaint}>
+              Cancel
+            </AppText>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function FillCard({
+  f,
+  instrument,
+  hidden,
+}: {
+  f: HlFill;
+  instrument: Instrument | undefined;
+  hidden: boolean;
+}) {
+  const symbol = instrument?.symbol ?? cleanCoin(f.coin);
+  const decimals = priceDecimalsFor(instrument?.priceDecimals ?? 6, f.px);
+  const sideColor = f.side === 'buy' ? Colors.up : Colors.down;
+  const pnlColor = f.closedPnl >= 0 ? Colors.up : Colors.down;
+  const m = (s: string) => (hidden ? MASK : s);
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHead}>
+        {instrument ? (
+          <SymbolLogo instrument={instrument} size={40} />
+        ) : (
+          <View style={styles.coinFallback}>
+            <AppText variant="label">{symbol.slice(0, 3)}</AppText>
+          </View>
+        )}
+        <View style={styles.mid}>
+          <View style={styles.titleRow}>
+            <AppText style={styles.symbol} numberOfLines={1}>
+              {symbol}
+            </AppText>
+            <View style={[styles.sideBadge, { backgroundColor: sideColor + '22' }]}>
+              <AppText variant="caption" color={sideColor}>
+                {f.dir}
+              </AppText>
+            </View>
+          </View>
+          <AppText style={styles.sub} numeric numberOfLines={1}>
+            {m(`${qty(f.size)} ${symbol}`)} @ ${formatPrice(f.px, decimals)} · {whenLabel(f.timestamp)}
+          </AppText>
+        </View>
+        {f.closedPnl !== 0 ? (
+          <AppText style={[styles.pnl, { color: pnlColor }]} numeric numberOfLines={1}>
+            {m(signedUsd(f.closedPnl))}
+          </AppText>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   scroll: { paddingBottom: Spacing.xxl },
@@ -763,13 +988,15 @@ const styles = StyleSheet.create({
   tile: { flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md },
   tileValue: { marginTop: 4 },
 
+  tabBarWrap: {
+    marginTop: Spacing.xl,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
   tabBar: {
     flexDirection: 'row',
     gap: Spacing.lg,
     paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.xl,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
   },
   tab: {
     flexDirection: 'row',
@@ -847,6 +1074,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceAlt,
   },
   actionBtnPressed: { backgroundColor: Colors.surfacePress },
+  cancelBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceAlt,
+    marginLeft: Spacing.sm,
+  },
   actionHint: { marginTop: -Spacing.xs },
   chartLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: Spacing.xs },
 
