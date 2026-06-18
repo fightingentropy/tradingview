@@ -185,6 +185,52 @@ export async function updateLeverage(p: UpdateLeverageParams): Promise<void> {
   }
 }
 
+export interface UpdateIsolatedMarginParams {
+  network: HlNetwork;
+  /** Order asset-id (same scheme as orders — incl. the xyz 110000+ offset). */
+  assetIndex: number;
+  /** USD to move: positive tops up the position's margin, negative pulls it back. */
+  usd: number;
+}
+
+/**
+ * Add or remove isolated margin on an open position (Hyperliquid's
+ * `updateIsolatedMargin`). `ntli` is the signed amount in micro-USD (1e6) — a
+ * positive value moves free collateral into the position's isolated margin, a
+ * negative value pulls margin back to the available balance. Isolated positions
+ * only; the exchange rejects a removal that would breach maintenance margin.
+ * Real funds on mainnet — gate behind a confirm. (`isBuy` is a fixed field the
+ * API requires; direction is carried by the sign of `ntli`.)
+ */
+export async function updateIsolatedMargin(p: UpdateIsolatedMarginParams): Promise<void> {
+  const key = getAgentKey();
+  if (!key) throw new Error('No API wallet key set. Add one in Settings to trade.');
+
+  const action = {
+    type: 'updateIsolatedMargin',
+    asset: p.assetIndex,
+    isBuy: true,
+    ntli: Math.round(p.usd * 1e6),
+  };
+  const nonce = nextNonce();
+  const signature = signL1Action(key, action, nonce, p.network === 'mainnet', null);
+
+  // Like updateLeverage, this returns {status:'ok', response:{type:'default'}} with
+  // no per-order statuses, so it doesn't go through exchangePost.
+  const res = await fetchWithTimeout(`${HL_API[p.network]}/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, nonce, signature, vaultAddress: null }),
+  });
+  if (!res.ok) throw new Error(`Hyperliquid exchange ${res.status}`);
+  const json = (await res.json()) as { status?: string; response?: unknown };
+  if (json.status !== 'ok') {
+    throw new Error(
+      typeof json.response === 'string' ? json.response : `Couldn't adjust margin (${res.status})`,
+    );
+  }
+}
+
 export interface CancelOrderParams {
   network: HlNetwork;
   /** Order asset-id (same scheme as placing — incl. the xyz 110000+ offset). */

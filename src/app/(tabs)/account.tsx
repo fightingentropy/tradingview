@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { MarginSheet } from '@/components/MarginSheet';
 import { SymbolLogo } from '@/components/SymbolLogo';
 import { TradeTicket } from '@/components/TradeTicket';
 import { AppText } from '@/components/ui/AppText';
@@ -12,7 +13,7 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useMarkets } from '@/data/useMarkets';
 import { useHlAccount, useHlFills, useHlOpenOrders } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
-import { cancelOrder, marketClose, reversePosition } from '@/lib/hyperliquid/exchange';
+import { cancelOrder, marketClose, reversePosition, updateIsolatedMargin } from '@/lib/hyperliquid/exchange';
 import type { HlFill, HlOpenOrder, HlPosition, HlSpotBalance } from '@/lib/hyperliquid/info';
 import { formatCompact, formatPercent, formatPrice, priceDecimalsFor, signedUsd, usd } from '@/lib/format';
 import { queryKeys } from '@/lib/queryKeys';
@@ -76,6 +77,7 @@ export default function AccountScreen() {
   const [tab, setTab] = useState<'positions' | 'orders' | 'balances' | 'history'>('positions');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [closeTicket, setCloseTicket] = useState<CloseTicket | null>(null);
+  const [marginTarget, setMarginTarget] = useState<HlPosition | null>(null);
   const hideSmallBalances = usePreferences((s) => s.hideSmallBalances);
   const privacyMode = usePreferences((s) => s.privacyMode);
   const setPrivacyMode = usePreferences((s) => s.setPrivacyMode);
@@ -139,6 +141,20 @@ export default function AccountScreen() {
       Alert.alert('Cancel failed', e instanceof Error ? e.message : 'Unknown error'),
   });
 
+  const marginMutation = useMutation({
+    mutationFn: ({ p, signedUsd }: { p: HlPosition; signedUsd: number }) => {
+      const mInfo = meta?.[p.coin];
+      if (!mInfo) throw new Error(`No market metadata for ${p.coin}`);
+      return updateIsolatedMargin({ network, assetIndex: mInfo.assetIndex, usd: signedUsd });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+      setMarginTarget(null);
+    },
+    onError: (e: unknown) =>
+      Alert.alert('Margin update failed', e instanceof Error ? e.message : 'Unknown error'),
+  });
+
   const confirmClose = useCallback(
     (p: HlPosition) => {
       if (!tradable) return;
@@ -190,6 +206,27 @@ export default function AccountScreen() {
       );
     },
     [tradable, network, cancelMutation],
+  );
+
+  const confirmAdjustMargin = useCallback(
+    (p: HlPosition, signedUsd: number) => {
+      if (!tradable || signedUsd === 0) return;
+      const sym = cleanCoin(p.coin);
+      const add = signedUsd > 0;
+      Alert.alert(
+        `${add ? 'Add' : 'Remove'} margin?`,
+        `${add ? 'Add' : 'Remove'} ${usd(Math.abs(signedUsd))} ${add ? 'to' : 'from'} your ${sym} isolated margin` +
+          (network === 'mainnet' ? '.\n\nThis uses real funds on mainnet.' : ' on testnet.'),
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: add ? 'Add margin' : 'Remove margin',
+            onPress: () => marginMutation.mutate({ p, signedUsd }),
+          },
+        ],
+      );
+    },
+    [tradable, network, marginMutation],
   );
 
   const openLimitClose = useCallback(
@@ -410,6 +447,7 @@ export default function AccountScreen() {
                   onLimitClose={() => openLimitClose(p)}
                   onMarketClose={() => confirmClose(p)}
                   onReverse={() => confirmReverse(p)}
+                  onAdjustMargin={() => setMarginTarget(p)}
                 />
               ))}
             </View>
@@ -493,6 +531,24 @@ export default function AccountScreen() {
         initialSizeCoin={closeTicket?.sizeCoin}
         closing
       />
+
+      {/* Add / remove isolated margin on a position. */}
+      <MarginSheet
+        visible={marginTarget !== null}
+        symbol={
+          marginTarget
+            ? instrumentForCoin(marginTarget.coin)?.symbol ?? cleanCoin(marginTarget.coin)
+            : ''
+        }
+        marginUsed={marginTarget?.marginUsed ?? 0}
+        available={account.availableUsdc ?? account.withdrawable ?? 0}
+        tradable={tradable}
+        busy={marginMutation.isPending}
+        onClose={() => setMarginTarget(null)}
+        onSubmit={(signed) => {
+          if (marginTarget) confirmAdjustMargin(marginTarget, signed);
+        }}
+      />
     </Screen>
   );
 }
@@ -554,6 +610,7 @@ function PositionCard({
   onLimitClose,
   onMarketClose,
   onReverse,
+  onAdjustMargin,
 }: {
   p: HlPosition;
   instrument: Instrument | undefined;
@@ -566,6 +623,7 @@ function PositionCard({
   onLimitClose: () => void;
   onMarketClose: () => void;
   onReverse: () => void;
+  onAdjustMargin: () => void;
 }) {
   const pnlColor = p.unrealizedPnl >= 0 ? Colors.up : Colors.down;
   const sideColor = p.side === 'long' ? Colors.up : Colors.down;
@@ -646,6 +704,7 @@ function PositionCard({
               label="Margin"
               value={m(usd(p.marginUsed))}
               sub={p.leverageType === 'isolated' ? 'Isolated' : 'Cross'}
+              onEdit={p.leverageType === 'isolated' ? onAdjustMargin : undefined}
             />
             <Cell
               label="Funding"
@@ -688,20 +747,35 @@ function Cell({
   value,
   sub,
   color,
+  onEdit,
 }: {
   label: string;
   value: string;
   sub?: string;
   color?: string;
+  /** When set, the value becomes tappable and shows a pencil (e.g. adjust margin). */
+  onEdit?: () => void;
 }) {
+  const valueRow = (
+    <View style={styles.cellValueRow}>
+      <AppText variant="label" numeric color={color} numberOfLines={1} style={styles.cellValue}>
+        {value}
+      </AppText>
+      {onEdit ? <Ionicons name="pencil" size={13} color={Colors.accent} /> : null}
+    </View>
+  );
   return (
     <View style={styles.cell}>
       <AppText variant="caption" muted>
         {label}
       </AppText>
-      <AppText variant="label" numeric color={color} numberOfLines={1} style={styles.cellValue}>
-        {value}
-      </AppText>
+      {onEdit ? (
+        <Pressable onPress={onEdit} hitSlop={6} accessibilityRole="button" accessibilityLabel={`Adjust ${label}`}>
+          {valueRow}
+        </Pressable>
+      ) : (
+        valueRow
+      )}
       {sub ? (
         <AppText variant="caption" muted numberOfLines={1}>
           {sub}
@@ -1065,6 +1139,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   cellValue: { marginTop: 1 },
+  cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
   actionBtn: {
     flex: 1,
