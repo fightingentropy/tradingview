@@ -23,6 +23,18 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'spot', label: 'Spot' },
 ];
 
+/** Row order: 'default' = by 24h volume (as before); 'gainers'/'losers' = by 24h %. */
+type SortMode = 'default' | 'gainers' | 'losers';
+
+const SORT_META: Record<SortMode, { icon: 'swap-vertical' | 'arrow-up' | 'arrow-down'; color: string }> = {
+  default: { icon: 'swap-vertical', color: Colors.textMuted },
+  gainers: { icon: 'arrow-up', color: Colors.up },
+  losers: { icon: 'arrow-down', color: Colors.down },
+};
+
+const nextSort = (s: SortMode): SortMode =>
+  s === 'default' ? 'gainers' : s === 'gainers' ? 'losers' : 'default';
+
 const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'equity', 'commodity', 'index', 'fx']);
 
 function matchesFilter(i: Instrument, f: Filter): boolean {
@@ -45,6 +57,7 @@ export default function MarketsScreen() {
   const isRestoring = useIsRestoring();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [sort, setSort] = useState<SortMode>('default');
 
   // Debounce the raw input so a 300-item filter+sort runs once typing settles,
   // not on every keystroke. The TextInput stays driven by `search` for instant echo.
@@ -79,9 +92,23 @@ export default function MarketsScreen() {
         return haystack.includes(q);
       })
       .map(({ instrument }) => instrument);
-    filtered.sort((a, b) => (data.quotes[b.id]?.dayVolume ?? 0) - (data.quotes[a.id]?.dayVolume ?? 0));
+    if (sort === 'default') {
+      filtered.sort((a, b) => (data.quotes[b.id]?.dayVolume ?? 0) - (data.quotes[a.id]?.dayVolume ?? 0));
+    } else {
+      // Gainers: highest 24h % first; losers: lowest first. Instruments without a
+      // 24h change (e.g. a stock while its market is closed) sink to the bottom
+      // either way, so they never crowd out the actual movers.
+      filtered.sort((a, b) => {
+        const ca = data.quotes[a.id]?.change24hPct;
+        const cb = data.quotes[b.id]?.change24hPct;
+        if (ca == null && cb == null) return 0;
+        if (ca == null) return 1;
+        if (cb == null) return -1;
+        return sort === 'gainers' ? cb - ca : ca - cb;
+      });
+    }
     return filtered.slice(0, 300);
-  }, [data, searchable, debouncedSearch, filter]);
+  }, [data, searchable, debouncedSearch, filter, sort]);
 
   // Subscribe live prices to the full catalog (a stable set) rather than the
   // filtered results, so typing doesn't tear down and re-open the websocket
@@ -131,19 +158,38 @@ export default function MarketsScreen() {
       </View>
 
       <View style={styles.chips}>
-        {FILTERS.map((f) => {
-          const active = filter === f.key;
-          return (
-            <Pressable
-              key={f.key}
-              onPress={() => setFilter(f.key)}
-              style={[styles.chip, active && styles.chipActive]}>
-              <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
-                {f.label}
-              </AppText>
-            </Pressable>
-          );
-        })}
+        <View style={styles.chipGroup}>
+          {FILTERS.map((f) => {
+            const active = filter === f.key;
+            return (
+              <Pressable
+                key={f.key}
+                onPress={() => setFilter(f.key)}
+                style={[styles.chip, active && styles.chipActive]}>
+                <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
+                  {f.label}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Cycle row order: default (by volume) → % gainers → % losers. */}
+        <Pressable
+          onPress={() => setSort(nextSort)}
+          hitSlop={6}
+          style={[styles.sortBtn, sort !== 'default' && styles.sortBtnActive]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            sort === 'gainers'
+              ? 'Sorted by top gainers'
+              : sort === 'losers'
+                ? 'Sorted by top losers'
+                : 'Sort by 24h percent change'
+          }>
+          <Ionicons name={SORT_META[sort].icon} size={14} color={SORT_META[sort].color} />
+          <AppText style={[styles.sortLabel, { color: SORT_META[sort].color }]}>%</AppText>
+        </Pressable>
       </View>
 
       {isLoading || isRestoring ? (
@@ -178,10 +224,11 @@ const styles = StyleSheet.create({
   chips: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.sm,
   },
+  chipGroup: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   chip: {
     paddingHorizontal: Spacing.md,
     paddingVertical: 6,
@@ -191,5 +238,16 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: Colors.surfaceAlt },
   chipLabel: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
   chipLabelActive: { color: Colors.text },
+  sortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.surface,
+  },
+  sortBtnActive: { backgroundColor: Colors.surfaceAlt },
+  sortLabel: { fontSize: 13, fontWeight: '700' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
