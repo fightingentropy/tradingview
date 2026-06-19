@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { IndicatorMenu } from '@/components/IndicatorMenu';
-import { PriceChart, type ChartType } from '@/components/PriceChart';
+import { PriceChart, type ChartPosition, type ChartType } from '@/components/PriceChart';
 import { RangeBar } from '@/components/RangeBar';
 import { RsiPane } from '@/components/RsiPane';
 import { useSymbolMenu } from '@/components/SymbolMenu';
@@ -17,6 +17,7 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { DEFAULT_RANGE, resolveRange, type RangeKey } from '@/domain/ranges';
 import type { Candle } from '@/domain/types';
 import { useCandles } from '@/data/useCandles';
+import { useHlAccount } from '@/data/useHlAccount';
 import { useMarkets } from '@/data/useMarkets';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import {
@@ -28,6 +29,7 @@ import {
 } from '@/lib/format';
 import { useChartSettings } from '@/store/chartSettings';
 import { useLivePrice } from '@/store/livePrices';
+import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
 export default function SymbolScreen() {
@@ -56,6 +58,17 @@ export default function SymbolScreen() {
   const volume = useChartSettings((s) => s.volume);
   const rsi = useChartSettings((s) => s.rsi);
   const rsiPeriod = useChartSettings((s) => s.rsiPeriod);
+  const showPosition = useChartSettings((s) => s.showPosition);
+
+  // Overlay the open position (entry/liq line + unrealized PnL) when enabled. The
+  // account read is shared with the Account tab (same query key); a position's
+  // `coin` matches the instrument's `coinKey` for both core perps and trade.xyz.
+  const { data: hlAccount } = useHlAccount();
+  const privacyMode = usePreferences((s) => s.privacyMode);
+  const position: ChartPosition | null =
+    showPosition && instrument
+      ? hlAccount?.positions.find((p) => p.coin === instrument.coinKey) ?? null
+      : null;
 
   if (!instrument) {
     return (
@@ -165,6 +178,9 @@ export default function SymbolScreen() {
             visibleCount={visible}
             renderCount={render}
             axisKind={axis}
+            position={position}
+            symbol={instrument.symbol}
+            hideValues={privacyMode}
           />
         )}
       </View>

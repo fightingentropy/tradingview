@@ -16,9 +16,12 @@ interface ChartSettingsState {
   volume: boolean;
   rsi: boolean;
   rsiPeriod: number;
+  /** Overlay your open position (entry line + unrealized PnL) on the chart. On by default. */
+  showPosition: boolean;
   toggleSma: (period: number) => void;
   toggleVolume: () => void;
   toggleRsi: () => void;
+  setShowPosition: (value: boolean) => void;
 }
 
 export const useChartSettings = create<ChartSettingsState>()(
@@ -28,6 +31,7 @@ export const useChartSettings = create<ChartSettingsState>()(
       volume: false,
       rsi: false,
       rsiPeriod: 14,
+      showPosition: true,
       toggleSma: (period) =>
         set((s) => ({
           smaPeriods: s.smaPeriods.includes(period)
@@ -36,6 +40,7 @@ export const useChartSettings = create<ChartSettingsState>()(
         })),
       toggleVolume: () => set((s) => ({ volume: !s.volume })),
       toggleRsi: () => set((s) => ({ rsi: !s.rsi })),
+      setShowPosition: (value) => set({ showPosition: value }),
     }),
     {
       name: 'chart-settings-v2',
@@ -54,6 +59,7 @@ export const useChartSettings = create<ChartSettingsState>()(
           volume: typeof s.volume === 'boolean' ? s.volume : false,
           rsi: typeof s.rsi === 'boolean' ? s.rsi : false,
           rsiPeriod: Number.isFinite(s.rsiPeriod) ? (s.rsiPeriod as number) : 14,
+          showPosition: typeof s.showPosition === 'boolean' ? s.showPosition : true,
         } as ChartSettingsState;
       },
     },

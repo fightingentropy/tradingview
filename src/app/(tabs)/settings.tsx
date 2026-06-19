@@ -11,6 +11,7 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatPrice } from '@/lib/format';
 import { fetchStockQuotes } from '@/providers/stocks/client';
 import { useAlerts } from '@/store/alerts';
+import { useChartSettings } from '@/store/chartSettings';
 import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
@@ -35,6 +36,8 @@ export default function SettingsScreen() {
   const clearAlerts = useAlerts((s) => s.clearAll);
   const hideSmallBalances = usePreferences((s) => s.hideSmallBalances);
   const setHideSmallBalances = usePreferences((s) => s.setHideSmallBalances);
+  const showPosition = useChartSettings((s) => s.showPosition);
+  const setShowPosition = useChartSettings((s) => s.setShowPosition);
 
   const stocksHealth = useQuery({
     queryKey: ['stocks-health'],
@@ -83,6 +86,21 @@ export default function SettingsScreen() {
             <Switch
               value={hideSmallBalances}
               onValueChange={setHideSmallBalances}
+              trackColor={{ false: Colors.surfaceAlt, true: Colors.accent }}
+              ios_backgroundColor={Colors.surfaceAlt}
+            />
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <AppText variant="body">Position &amp; PnL on charts</AppText>
+              <AppText variant="caption" muted>
+                Mark your entry, liquidation, and unrealized PnL on a symbol&apos;s chart.
+              </AppText>
+            </View>
+            <Switch
+              value={showPosition}
+              onValueChange={setShowPosition}
               trackColor={{ false: Colors.surfaceAlt, true: Colors.accent }}
               ios_backgroundColor={Colors.surfaceAlt}
             />
