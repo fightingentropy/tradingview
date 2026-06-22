@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 import { Fragment } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
@@ -9,7 +8,6 @@ import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatPrice } from '@/lib/format';
-import { fetchStockQuotes } from '@/providers/stocks/client';
 import { useAlerts } from '@/store/alerts';
 import { useChartSettings } from '@/store/chartSettings';
 import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
@@ -38,22 +36,6 @@ export default function SettingsScreen() {
   const setHideSmallBalances = usePreferences((s) => s.setHideSmallBalances);
   const showPosition = useChartSettings((s) => s.showPosition);
   const setShowPosition = useChartSettings((s) => s.setShowPosition);
-
-  const stocksHealth = useQuery({
-    queryKey: ['stocks-health'],
-    queryFn: async () => {
-      const q = await fetchStockQuotes(['AAPL']);
-      return Object.values(q).some((v) => v && v.close !== undefined);
-    },
-    staleTime: 60_000,
-  });
-
-  const stocksDetail =
-    stocksHealth.data === undefined
-      ? 'Checking…'
-      : stocksHealth.data
-        ? 'Live (Twelve Data)'
-        : 'Add TWELVE_DATA_KEY';
 
   const onReset = () =>
     Alert.alert('Reset watchlists?', 'Restores the default Crypto and Stocks lists.', [
@@ -114,12 +96,6 @@ export default function SettingsScreen() {
           <StatusRow label="Hyperliquid" detail="Live · keyless" color={Colors.up} />
           <View style={styles.divider} />
           <StatusRow label="trade.xyz perps" detail="Live · keyless" color="#B07CFF" />
-          <View style={styles.divider} />
-          <StatusRow
-            label="US Stocks"
-            detail={stocksDetail}
-            color={stocksHealth.data ? Colors.up : Colors.textFaint}
-          />
           <View style={styles.divider} />
           <StatusRow label="VIX · Cboe" detail="Live · keyless" color="#4DD0E1" />
         </View>
@@ -188,7 +164,7 @@ export default function SettingsScreen() {
             TradingView Clone · v{Constants.expoConfig?.version ?? '1.0.0'}
           </AppText>
           <AppText variant="caption" muted>
-            Data: Hyperliquid + trade.xyz + Twelve Data + Cboe
+            Data: Hyperliquid + trade.xyz + Cboe
           </AppText>
         </View>
       </ScrollView>

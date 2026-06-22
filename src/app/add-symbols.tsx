@@ -23,11 +23,11 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'index', label: 'Index' },
 ];
 
-const STOCK_CLASSES = new Set<AssetClass>(['equity', 'equity-perp', 'commodity']);
+const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'commodity']);
 
 function matchesFilter(i: Instrument, f: Filter): boolean {
   if (f === 'all') return true;
-  if (f === 'stocks') return STOCK_CLASSES.has(i.assetClass) || i.source === 'stocks';
+  if (f === 'stocks') return STOCK_CLASSES.has(i.assetClass);
   if (f === 'crypto') return i.assetClass === 'crypto-perp' || i.assetClass === 'crypto-spot';
   if (f === 'forex') return i.assetClass === 'fx';
   if (f === 'index') return i.assetClass === 'index';
@@ -38,7 +38,6 @@ const TYPE_LABEL: Record<AssetClass, string> = {
   'crypto-perp': 'perpetual',
   'crypto-spot': 'spot',
   'equity-perp': 'equity perp',
-  equity: 'stock',
   fx: 'forex',
   commodity: 'commodity',
   index: 'index',

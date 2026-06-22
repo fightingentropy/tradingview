@@ -1,17 +1,16 @@
-export type Source = 'hyperliquid' | 'stocks' | 'cboe';
+export type Source = 'hyperliquid' | 'cboe';
 
 export type AssetClass =
   | 'crypto-perp'
   | 'crypto-spot'
   | 'equity-perp'
-  | 'equity'
   | 'fx'
   | 'commodity'
   | 'index';
 
 /** A tradable market shown in lists and on the chart screen. */
 export interface Instrument {
-  /** Stable unique id, e.g. `hl:perp:BTC`, `hl:spot:@107`, `hl:xyz:XYZ100`, `stk:AAPL`. */
+  /** Stable unique id, e.g. `hl:perp:BTC`, `hl:spot:@107`, `hl:xyz:AAPL`. */
   id: string;
   source: Source;
   assetClass: AssetClass;
@@ -23,7 +22,7 @@ export interface Instrument {
   venue: string;
   /** Decimals to render prices with. */
   priceDecimals: number;
-  /** Provider-native key used for candle + websocket subscriptions (`BTC`, `@107`, `xyz:XYZ100`, `AAPL`). */
+  /** Provider-native key used for candle + websocket subscriptions (`BTC`, `@107`, `xyz:AAPL`). */
   coinKey: string;
   /** Quote currency, e.g. `USD`, `USDC`. */
   quoteCurrency?: string;

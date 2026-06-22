@@ -2,17 +2,15 @@ import type { Source } from '@/domain/types';
 
 import { cboeProvider } from './cboe/provider';
 import { hyperliquidProvider } from './hyperliquid/provider';
-import { stocksProvider } from './stocks/provider';
 import type { MarketDataProvider } from './types';
 
 /**
- * All active market-data providers. The stocks provider is inert until a
- * TWELVE_DATA_KEY is configured on the proxy (its fetches return empty, which
- * loadMarkets skips), so it is always safe to register. Cboe (VIX) is keyless.
+ * All active market-data providers. Hyperliquid covers crypto perps + spot and
+ * the trade.xyz (HIP-3 `xyz` dex) equity/commodity/FX perps; Cboe serves the VIX.
+ * All are keyless.
  */
 const registry: Record<Source, MarketDataProvider | undefined> = {
   hyperliquid: hyperliquidProvider,
-  stocks: stocksProvider,
   cboe: cboeProvider,
 };
 

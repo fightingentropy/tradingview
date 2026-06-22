@@ -25,13 +25,13 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'spot', label: 'Spot' },
 ];
 
-const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'equity', 'commodity', 'index', 'fx']);
+const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'commodity', 'index', 'fx']);
 
 function matchesFilter(i: Instrument, f: Filter): boolean {
   if (f === 'all') return true;
   if (f === 'crypto') return i.assetClass === 'crypto-perp';
   if (f === 'spot') return i.assetClass === 'crypto-spot';
-  return STOCK_CLASSES.has(i.assetClass) || i.source === 'stocks';
+  return STOCK_CLASSES.has(i.assetClass);
 }
 
 // Instrument + precomputed lowercased searchable text, so typing doesn't lowercase
