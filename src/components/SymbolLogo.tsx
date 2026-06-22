@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { memo, useEffect, useState } from 'react';
+import { memo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { Instrument } from '@/domain/types';
@@ -81,6 +81,8 @@ const STOCK_LOGO: Record<string, string> = {
   ORCL: 'oracle',
   CRM: 'salesforce',
   QCOM: 'qualcomm',
+  BE: 'bloom-energy',
+  STRC: 'microstrategy',
 };
 
 const PALETTE = [
@@ -187,35 +189,56 @@ function hyperliquidLogoUrl(instrument: Instrument): string | null {
 }
 
 /**
- * Every trade.xyz market (the `xyz:` HIP-3 dex) carries brand art on Hyperliquid's
- * coin CDN — equities, commodities, indices and FX alike. Used as the catch-all for
- * xyz tickers we don't brand explicitly (SKHX, MRVL, GOLD, SILVER, SMSN, WDC, …).
+ * trade.xyz hosts a branded icon for every market at `/markets/<ticker>.svg` — except a
+ * handful served as `.png` (TSLA, NVDA, PLTR), so we try both. This is the preferred art
+ * for the whole `xyz:` HIP-3 dex (equities, commodities, indices, FX).
  */
-function xyzCoinUrl(instrument: Instrument): string | null {
-  return instrument.coinKey.startsWith('xyz:')
-    ? `https://app.hyperliquid.xyz/coins/${encodeURIComponent(instrument.coinKey)}.svg`
-    : null;
+function tradexyzUrls(symbol: string): string[] {
+  const slug = symbol.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return slug
+    ? [`https://app.trade.xyz/markets/${slug}.svg`, `https://app.trade.xyz/markets/${slug}.png`]
+    : [];
 }
 
 /**
- * Best available logo, in priority order: tuned HL art (HYPE/indices) → HL coin art for
- * spot (Unit + native) → crypto coin art for perps → a mapped brand logo (NVDA, TSLA…) →
- * the trade.xyz coin CDN for any remaining xyz token.
+ * Ordered logo candidates, best first; the component falls through to the next on a load
+ * error and to the initials circle once exhausted.
+ *
+ * xyz markets prefer trade.xyz's own brand art, then a mapped TradingView logo (QCOM, BE,
+ * STRC — the few trade.xyz omits), then Hyperliquid's coin CDN as a final net. Crypto + spot
+ * keep their single best source (tuned HL art → spot/perp coin art → mapped brand logo).
  */
-function logoUrl(instrument: Instrument): string | null {
-  return (
-    hyperliquidLogoUrl(instrument) ??
-    spotCoinUrl(instrument) ??
-    cryptoLogoUrl(instrument) ??
-    stockLogoUrl(instrument) ??
-    xyzCoinUrl(instrument)
-  );
+function logoCandidates(instrument: Instrument): string[] {
+  const out: (string | null)[] = [];
+  if (instrument.coinKey.startsWith('xyz:')) {
+    out.push(
+      ...tradexyzUrls(instrument.symbol),
+      stockLogoUrl(instrument),
+      `https://app.hyperliquid.xyz/coins/${encodeURIComponent(instrument.coinKey)}.svg`,
+    );
+  } else {
+    out.push(
+      hyperliquidLogoUrl(instrument),
+      spotCoinUrl(instrument),
+      cryptoLogoUrl(instrument),
+      stockLogoUrl(instrument),
+    );
+  }
+  // Drop nulls and de-dupe while preserving order.
+  return out.filter((u, i): u is string => !!u && out.indexOf(u) === i);
 }
 
 /**
- * Circular symbol logo, TradingView-style. Renders the real crypto logo when
- * available (over a coloured initials circle that shows while it loads or if it
- * 404s), and a coloured initials circle for everything else.
+ * Once a symbol's first working candidate is known, remember its index so a recycled
+ * FlashList row jumps straight to it instead of re-walking the 404 fallback chain. The
+ * exhausted index is cached too, so a no-art ticker shows initials without re-fetching.
+ */
+const resolvedIdx = new Map<string, number>();
+
+/**
+ * Circular symbol logo, TradingView-style. Renders the real logo when available (over a
+ * coloured initials circle that shows while it loads), falling through the candidate list
+ * on error and to the initials circle for everything else.
  */
 function SymbolLogoImpl({
   instrument,
@@ -229,12 +252,24 @@ function SymbolLogoImpl({
   size?: number;
 }) {
   const symbol = instrument?.symbol ?? coin ?? '?';
-  const url = instrument ? logoUrl(instrument) : coin ? coinLogoUrl(coin) : null;
-  const [failed, setFailed] = useState(false);
-  // Reset on url change so a recycled FlashList cell doesn't stay stuck on the
-  // initials after a prior row's logo 404'd.
-  useEffect(() => setFailed(false), [url]);
-  const showImage = !!url && !failed;
+  const key = instrument?.id ?? coin ?? '';
+  const candidates = instrument
+    ? logoCandidates(instrument)
+    : coin
+      ? ([coinLogoUrl(coin)].filter(Boolean) as string[])
+      : [];
+
+  // Walk the candidates, advancing past any that fail to load. When a recycled cell
+  // switches symbols, reset to that key's cached start index during render (no effect).
+  const [idx, setIdx] = useState(() => resolvedIdx.get(key) ?? 0);
+  const [lastKey, setLastKey] = useState(key);
+  if (key !== lastKey) {
+    setLastKey(key);
+    setIdx(resolvedIdx.get(key) ?? 0);
+  }
+
+  const url = candidates[idx] ?? null;
+  const showImage = !!url;
   const initials = INDEX_LABEL[symbol.toUpperCase()] ?? initialsFor(symbol);
   const fontSize = initials.length >= 3 ? size * 0.3 : size * 0.36;
   // Hyperliquid marks are full-bleed (and HYPE's is a transparent glyph), so sit
@@ -265,7 +300,16 @@ function SymbolLogoImpl({
           contentFit="cover"
           cachePolicy="memory-disk"
           transition={0}
-          onError={() => setFailed(true)}
+          onLoad={() => {
+            if (resolvedIdx.get(key) !== idx) resolvedIdx.set(key, idx);
+          }}
+          onError={() =>
+            setIdx((i) => {
+              const next = i + 1;
+              if (next >= candidates.length) resolvedIdx.set(key, next); // stop re-walking a dead chain
+              return next;
+            })
+          }
         />
       ) : null}
     </View>
