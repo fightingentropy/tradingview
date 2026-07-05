@@ -37,8 +37,7 @@
         }
       ],
       "expo-secure-store",
-      "expo-background-task",
-      "expo-notifications"
+      "expo-background-task"
     ],
     "experiments": {
       "typedRoutes": true,
