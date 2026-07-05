@@ -3,10 +3,13 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { Instrument } from '@/domain/types';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useMarkets } from '@/data/useMarkets';
+import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
 import { formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
+import { configureNotifications, notifyPriceAlert } from '@/lib/notifications';
 import { useAlertFeed } from '@/store/alertFeed';
 import { useAlerts } from '@/store/alerts';
 import { useLivePrices } from '@/store/livePrices';
+import { usePreferences } from '@/store/preferences';
 
 /**
  * App-wide alert engine. Mounted once at the root: it opens live price streams
@@ -21,6 +24,17 @@ export function AlertWatcher() {
   const alerts = useAlerts((s) => s.alerts);
   const markTriggered = useAlerts((s) => s.markTriggered);
   const push = useAlertFeed((s) => s.push);
+  const notifyEnabled = usePreferences((s) => s.alertNotifications);
+
+  // Install the notification handler once, and keep the background alert check
+  // registered only while alert notifications are enabled.
+  useEffect(() => {
+    configureNotifications();
+  }, []);
+  useEffect(() => {
+    if (notifyEnabled) registerAlertTask();
+    else unregisterAlertTask();
+  }, [notifyEnabled]);
 
   // Subscribe live feeds for the distinct instruments that still have armed alerts.
   const armedInstruments = useMemo(() => {
@@ -63,13 +77,19 @@ export function AlertWatcher() {
 
         markTriggered(a.id, price, Date.now());
         const decimals = priceDecimalsFor(inst.priceDecimals, price);
+        const message = `${formatPercent(pct)} · ${formatPrice(price, decimals)}`;
         push({
           id: a.id,
           instrumentId: a.instrumentId,
           symbol: a.symbol,
           changePct: pct,
-          message: `${formatPercent(pct)} · ${formatPrice(price, decimals)}`,
+          message,
         });
+        // Also fire a local notification so a trip is captured if the user backgrounds
+        // the app right after (foreground shows only the in-app toast — see the handler).
+        if (usePreferences.getState().alertNotifications) {
+          void notifyPriceAlert(a.symbol, message, { instrumentId: a.instrumentId });
+        }
       }
     };
 

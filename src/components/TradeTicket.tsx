@@ -24,8 +24,14 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useActiveAsset } from '@/data/useActiveAsset';
 import { useHlAccount } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
-import { placeOrder, updateLeverage, type OrderResult } from '@/lib/hyperliquid/exchange';
-import { formatPrice, usd } from '@/lib/format';
+import {
+  placeBracket,
+  placeOrder,
+  updateLeverage,
+  type OrderResult,
+  type TriggerLeg,
+} from '@/lib/hyperliquid/exchange';
+import { formatPrice, signedUsd, usd } from '@/lib/format';
 import { queryKeys } from '@/lib/queryKeys';
 import { useHlConnection } from '@/store/hlConnection';
 
@@ -120,8 +126,13 @@ export function TradeTicket({
   const [levOverride, setLevOverride] = useState<number | null>(null);
   const [crossOverride, setCrossOverride] = useState<boolean | null>(null);
   const [result, setResult] = useState<OrderResult | null>(null);
+  // How many TP/SL legs rode along with the entry, for the success screen.
+  const [bracketExtra, setBracketExtra] = useState(0);
+  // Optional bracket: take-profit / stop-loss to attach to a new entry.
+  const [tpPrice, setTpPrice] = useState('');
+  const [slPrice, setSlPrice] = useState('');
   // Which numeric field owns the keyboard, so the accessory steppers nudge the right one.
-  const [focused, setFocused] = useState<'size' | 'limit' | null>(null);
+  const [focused, setFocused] = useState<'size' | 'limit' | 'tp' | 'sl' | null>(null);
 
   const assetMeta = meta?.[coin];
   const maxLev = Math.max(1, assetMeta?.maxLeverage ?? 1);
@@ -161,7 +172,19 @@ export function TradeTicket({
 
   const tradable = hasKey && !demo;
   const validSize = coinSize > 0 && (orderType === 'market' || num(limitPrice) > 0);
-  const canSubmit = tradable && !!assetMeta && validSize;
+
+  // Optional bracket (open orders only). A trigger must sit on the correct side of
+  // the entry — TP in profit, SL in loss — or the exchange fires/rejects it at once.
+  const isBuy = side === 'buy';
+  const tpNum = num(tpPrice);
+  const slNum = num(slPrice);
+  const tpOk = tpNum <= 0 || (isBuy ? tpNum > refPx : tpNum < refPx);
+  const slOk = slNum <= 0 || (isBuy ? slNum < refPx : slNum > refPx);
+  const bracketOk = closing || (tpOk && slOk);
+  const tpPnl = tpNum > 0 ? (tpNum - refPx) * coinSize * (isBuy ? 1 : -1) : 0;
+  const slPnl = slNum > 0 ? (slNum - refPx) * coinSize * (isBuy ? 1 : -1) : 0;
+
+  const canSubmit = tradable && !!assetMeta && validSize && bracketOk;
 
   const applyPct = (pct: number) => {
     if (maxSz <= 0) return;
@@ -177,10 +200,16 @@ export function TradeTicket({
 
   // Step the focused field: limit price by one tick, size by 1 coin / $10.
   const nudge = (dir: 1 | -1) => {
-    if (focused === 'limit') {
-      const tick = 1 / 10 ** priceDecimals;
-      const next = Math.max(0, (num(limitPrice) || markPx) + dir * tick);
-      setLimitPrice(String(Number(next.toFixed(priceDecimals))));
+    const tick = 1 / 10 ** priceDecimals;
+    if (focused === 'limit' || focused === 'tp' || focused === 'sl') {
+      const [cur, set] =
+        focused === 'limit'
+          ? ([limitPrice, setLimitPrice] as const)
+          : focused === 'tp'
+            ? ([tpPrice, setTpPrice] as const)
+            : ([slPrice, setSlPrice] as const);
+      const next = Math.max(0, (num(cur) || refPx) + dir * tick);
+      set(String(Number(next.toFixed(priceDecimals))));
       return;
     }
     const step = sizeMode === 'usd' ? 10 : 1;
@@ -190,7 +219,7 @@ export function TradeTicket({
   };
 
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<{ primary: OrderResult; extra: number }> => {
       // If the user changed leverage / margin mode, apply it before the order.
       const needLevUpdate =
         !closing &&
@@ -199,7 +228,31 @@ export function TradeTicket({
       if (needLevUpdate) {
         await updateLeverage({ network, assetIndex: assetMeta!.assetIndex, isCross, leverage });
       }
-      return placeOrder({
+
+      // Attach a take-profit / stop-loss bracket when the user set one (open orders only).
+      const legs: TriggerLeg[] = [];
+      if (!closing) {
+        if (tpNum > 0) legs.push({ tpsl: 'tp', triggerPx: tpNum });
+        if (slNum > 0) legs.push({ tpsl: 'sl', triggerPx: slNum });
+      }
+      if (legs.length > 0) {
+        const results = await placeBracket({
+          network,
+          assetIndex: assetMeta!.assetIndex,
+          szDecimals: assetMeta!.szDecimals,
+          isBuy: side === 'buy',
+          size: coinSize,
+          limitPrice: orderType === 'limit' ? num(limitPrice) : undefined,
+          markPx,
+          slippage: MARKET_SLIPPAGE,
+          legs,
+        });
+        const primary = results[0];
+        if (!primary) throw new Error('Hyperliquid returned no order status');
+        return { primary, extra: results.length - 1 };
+      }
+
+      const res = await placeOrder({
         network,
         assetIndex: assetMeta!.assetIndex,
         szDecimals: assetMeta!.szDecimals,
@@ -210,9 +263,11 @@ export function TradeTicket({
         markPx,
         slippage: MARKET_SLIPPAGE,
       });
+      return { primary: res, extra: 0 };
     },
-    onSuccess: (res) => {
-      setResult(res);
+    onSuccess: ({ primary, extra }) => {
+      setResult(primary);
+      setBracketExtra(extra);
       qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
     },
     onError: (e: unknown) => {
@@ -223,6 +278,9 @@ export function TradeTicket({
   const reset = () => {
     setAmount(initialSizeCoin != null ? String(initialSizeCoin) : '');
     setLimitPrice('');
+    setTpPrice('');
+    setSlPrice('');
+    setBracketExtra(0);
     setReduceOnly(!!closing);
     setLevOverride(null);
     setCrossOverride(null);
@@ -244,10 +302,21 @@ export function TradeTicket({
         ? `~$${formatPrice(markPx, priceDecimals)} (market)`
         : `$${formatPrice(num(limitPrice), priceDecimals)} (limit)`;
     const levLine = !closing && userSetLev ? `\nLeverage ${leverage}× ${isCross ? 'Cross' : 'Isolated'}` : '';
+    const tpSlLine =
+      !closing && (tpNum > 0 || slNum > 0)
+        ? '\n' +
+          [
+            tpNum > 0 ? `TP $${formatPrice(tpNum, priceDecimals)}` : '',
+            slNum > 0 ? `SL $${formatPrice(slNum, priceDecimals)}` : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : '';
     Alert.alert(
       `${verb} ${label}?`,
       `${verb} ${sizeStr} ≈ ${usd(notional)}\nat ${priceStr}` +
         levLine +
+        tpSlLine +
         (reduceOnly ? '\nReduce-only' : '') +
         (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet order.'),
       [
@@ -289,7 +358,14 @@ export function TradeTicket({
           </View>
 
           {result ? (
-            <ResultView coin={label} result={result} priceDecimals={priceDecimals} onDone={close} onAgain={reset} />
+            <ResultView
+              coin={label}
+              result={result}
+              extra={bracketExtra}
+              priceDecimals={priceDecimals}
+              onDone={close}
+              onAgain={reset}
+            />
           ) : (
             <ScrollView
               style={styles.body}
@@ -478,6 +554,60 @@ export function TradeTicket({
                 </View>
               ) : null}
 
+              {/* Take profit / stop loss (optional bracket) — attaches to a new entry. */}
+              {!closing ? (
+                <View style={styles.tpslCard}>
+                  <View style={styles.tpslHead}>
+                    <AppText variant="caption" muted>
+                      Take profit / Stop loss
+                    </AppText>
+                    <AppText variant="caption" muted>
+                      optional · market
+                    </AppText>
+                  </View>
+
+                  <View style={styles.tpslRow}>
+                    <View style={[styles.tpslDot, { backgroundColor: Colors.up }]} />
+                    <TextInput
+                      value={tpPrice}
+                      onChangeText={setTpPrice}
+                      onFocus={() => setFocused('tp')}
+                      placeholder={`TP ${isBuy ? '≥' : '≤'} ${formatPrice(refPx, priceDecimals)}`}
+                      placeholderTextColor={Colors.textFaint}
+                      keyboardType="decimal-pad"
+                      keyboardAppearance="dark"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
+                      style={styles.tpslInput}
+                    />
+                    {tpNum > 0 ? (
+                      <AppText variant="caption" numeric color={tpOk ? Colors.up : Colors.warning}>
+                        {tpOk ? signedUsd(tpPnl) : 'wrong side'}
+                      </AppText>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.tpslRow}>
+                    <View style={[styles.tpslDot, { backgroundColor: Colors.down }]} />
+                    <TextInput
+                      value={slPrice}
+                      onChangeText={setSlPrice}
+                      onFocus={() => setFocused('sl')}
+                      placeholder={`SL ${isBuy ? '≤' : '≥'} ${formatPrice(refPx, priceDecimals)}`}
+                      placeholderTextColor={Colors.textFaint}
+                      keyboardType="decimal-pad"
+                      keyboardAppearance="dark"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
+                      style={styles.tpslInput}
+                    />
+                    {slNum > 0 ? (
+                      <AppText variant="caption" numeric color={slOk ? Colors.down : Colors.warning}>
+                        {slOk ? signedUsd(slPnl) : 'wrong side'}
+                      </AppText>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
+
               {/* Order summary */}
               <View style={styles.infoCard}>
                 <InfoRow label="Order Value" value={notional > 0 ? usd(notional) : '—'} />
@@ -539,7 +669,13 @@ export function TradeTicket({
                 </Pressable>
               </View>
               <AppText variant="caption" muted>
-                {focused === 'limit' ? 'Limit price' : `Size · ${sizeMode === 'usd' ? 'USD' : label}`}
+                {focused === 'limit'
+                  ? 'Limit price'
+                  : focused === 'tp'
+                    ? 'Take profit'
+                    : focused === 'sl'
+                      ? 'Stop loss'
+                      : `Size · ${sizeMode === 'usd' ? 'USD' : label}`}
               </AppText>
               <Pressable onPress={dismissKeyboard} hitSlop={8} style={styles.doneBtn}>
                 <Ionicons name="checkmark" size={16} color={Colors.accent} />
@@ -571,12 +707,15 @@ function InfoRow({ label, value, valueColor }: { label: string; value: string; v
 function ResultView({
   coin,
   result,
+  extra,
   priceDecimals,
   onDone,
   onAgain,
 }: {
   coin: string;
   result: OrderResult;
+  /** Number of TP/SL legs that rode along with the entry. */
+  extra: number;
   priceDecimals: number;
   onDone: () => void;
   onAgain: () => void;
@@ -595,6 +734,11 @@ function ResultView({
           ? `${result.totalSz} ${coin} @ $${formatPrice(result.avgPx ?? 0, priceDecimals)}`
           : `Working on the book · #${result.oid ?? ''}`}
       </AppText>
+      {extra > 0 ? (
+        <AppText variant="caption" color={Colors.accent}>
+          + {extra === 2 ? 'TP & SL' : 'TP/SL'} order{extra > 1 ? 's' : ''} resting
+        </AppText>
+      ) : null}
       <View style={styles.resultBtns}>
         <Pressable style={[styles.resultBtn, styles.resultBtnGhost]} onPress={onAgain}>
           <AppText variant="label" color={Colors.text}>
@@ -720,6 +864,27 @@ const styles = StyleSheet.create({
 
   infoCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
   infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+
+  tpslCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
+  tpslHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  tpslRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: GLASS_INSET,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Platform.OS === 'ios' ? Spacing.sm : 4,
+  },
+  tpslDot: { width: 8, height: 8, borderRadius: 4 },
+  tpslInput: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    paddingVertical: 4,
+  },
 
   hint: { marginTop: Spacing.xs },
   submit: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md, marginTop: Spacing.xs, minHeight: 48 },

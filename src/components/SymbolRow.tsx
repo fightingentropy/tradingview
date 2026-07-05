@@ -134,7 +134,27 @@ function SymbolRowImpl({
   );
 }
 
-export const SymbolRow = memo(SymbolRowImpl);
+// Compare the quote by the three fields the row actually renders (last / prevClose /
+// change24hPct) rather than by object identity, and compare the rest of the props
+// explicitly. Live price ticks bypass this entirely (the row subscribes to the price
+// store via useLivePrice), so a parent re-render or a background quote refetch only
+// re-renders the rows whose displayed data truly changed.
+export const SymbolRow = memo(
+  SymbolRowImpl,
+  (a, b) =>
+    a.instrument === b.instrument &&
+    a.quote?.last === b.quote?.last &&
+    a.quote?.prevClose === b.quote?.prevClose &&
+    a.quote?.change24hPct === b.quote?.change24hPct &&
+    a.watched === b.watched &&
+    a.dragging === b.dragging &&
+    a.editing === b.editing &&
+    a.selected === b.selected &&
+    a.onPress === b.onPress &&
+    a.onToggleWatch === b.onToggleWatch &&
+    a.onToggleSelect === b.onToggleSelect &&
+    a.onDrag === b.onDrag,
+);
 
 const styles = StyleSheet.create({
   row: {

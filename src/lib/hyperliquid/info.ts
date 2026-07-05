@@ -108,9 +108,10 @@ export interface HlAccount {
   vaultValue: number;
   /**
    * Hyperliquid's "Total Equity" — the figure at the top of the web Portfolio page.
-   * = spot value + vaults + perp equity − the overlap where perp collateral is a
-   * reserved slice of the spot USDC (unified margin). Counting spot and perp naively
-   * double-counts that shared collateral; subtracting the overlap matches the web.
+   * = spot value + vaults + perp equity − the overlap where perp collateral is drawn
+   * from the spot USDC (unified margin). Under unified margin the perp accountValue is
+   * already reflected in the spot USDC, so naively adding both double-counts it;
+   * subtracting the overlap (min of perp equity and total spot USDC) matches the web.
    * Staking is tracked separately and not included.
    */
   totalEquity: number;
@@ -288,14 +289,14 @@ function spotPriceByToken([meta, ctxs]: [SpotMeta, SpotCtx[]]): Record<number, n
 
 /**
  * Spot wallet balances valued in USD. Tolerant of failure (returns empty).
- * Also reports the USDC `hold` (USDC reserved as perp cross-margin under unified
- * margin) and the freely-available USDC, which the account total uses to avoid
- * double-counting collateral that shows up in both spot and the perp accountValue.
+ * Also reports the total spot USDC and the freely-available USDC (total − hold). The
+ * account total uses the total spot USDC to size the perp/spot collateral overlap under
+ * unified margin (perp equity is drawn from — and already counted in — the spot USDC).
  */
 async function fetchSpotBalances(
   address: string,
   network: HlNetwork,
-): Promise<{ balances: HlSpotBalance[]; value: number; usdcHold: number; usdcAvailable: number }> {
+): Promise<{ balances: HlSpotBalance[]; value: number; usdcTotal: number; usdcAvailable: number }> {
   try {
     const [state, metaCtxs] = await Promise.all([
       infoRequest<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }),
@@ -312,16 +313,16 @@ async function fetchSpotBalances(
       .filter((b) => b.total > 1e-8)
       .sort((a, b) => b.usdValue - a.usdValue);
     const usdc = state.balances.find((b) => b.coin === 'USDC');
-    const usdcHold = n(usdc?.hold);
-    const usdcAvailable = n(usdc?.total) - usdcHold;
+    const usdcTotal = n(usdc?.total);
+    const usdcAvailable = usdcTotal - n(usdc?.hold);
     return {
       balances,
       value: balances.reduce((s, b) => s + b.usdValue, 0),
-      usdcHold,
+      usdcTotal,
       usdcAvailable,
     };
   } catch {
-    return { balances: [], value: 0, usdcHold: 0, usdcAvailable: 0 };
+    return { balances: [], value: 0, usdcTotal: 0, usdcAvailable: 0 };
   }
 }
 
@@ -349,12 +350,12 @@ async function fetchVaultEquity(address: string, network: HlNetwork): Promise<nu
  * dex; their notional/margin are summed (xyz positions are real exposure).
  *
  * The total equity is the subtle part. Under unified margin a perp position's
- * collateral is a *reserved slice of the spot USDC* — the spot wallet reports that
- * slice as `hold`, and the perp `accountValue` mirrors it. So spot value and perp
- * equity overlap by (up to) the held USDC; adding them naively double-counts it
- * (e.g. an all-spot account with margined perps would read far above its real worth).
- * We subtract the overlap so `totalEquity` matches Hyperliquid's own "Total Equity".
- * Read-only (the address is public, so this works for any account without a key).
+ * collateral is drawn from the spot USDC, so the perp `accountValue` is already
+ * reflected in the spot balance. Spot value and perp equity therefore overlap by (up
+ * to) the whole perp equity; adding them naively double-counts it (e.g. a spot-funded
+ * account with margined perps would read far above its real worth). We subtract the
+ * overlap — min(perp equity, total spot USDC) — so `totalEquity` matches Hyperliquid's
+ * own "Total Equity". Read-only (the address is public, works for any account, no key).
  */
 export async function fetchHlAccount(address: string, network: HlNetwork = 'mainnet'): Promise<HlAccount> {
   const dexes: HlPosition['dex'][] = ['default', 'xyz'];
@@ -406,10 +407,12 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     }
   });
 
-  // Overlap = the perp collateral that's actually reserved-from-spot USDC (counted in
-  // both spot value and perp equity). Cap at perpValue so a classic account with
-  // separately-funded perps (hold ≈ 0) keeps its full perp equity additive.
-  const overlap = Math.min(perpValue, spot.usdcHold);
+  // Under unified margin a perp's collateral is drawn from the spot USDC, so the perp
+  // accountValue is already reflected in spot value — adding both double-counts it. The
+  // overlap is the whole perp equity when the spot USDC covers it; cap at the total spot
+  // USDC so a "classic" account whose cash lives in the perp wallet (spot USDC ≈ 0) keeps
+  // its perp equity additive. Matches Hyperliquid's own "Total Equity" to the cent.
+  const overlap = Math.min(perpValue, spot.usdcTotal);
   const totalEquity = spot.value + vaultValue + perpValue - overlap;
 
   return {
@@ -426,6 +429,57 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     vaultValue,
     totalEquity,
   };
+}
+
+// ---- Portfolio history ----------------------------------------------------
+
+export interface HlPortfolioPoint {
+  /** Sample time, ms epoch. */
+  t: number;
+  /** USD value at that time. */
+  v: number;
+}
+
+export interface HlPortfolioWindow {
+  /** Total account value (perps + spot + vaults) sampled over the window. */
+  accountValue: HlPortfolioPoint[];
+  /** Cumulative PnL over the window. */
+  pnl: HlPortfolioPoint[];
+  /** Traded volume over the window, USD. */
+  volume: number;
+}
+
+export type HlPortfolioPeriodKey = 'day' | 'week' | 'month' | 'allTime';
+export type HlPortfolio = Record<HlPortfolioPeriodKey, HlPortfolioWindow>;
+
+interface RawPortfolioWindow {
+  accountValueHistory?: [number, string][];
+  pnlHistory?: [number, string][];
+  vlm?: string;
+}
+
+/**
+ * Portfolio value + PnL history — the exact series behind the web Portfolio page's
+ * "Account Value" / "PNL" charts. The endpoint returns `[periodName, window]` tuples for
+ * day/week/month/allTime plus perp-only variants; we keep the combined (perps + spot +
+ * vaults) windows, whose latest point matches {@link fetchHlAccount}'s `totalEquity`.
+ * Read-only (the address is public, so this works for any account without a key).
+ */
+export async function fetchHlPortfolio(
+  address: string,
+  network: HlNetwork = 'mainnet',
+): Promise<HlPortfolio> {
+  const rows = await infoRequest<[string, RawPortfolioWindow][]>(network, {
+    type: 'portfolio',
+    user: address,
+  });
+  const byKey = new Map(rows);
+  const pts = (h?: [number, string][]) => (h ?? []).map(([t, v]) => ({ t, v: n(v) }));
+  const win = (key: string): HlPortfolioWindow => {
+    const w = byKey.get(key) ?? {};
+    return { accountValue: pts(w.accountValueHistory), pnl: pts(w.pnlHistory), volume: n(w.vlm) };
+  };
+  return { day: win('day'), week: win('week'), month: win('month'), allTime: win('allTime') };
 }
 
 // ---- Open orders ----------------------------------------------------------

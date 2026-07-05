@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useIsRestoring } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { IndicatorMenu } from '@/components/IndicatorMenu';
@@ -32,6 +32,9 @@ import { useLivePrice } from '@/store/livePrices';
 import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
+/** Stable empty fallback so the loading/empty chart isn't handed a fresh [] each render. */
+const EMPTY_CANDLES: Candle[] = [];
+
 export default function SymbolScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading: marketsLoading } = useMarkets();
@@ -47,7 +50,7 @@ export default function SymbolScreen() {
   useLivePriceFeed(instrument ? [instrument] : []);
   const live = useLivePrice(instrument?.coinKey);
   const { data: candleData, isLoading: candlesLoading } = useCandles(instrument, interval, fetchCount);
-  const candles: Candle[] = candleData ?? [];
+  const candles = candleData ?? EMPTY_CANDLES;
 
   const activeId = useWatchlists((s) => s.activeId);
   const watched = useWatchlists((s) => s.lists.find((l) => l.id === s.activeId)?.symbolIds.includes(id) ?? false);
@@ -65,10 +68,16 @@ export default function SymbolScreen() {
   // `coin` matches the instrument's `coinKey` for both core perps and trade.xyz.
   const { data: hlAccount } = useHlAccount();
   const privacyMode = usePreferences((s) => s.privacyMode);
-  const position: ChartPosition | null =
-    showPosition && instrument
-      ? hlAccount?.positions.find((p) => p.coin === instrument.coinKey) ?? null
-      : null;
+  // useMemo keyed on the positions array (React Query structural-shares it, so a quiet
+  // poll returns the same reference) → the overlay only recomputes when a position
+  // actually changes, not on every 5s account refetch.
+  const position = useMemo<ChartPosition | null>(
+    () =>
+      showPosition && instrument
+        ? hlAccount?.positions.find((p) => p.coin === instrument.coinKey) ?? null
+        : null,
+    [showPosition, instrument, hlAccount?.positions],
+  );
 
   if (!instrument) {
     return (

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   fetchHlAccount,
+  fetchHlPortfolio,
   fetchOpenOrders,
   fetchUserFills,
   fetchUserRole,
@@ -9,6 +10,7 @@ import {
   type HlFill,
   type HlNetwork,
   type HlOpenOrder,
+  type HlPortfolio,
 } from '@/lib/hyperliquid/info';
 import { getAgentKey } from '@/lib/hyperliquid/keyStore';
 import { addressFromPrivateKey } from '@/lib/hyperliquid/sign';
@@ -99,6 +101,23 @@ export function useHlOpenOrders() {
     enabled: !!account,
     refetchInterval: 8_000,
     staleTime: 6_000,
+  });
+}
+
+/**
+ * Portfolio value + PnL history for the resolved master account. The series updates
+ * slowly, so it polls on a lazy 60s cadence. Read-only.
+ */
+export function useHlPortfolio() {
+  const network = useHlConnection((s) => s.network);
+  const { data: account } = useTradingAddress();
+
+  return useQuery<HlPortfolio>({
+    queryKey: queryKeys.hlPortfolio(network, account ?? ''),
+    queryFn: () => fetchHlPortfolio(account as string, network),
+    enabled: !!account,
+    refetchInterval: 60_000,
+    staleTime: 55_000,
   });
 }
 

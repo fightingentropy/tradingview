@@ -2,7 +2,7 @@ import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsRestoring } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { SymbolLogo } from '@/components/SymbolLogo';
@@ -50,7 +50,7 @@ interface Searchable {
   haystack: string;
 }
 
-function AddRow({
+function AddRowImpl({
   instrument,
   added,
   onToggle,
@@ -92,6 +92,10 @@ function AddRow({
     </View>
   );
 }
+
+// Stable props (instrument from the catalog, `added` bool, memoized `onToggle`), so the
+// default shallow compare bails for every row untouched by a keystroke or a watch toggle.
+const AddRow = memo(AddRowImpl);
 
 export default function AddSymbolsScreen() {
   const router = useRouter();
@@ -138,6 +142,13 @@ export default function AddSymbolsScreen() {
   }, [data, searchable, debouncedSearch, filter]);
 
   const onToggle = useCallback((i: Instrument) => toggle(activeId, i.id), [toggle, activeId]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: Instrument }) => (
+      <AddRow instrument={item} added={watched.has(item.id)} onToggle={onToggle} />
+    ),
+    [watched, onToggle],
+  );
 
   return (
     <Screen>
@@ -196,9 +207,7 @@ export default function AddSymbolsScreen() {
           keyExtractor={(item) => item.id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          renderItem={({ item }) => (
-            <AddRow instrument={item} added={watched.has(item.id)} onToggle={onToggle} />
-          )}
+          renderItem={renderItem}
         />
       )}
     </Screen>

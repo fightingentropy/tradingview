@@ -42,6 +42,12 @@ export function useCandles(
         if (!old || old.length === 0) return old;
         const last = old[old.length - 1];
         if (c.t === last.t) {
+          // Same bucket: if nothing actually moved, return the SAME array reference so
+          // React Query notifies no subscribers — a flat/idle market pushes identical
+          // frames every tick, and reallocating here would relayout the whole chart
+          // (SMA over the full series + every Skia path) ~4×/s for no visible change.
+          if (c.o === last.o && c.h === last.h && c.l === last.l && c.c === last.c && c.v === last.v)
+            return old;
           const next = old.slice();
           next[next.length - 1] = c;
           return next;

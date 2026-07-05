@@ -7,7 +7,9 @@ import { HlAccountCard } from '@/components/HlAccountCard';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
 import { formatPrice } from '@/lib/format';
+import { ensureNotificationPermission } from '@/lib/notifications';
 import { useAlerts } from '@/store/alerts';
 import { useChartSettings } from '@/store/chartSettings';
 import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
@@ -36,12 +38,32 @@ export default function SettingsScreen() {
   const setHideSmallBalances = usePreferences((s) => s.setHideSmallBalances);
   const showPosition = useChartSettings((s) => s.showPosition);
   const setShowPosition = useChartSettings((s) => s.setShowPosition);
+  const alertNotifications = usePreferences((s) => s.alertNotifications);
+  const setAlertNotifications = usePreferences((s) => s.setAlertNotifications);
 
   const onReset = () =>
     Alert.alert('Reset watchlists?', 'Restores the default Crypto and Stocks lists.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reset', style: 'destructive', onPress: resetDefaults },
     ]);
+
+  const onToggleNotifications = async (value: boolean) => {
+    if (!value) {
+      setAlertNotifications(false);
+      unregisterAlertTask();
+      return;
+    }
+    const granted = await ensureNotificationPermission();
+    if (!granted) {
+      Alert.alert(
+        'Notifications are off',
+        'Enable notifications for TradingView in iOS Settings to receive price alerts.',
+      );
+      return;
+    }
+    setAlertNotifications(true);
+    registerAlertTask();
+  };
 
   return (
     <Screen>
@@ -114,6 +136,22 @@ export default function SettingsScreen() {
         <AppText variant="caption" muted style={styles.sectionLabel}>
           PRICE ALERTS
         </AppText>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <AppText variant="body">Notify me</AppText>
+              <AppText variant="caption" muted>
+                Get a notification when an alert triggers, even in the background.
+              </AppText>
+            </View>
+            <Switch
+              value={alertNotifications}
+              onValueChange={onToggleNotifications}
+              trackColor={{ false: Colors.surfaceAlt, true: Colors.accent }}
+              ios_backgroundColor={Colors.surfaceAlt}
+            />
+          </View>
+        </View>
         <View style={styles.card}>
           {alerts.length === 0 ? (
             <View style={styles.row}>

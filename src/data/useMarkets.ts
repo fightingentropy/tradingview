@@ -15,7 +15,7 @@ export interface MarketsData {
   quotes: Record<string, Quote>;
 }
 
-async function loadAllMarkets(): Promise<MarketsData> {
+export async function loadAllMarkets(): Promise<MarketsData> {
   const results = await Promise.allSettled(allProviders().map((p) => p.loadMarkets()));
 
   const instruments: Instrument[] = [];

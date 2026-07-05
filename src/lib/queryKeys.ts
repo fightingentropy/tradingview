@@ -15,5 +15,6 @@ export const queryKeys = {
   hlOpenOrdersPrefix: () => ['hl-open-orders'] as const,
   hlFills: (network: HlNetwork, account: string) => ['hl-fills', network, account] as const,
   hlFillsPrefix: () => ['hl-fills'] as const,
+  hlPortfolio: (network: HlNetwork, account: string) => ['hl-portfolio', network, account] as const,
   hlMeta: (network: HlNetwork) => ['hl-meta', network] as const,
 };

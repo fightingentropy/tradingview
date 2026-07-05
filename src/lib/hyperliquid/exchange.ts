@@ -10,14 +10,26 @@ import { fetchWithTimeout, HL_API, type HlNetwork } from './info';
 import { getAgentKey } from './keyStore';
 import { priceToWire, signL1Action, sizeToWire } from './sign';
 
+/** Resting/aggressive limit leg. */
+type LimitWire = { limit: { tif: 'Gtc' | 'Ioc' | 'Alo' } };
+/**
+ * Trigger (TP/SL) leg. Key order inside `trigger` is load-bearing — the action
+ * is msgpack-packed and hashed, and the reference SDK serializes exactly
+ * isMarket, triggerPx, tpsl (verified byte-for-byte, see scripts/verify-hl-signing.mts).
+ */
+type TriggerWire = { trigger: { isMarket: boolean; triggerPx: string; tpsl: 'tp' | 'sl' } };
+
 interface OrderWire {
   a: number;
   b: boolean;
   p: string;
   s: string;
   r: boolean;
-  t: { limit: { tif: 'Gtc' | 'Ioc' | 'Alo' } };
+  t: LimitWire | TriggerWire;
 }
+
+/** How a bulk order's legs relate to each other (Hyperliquid `grouping`). */
+type Grouping = 'na' | 'normalTpsl' | 'positionTpsl';
 
 export interface OrderResult {
   status: 'filled' | 'resting';
@@ -107,19 +119,40 @@ export interface PlaceOrderParams {
   slippage?: number;
 }
 
-export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
+/**
+ * Sign and submit a bulk order action, returning one normalized result per leg.
+ * The single shared path for every order flow (plain, bracket, position TP/SL),
+ * so the nonce, signing, and error handling stay identical. Real funds on mainnet.
+ */
+async function submitOrders(
+  network: HlNetwork,
+  orders: OrderWire[],
+  grouping: Grouping,
+): Promise<OrderResult[]> {
   const key = getAgentKey();
   if (!key) throw new Error('No API wallet key set. Add one in Settings to trade.');
 
-  const isMainnet = p.network === 'mainnet';
+  const action = { type: 'order', orders, grouping };
+  const nonce = nextNonce();
+  const signature = signL1Action(key, action, nonce, network === 'mainnet', null);
+
+  const statuses = await exchangePost(network, action, signature, nonce);
+  return statuses.map(normalizeStatus);
+}
+
+/** The aggressive IOC limit price a market order crosses the book at (mark ± slippage). */
+function marketCrossPx(markPx: number, isBuy: boolean, slippage: number): number {
+  return isBuy ? markPx * (1 + slippage) : markPx * (1 - slippage);
+}
+
+export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
   const isMarket = p.limitPrice === undefined;
 
   let px: number;
   let tif: 'Gtc' | 'Ioc';
   if (isMarket) {
     if (!p.markPx) throw new Error('Missing mark price for market order.');
-    const slip = p.slippage ?? DEFAULT_SLIPPAGE;
-    px = p.isBuy ? p.markPx * (1 + slip) : p.markPx * (1 - slip);
+    px = marketCrossPx(p.markPx, p.isBuy, p.slippage ?? DEFAULT_SLIPPAGE);
     tif = 'Ioc';
   } else {
     px = p.limitPrice as number;
@@ -134,14 +167,164 @@ export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
     r: !!p.reduceOnly,
     t: { limit: { tif } },
   };
-  const action = { type: 'order', orders: [order], grouping: 'na' };
-  const nonce = nextNonce();
-  const signature = signL1Action(key, action, nonce, isMainnet, null);
 
-  const statuses = await exchangePost(p.network, action, signature, nonce);
-  const first = statuses[0];
-  if (first === undefined) throw new Error('Hyperliquid returned no order status');
-  return normalizeStatus(first);
+  const [res] = await submitOrders(p.network, [order], 'na');
+  if (res === undefined) throw new Error('Hyperliquid returned no order status');
+  return res;
+}
+
+// ─── Take-profit / stop-loss (trigger orders) ────────────────────────────────
+
+/** One take-profit or stop-loss leg to attach to an entry or an open position. */
+export interface TriggerLeg {
+  tpsl: 'tp' | 'sl';
+  /** Price at which the trigger arms. */
+  triggerPx: number;
+  /** Market trigger fills immediately when armed (default). Limit rests at {@link limitPx}. */
+  isMarket?: boolean;
+  /** Resting price for a *limit* trigger. Defaults to {@link triggerPx}. Ignored when market. */
+  limitPx?: number;
+}
+
+/**
+ * Build a reduce-only trigger (TP/SL) order wire. `isBuy` is the side of the
+ * *closing* order (opposite the position), so a TP and an SL that close the same
+ * position share `isBuy`/`reduceOnly` and differ only by `tpsl` + `triggerPx`.
+ *
+ * For a MARKET trigger the `p` (limit) field is an aggressive bound past the
+ * trigger so the order is guaranteed to cross the instant it arms — the
+ * market-vs-limit distinction is carried solely by `trigger.isMarket`, never by
+ * `p`. Exported so scripts/verify-hl-signing.mts can lock the exact byte layout.
+ */
+export function buildTriggerWire(o: {
+  assetIndex: number;
+  szDecimals: number;
+  isBuy: boolean;
+  reduceOnly: boolean;
+  size: number;
+  leg: TriggerLeg;
+  slippage?: number;
+}): OrderWire {
+  const isMarket = o.leg.isMarket ?? true;
+  const slip = o.slippage ?? DEFAULT_SLIPPAGE;
+  // Market: pad past the trigger on the fill-adverse side. Limit: rest at the user's price.
+  const limitPx = isMarket
+    ? marketCrossPx(o.leg.triggerPx, o.isBuy, slip)
+    : (o.leg.limitPx ?? o.leg.triggerPx);
+  return {
+    a: o.assetIndex,
+    b: o.isBuy,
+    p: priceToWire(limitPx, o.szDecimals),
+    s: sizeToWire(o.size, o.szDecimals),
+    r: o.reduceOnly,
+    t: {
+      trigger: {
+        isMarket,
+        triggerPx: priceToWire(o.leg.triggerPx, o.szDecimals),
+        tpsl: o.leg.tpsl,
+      },
+    },
+  };
+}
+
+export interface PositionTpSlParams {
+  network: HlNetwork;
+  assetIndex: number;
+  szDecimals: number;
+  /** Side of the open position being protected. */
+  positionIsLong: boolean;
+  /** Position size in coins — the trigger orders close the whole position. */
+  size: number;
+  /** One or two legs (a take-profit and/or a stop-loss). */
+  legs: TriggerLeg[];
+  slippage?: number;
+}
+
+/**
+ * Attach a take-profit and/or stop-loss to an EXISTING open position
+ * (Hyperliquid `positionTpsl` grouping). Each leg is a reduce-only trigger sized
+ * to the position and placed on the opposite side, so firing it closes the
+ * position. When both legs are given they form an OCO pair on the position.
+ * Real funds on mainnet — gate behind a confirm.
+ */
+export async function placePositionTpSl(p: PositionTpSlParams): Promise<OrderResult[]> {
+  if (p.legs.length === 0) throw new Error('No take-profit or stop-loss to place.');
+  const isBuy = !p.positionIsLong; // closing order is opposite the position
+  const orders = p.legs.map((leg) =>
+    buildTriggerWire({
+      assetIndex: p.assetIndex,
+      szDecimals: p.szDecimals,
+      isBuy,
+      reduceOnly: true,
+      size: p.size,
+      leg,
+      slippage: p.slippage,
+    }),
+  );
+  return submitOrders(p.network, orders, 'positionTpsl');
+}
+
+export interface BracketParams {
+  network: HlNetwork;
+  assetIndex: number;
+  szDecimals: number;
+  /** Entry side (buy/long or sell/short). */
+  isBuy: boolean;
+  /** Entry size in coins; the TP/SL legs inherit it. */
+  size: number;
+  /** Limit entry price; omit for a market entry. */
+  limitPrice?: number;
+  /** Required for a market entry — mark used to derive the IOC cross price. */
+  markPx?: number;
+  /** Take-profit and/or stop-loss to attach to the entry. */
+  legs: TriggerLeg[];
+  slippage?: number;
+}
+
+/**
+ * Place an entry order with its take-profit and/or stop-loss in ONE atomic
+ * action (Hyperliquid `normalTpsl` grouping). The children are reduce-only
+ * triggers on the opposite side, sized to the entry, and only rest after the
+ * entry fills. Returns [entryResult, ...triggerResults]. Real funds on mainnet —
+ * gate behind a confirm.
+ */
+export async function placeBracket(p: BracketParams): Promise<OrderResult[]> {
+  if (p.legs.length === 0) throw new Error('A bracket needs a take-profit or stop-loss.');
+
+  const isMarket = p.limitPrice === undefined;
+  let entryPx: number;
+  let tif: 'Gtc' | 'Ioc';
+  if (isMarket) {
+    if (!p.markPx) throw new Error('Missing mark price for market entry.');
+    entryPx = marketCrossPx(p.markPx, p.isBuy, p.slippage ?? DEFAULT_SLIPPAGE);
+    tif = 'Ioc';
+  } else {
+    entryPx = p.limitPrice as number;
+    tif = 'Gtc';
+  }
+
+  const entry: OrderWire = {
+    a: p.assetIndex,
+    b: p.isBuy,
+    p: priceToWire(entryPx, p.szDecimals),
+    s: sizeToWire(p.size, p.szDecimals),
+    r: false,
+    t: { limit: { tif } },
+  };
+  // Children close the entry: opposite side, reduce-only, same size.
+  const children = p.legs.map((leg) =>
+    buildTriggerWire({
+      assetIndex: p.assetIndex,
+      szDecimals: p.szDecimals,
+      isBuy: !p.isBuy,
+      reduceOnly: true,
+      size: p.size,
+      leg,
+      slippage: p.slippage,
+    }),
+  );
+
+  return submitOrders(p.network, [entry, ...children], 'normalTpsl');
 }
 
 export interface UpdateLeverageParams {

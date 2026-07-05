@@ -23,6 +23,12 @@ interface PreferencesState {
   /** Watchlist row order (default = the list's manual order). Remembered across launches. */
   watchlistSort: SortMode;
   setWatchlistSort: (value: SortMode) => void;
+  /**
+   * Fire a local OS notification when a price alert triggers, and keep the background
+   * alert check registered. Off by default; enabling it requests notification permission.
+   */
+  alertNotifications: boolean;
+  setAlertNotifications: (value: boolean) => void;
 }
 
 export const usePreferences = create<PreferencesState>()(
@@ -36,6 +42,8 @@ export const usePreferences = create<PreferencesState>()(
       setMarketsSort: (value) => set({ marketsSort: value }),
       watchlistSort: 'default',
       setWatchlistSort: (value) => set({ watchlistSort: value }),
+      alertNotifications: false,
+      setAlertNotifications: (value) => set({ alertNotifications: value }),
     }),
     {
       name: 'preferences-v1',

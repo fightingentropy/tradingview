@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MarginSheet } from '@/components/MarginSheet';
+import { PortfolioCard } from '@/components/PortfolioCard';
 import { SymbolLogo } from '@/components/SymbolLogo';
+import { TpSlSheet, type TpSlLegInput } from '@/components/TpSlSheet';
 import { TradeTicket } from '@/components/TradeTicket';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
@@ -13,7 +15,7 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useMarkets } from '@/data/useMarkets';
 import { useHlAccount, useHlFills, useHlOpenOrders } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
-import { cancelOrder, marketClose, reversePosition, updateIsolatedMargin } from '@/lib/hyperliquid/exchange';
+import { cancelOrder, marketClose, placePositionTpSl, reversePosition, updateIsolatedMargin } from '@/lib/hyperliquid/exchange';
 import type { HlFill, HlOpenOrder, HlPosition, HlSpotBalance } from '@/lib/hyperliquid/info';
 import { formatCompact, formatPercent, formatPrice, priceDecimalsFor, signedUsd, usd } from '@/lib/format';
 import { queryKeys } from '@/lib/queryKeys';
@@ -100,6 +102,7 @@ export default function AccountScreen() {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [closeTicket, setCloseTicket] = useState<CloseTicket | null>(null);
   const [marginTarget, setMarginTarget] = useState<HlPosition | null>(null);
+  const [tpSlTarget, setTpSlTarget] = useState<HlPosition | null>(null);
   const hideSmallBalances = usePreferences((s) => s.hideSmallBalances);
   const privacyMode = usePreferences((s) => s.privacyMode);
   const setPrivacyMode = usePreferences((s) => s.setPrivacyMode);
@@ -177,6 +180,28 @@ export default function AccountScreen() {
       Alert.alert('Margin update failed', e instanceof Error ? e.message : 'Unknown error'),
   });
 
+  const tpSlMutation = useMutation({
+    mutationFn: ({ p, legs }: { p: HlPosition; legs: TpSlLegInput[] }) => {
+      const mInfo = meta?.[p.coin];
+      if (!mInfo) throw new Error(`No market metadata for ${p.coin}`);
+      return placePositionTpSl({
+        network,
+        assetIndex: mInfo.assetIndex,
+        szDecimals: mInfo.szDecimals,
+        positionIsLong: p.side === 'long',
+        size: p.size,
+        legs,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+      setTpSlTarget(null);
+    },
+    onError: (e: unknown) =>
+      Alert.alert('Couldn’t set TP/SL', e instanceof Error ? e.message : 'Unknown error'),
+  });
+
   const confirmClose = useCallback(
     (p: HlPosition) => {
       if (!tradable) return;
@@ -249,6 +274,30 @@ export default function AccountScreen() {
       );
     },
     [tradable, network, marginMutation],
+  );
+
+  const confirmTpSl = useCallback(
+    (p: HlPosition, legs: TpSlLegInput[]) => {
+      if (!tradable || legs.length === 0) return;
+      const sym = cleanCoin(p.coin);
+      const dec = priceDecimalsFor(instrumentForCoin(p.coin)?.priceDecimals ?? 6, p.markPx);
+      const lines = legs
+        .map(
+          (l) =>
+            `${l.tpsl === 'tp' ? 'Take profit' : 'Stop loss'} @ $${formatPrice(l.triggerPx, dec)}`,
+        )
+        .join('\n');
+      Alert.alert(
+        `Set TP/SL on ${sym}?`,
+        `${lines}\n\nMarket triggers that reduce-only close your ${p.side} ${qty(p.size)} ${sym}.` +
+          (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet order.'),
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Set orders', onPress: () => tpSlMutation.mutate({ p, legs }) },
+        ],
+      );
+    },
+    [tradable, network, tpSlMutation, instrumentForCoin],
   );
 
   const openLimitClose = useCallback(
@@ -410,6 +459,9 @@ export default function AccountScreen() {
           <Stat label="Exposure" value={mask(usd(account.totalNotional))} />
         </View>
 
+        {/* Portfolio value sparkline + period change / drawdown. */}
+        <PortfolioCard hidden={privacyMode} />
+
         {/* Positions / Orders / Balances / History tabs */}
         <View style={styles.tabBarWrap}>
           <ScrollView
@@ -470,6 +522,7 @@ export default function AccountScreen() {
                   onMarketClose={() => confirmClose(p)}
                   onReverse={() => confirmReverse(p)}
                   onAdjustMargin={() => setMarginTarget(p)}
+                  onSetTpSl={() => setTpSlTarget(p)}
                 />
               ))}
             </View>
@@ -561,6 +614,34 @@ export default function AccountScreen() {
         closing
       />
 
+      {/* Set take-profit / stop-loss on an open position (reduce-only market triggers).
+          Keyed per coin so each open mounts fresh — no price carries across positions. */}
+      <TpSlSheet
+        key={tpSlTarget ? `${tpSlTarget.coin}-tpsl` : 'tpsl-closed'}
+        visible={tpSlTarget !== null}
+        onClose={() => setTpSlTarget(null)}
+        symbol={
+          tpSlTarget
+            ? instrumentForCoin(tpSlTarget.coin)?.symbol ?? cleanCoin(tpSlTarget.coin)
+            : ''
+        }
+        side={tpSlTarget?.side ?? 'long'}
+        size={tpSlTarget?.size ?? 0}
+        entryPx={tpSlTarget?.entryPx ?? 0}
+        markPx={tpSlTarget?.markPx ?? 0}
+        leverage={tpSlTarget?.leverage ?? 1}
+        priceDecimals={
+          tpSlTarget
+            ? priceDecimalsFor(instrumentForCoin(tpSlTarget.coin)?.priceDecimals ?? 6, tpSlTarget.markPx)
+            : 2
+        }
+        tradable={tradable}
+        busy={tpSlMutation.isPending}
+        onSubmit={(legs) => {
+          if (tpSlTarget) confirmTpSl(tpSlTarget, legs);
+        }}
+      />
+
       {/* Add / remove isolated margin on a position. */}
       <MarginSheet
         visible={marginTarget !== null}
@@ -627,7 +708,19 @@ function TabButton({
   );
 }
 
-function PositionCard({
+// Memoized so a 5s account refetch only re-renders positions whose data actually
+// changed (React Query structural-shares unchanged rows). The inline callbacks close
+// over stable ids, so their identity is deliberately excluded from the comparison.
+const PositionCard = memo(PositionCardImpl, (prev, next) =>
+  prev.p === next.p &&
+  prev.instrument?.id === next.instrument?.id &&
+  prev.expanded === next.expanded &&
+  prev.tradable === next.tradable &&
+  prev.busy === next.busy &&
+  prev.hidden === next.hidden,
+);
+
+function PositionCardImpl({
   p,
   instrument,
   expanded,
@@ -640,6 +733,7 @@ function PositionCard({
   onMarketClose,
   onReverse,
   onAdjustMargin,
+  onSetTpSl,
 }: {
   p: HlPosition;
   instrument: Instrument | undefined;
@@ -653,6 +747,7 @@ function PositionCard({
   onMarketClose: () => void;
   onReverse: () => void;
   onAdjustMargin: () => void;
+  onSetTpSl: () => void;
 }) {
   const pnlColor = p.unrealizedPnl >= 0 ? Colors.up : Colors.down;
   const sideColor = p.side === 'long' ? Colors.up : Colors.down;
@@ -741,6 +836,20 @@ function PositionCard({
               color={p.funding > 0 ? Colors.up : p.funding < 0 ? Colors.down : undefined}
             />
           </View>
+
+          <Pressable
+            style={({ pressed }) => [styles.tpslBtn, pressed && tradable && !busy && styles.actionBtnPressed]}
+            onPress={onSetTpSl}
+            disabled={!tradable || busy}>
+            <Ionicons
+              name="shield-half-outline"
+              size={15}
+              color={!tradable || busy ? Colors.textFaint : Colors.accent}
+            />
+            <AppText variant="label" color={!tradable || busy ? Colors.textFaint : Colors.accent}>
+              Set TP / SL
+            </AppText>
+          </Pressable>
 
           <View style={styles.actions}>
             <ActionBtn label="Limit Close" onPress={onLimitClose} disabled={!tradable || busy} />
@@ -837,7 +946,14 @@ function ActionBtn({
   );
 }
 
-function SpotCard({
+const SpotCard = memo(SpotCardImpl, (prev, next) =>
+  prev.b === next.b &&
+  prev.instrument?.id === next.instrument?.id &&
+  prev.expanded === next.expanded &&
+  prev.hidden === next.hidden,
+);
+
+function SpotCardImpl({
   b,
   instrument,
   expanded,
@@ -920,7 +1036,15 @@ function DetailRow({ label, value, strong }: { label: string; value: string; str
   );
 }
 
-function OrderCard({
+const OrderCard = memo(OrderCardImpl, (prev, next) =>
+  prev.o === next.o &&
+  prev.instrument?.id === next.instrument?.id &&
+  prev.tradable === next.tradable &&
+  prev.busy === next.busy &&
+  prev.hidden === next.hidden,
+);
+
+function OrderCardImpl({
   o,
   instrument,
   tradable,
@@ -995,7 +1119,14 @@ function OrderCard({
   );
 }
 
-function FillCard({
+const FillCard = memo(FillCardImpl, (prev, next) =>
+  prev.f === next.f &&
+  prev.instrument?.id === next.instrument?.id &&
+  prev.hidden === next.hidden &&
+  prev.expanded === next.expanded,
+);
+
+function FillCardImpl({
   f,
   instrument,
   hidden,
@@ -1244,6 +1375,15 @@ const styles = StyleSheet.create({
   cellValue: { marginTop: 1 },
   cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
+  tpslBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceAlt,
+  },
   actionBtn: {
     flex: 1,
     alignItems: 'center',
