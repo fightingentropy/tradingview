@@ -43,7 +43,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "scripts": {
     "start": "expo start",
@@ -52,6 +53,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit",
     "verify:signing": "npx tsx scripts/verify-hl-signing.mts"
   },
   "private": true
