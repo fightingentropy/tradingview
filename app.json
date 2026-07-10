@@ -48,6 +48,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7a48f84d-fdac-4b75-97a9-8cc69e77124b"
+      }
+    },
+    "owner": "magemerlins-team"
   }
 }
