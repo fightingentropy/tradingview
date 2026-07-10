@@ -42,9 +42,15 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260710.1",
     "@types/react": "~19.2.2",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "cheerio": "^1.1.2",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~56.0.4",
+    "telegram": "^2.26.22",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "wrangler": "^4.110.0"
   },
   "scripts": {
     "start": "expo start",
@@ -52,8 +58,15 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "news:server": "node scripts/news-feed-server.mjs",
+    "news:install": "node scripts/news-service.mjs install",
+    "news:uninstall": "node scripts/news-service.mjs uninstall",
+    "relay:deploy": "node scripts/news-relay-deploy.mjs",
+    "relay:dev": "wrangler dev",
+    "telegram:login": "node scripts/telegram-login.mjs",
     "lint": "expo lint",
-    "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit",
+    "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit && npm run typecheck:worker",
+    "typecheck:worker": "wrangler types worker/worker-configuration.d.ts && node node_modules/@typescript/native/bin/tsc -p worker/tsconfig.json",
     "verify:signing": "npx tsx scripts/verify-hl-signing.mts"
   },
   "private": true

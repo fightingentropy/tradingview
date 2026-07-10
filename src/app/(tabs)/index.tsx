@@ -183,6 +183,8 @@ export default function WatchlistScreen() {
   // them in. Flips once per launch; later 60s background refetches stay silent.
   const [settled, setSettled] = useState(false);
   useEffect(() => {
+    // This one-way latch deliberately records the first completed fetch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!settled && !isRestoring && data && !isFetching) setSettled(true);
   }, [settled, isRestoring, data, isFetching]);
   const dimmed = !settled && instruments.length > 0;

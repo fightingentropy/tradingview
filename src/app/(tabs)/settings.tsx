@@ -10,6 +10,10 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
 import { formatPrice } from '@/lib/format';
 import { ensureNotificationPermission } from '@/lib/notifications';
+import {
+  registerNewsPushNotifications,
+  unregisterNewsPushNotifications,
+} from '@/lib/newsPush';
 import { useAlerts } from '@/store/alerts';
 import { useChartSettings } from '@/store/chartSettings';
 import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
@@ -40,6 +44,8 @@ export default function SettingsScreen() {
   const setShowPosition = useChartSettings((s) => s.setShowPosition);
   const alertNotifications = usePreferences((s) => s.alertNotifications);
   const setAlertNotifications = usePreferences((s) => s.setAlertNotifications);
+  const newsNotifications = usePreferences((s) => s.newsNotifications);
+  const setNewsNotifications = usePreferences((s) => s.setNewsNotifications);
 
   const onReset = () =>
     Alert.alert('Reset watchlists?', 'Restores the default Crypto and Stocks lists.', [
@@ -63,6 +69,23 @@ export default function SettingsScreen() {
     }
     setAlertNotifications(true);
     registerAlertTask();
+  };
+
+  const onToggleNewsNotifications = async (value: boolean) => {
+    if (!value) {
+      setNewsNotifications(false);
+      await unregisterNewsPushNotifications().catch(() => undefined);
+      return;
+    }
+    try {
+      await registerNewsPushNotifications();
+      setNewsNotifications(true);
+    } catch (error) {
+      Alert.alert(
+        'News alerts unavailable',
+        error instanceof Error ? error.message : 'Could not register this device for news alerts.',
+      );
+    }
   };
 
   return (
@@ -147,6 +170,26 @@ export default function SettingsScreen() {
             <Switch
               value={alertNotifications}
               onValueChange={onToggleNotifications}
+              trackColor={{ false: Colors.surfaceAlt, true: Colors.accent }}
+              ios_backgroundColor={Colors.surfaceAlt}
+            />
+          </View>
+        </View>
+
+        <AppText variant="caption" muted style={styles.sectionLabel}>
+          NEWS ALERTS
+        </AppText>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <AppText variant="body">Push notifications</AppText>
+              <AppText variant="caption" muted>
+                Notify me when a new X or Telegram feed item arrives.
+              </AppText>
+            </View>
+            <Switch
+              value={newsNotifications}
+              onValueChange={onToggleNewsNotifications}
               trackColor={{ false: Colors.surfaceAlt, true: Colors.accent }}
               ios_backgroundColor={Colors.surfaceAlt}
             />

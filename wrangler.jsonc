@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tradingview-news-relay",
+  "main": "worker/news-relay.ts",
+  "compatibility_date": "2026-07-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "kv_namespaces": [
+    {
+      "binding": "NEWS_RELAY_KV",
+      "id": "757a63280fc54505ad9c6950b37df7b6"
+    }
+  ],
+  "secrets": {
+    "required": ["APP_ACCESS_TOKEN", "BRIDGE_SECRET"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

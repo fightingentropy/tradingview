@@ -33,6 +33,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="news"
+        options={{
+          title: 'News',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="newspaper-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="account"
         options={{
           title: 'Account',

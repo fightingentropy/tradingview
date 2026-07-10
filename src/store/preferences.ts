@@ -29,6 +29,9 @@ interface PreferencesState {
    */
   alertNotifications: boolean;
   setAlertNotifications: (value: boolean) => void;
+  /** Receive remote push notifications when the configured news feeds publish. */
+  newsNotifications: boolean;
+  setNewsNotifications: (value: boolean) => void;
 }
 
 export const usePreferences = create<PreferencesState>()(
@@ -44,6 +47,8 @@ export const usePreferences = create<PreferencesState>()(
       setWatchlistSort: (value) => set({ watchlistSort: value }),
       alertNotifications: false,
       setAlertNotifications: (value) => set({ alertNotifications: value }),
+      newsNotifications: false,
+      setNewsNotifications: (value) => set({ newsNotifications: value }),
     }),
     {
       name: 'preferences-v1',

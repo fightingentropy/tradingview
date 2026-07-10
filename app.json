@@ -36,6 +36,12 @@
           }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "enableBackgroundRemoteNotifications": false
+        }
+      ],
       "expo-secure-store",
       "expo-background-task"
     ],

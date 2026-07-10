@@ -17,12 +17,15 @@ export function configureNotifications(): void {
   if (handlerInstalled) return;
   handlerInstalled = true;
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: false,
-      shouldShowList: true,
-      shouldPlaySound: false,
-      shouldSetBadge: false,
-    }),
+    handleNotification: async (notification) => {
+      const isRemoteNews = notification.request.content.data?.type === 'news';
+      return {
+        shouldShowBanner: isRemoteNews,
+        shouldShowList: true,
+        shouldPlaySound: isRemoteNews,
+        shouldSetBadge: false,
+      };
+    },
   });
 }
 

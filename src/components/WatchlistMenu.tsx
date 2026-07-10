@@ -80,6 +80,8 @@ export function WatchlistMenu({
 
   // Always reopen on the main page.
   useEffect(() => {
+    // The sheet stays mounted between presentations, so opening resets its subpage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (visible) setPage('main');
   }, [visible]);
 

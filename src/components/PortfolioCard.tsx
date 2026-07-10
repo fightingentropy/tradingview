@@ -34,7 +34,7 @@ function maxDrawdownPct(points: HlPortfolioPoint[]): number {
 export function PortfolioCard({ hidden }: { hidden: boolean }) {
   const { data } = useHlPortfolio();
   const [period, setPeriod] = useState<HlPortfolioPeriodKey>('week');
-  const points = data?.[period]?.accountValue ?? [];
+  const points = useMemo(() => data?.[period]?.accountValue ?? [], [data, period]);
 
   const stats = useMemo(() => {
     if (points.length < 2) return null;

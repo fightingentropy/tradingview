@@ -1,9 +1,11 @@
 import type { CandleInterval } from '@/domain/types';
 import type { HlNetwork } from '@/lib/hyperliquid/info';
+import type { NewsSourceFilter } from '@/domain/news';
 
 /** Centralized query-key factory so cache reads/writes never drift. */
 export const queryKeys = {
   instruments: () => ['instruments'] as const,
+  newsFeed: (source: NewsSourceFilter) => ['news-feed', source] as const,
   candles: (id: string, interval: CandleInterval, count: number) =>
     ['candles', id, interval, count] as const,
   // Hyperliquid account state. The first segment is a stable prefix so invalidating

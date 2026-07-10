@@ -17,6 +17,8 @@ import type * as SecureStoreModule from 'expo-secure-store';
 
 let SecureStore: typeof SecureStoreModule | null = null;
 try {
+  // Deliberately guarded: older dev clients may not contain the native module.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   SecureStore = require('expo-secure-store') as typeof SecureStoreModule;
 } catch {
   SecureStore = null;

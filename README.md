@@ -11,6 +11,10 @@ where they trade, tap a symbol for a live candlestick chart.
   *same* Hyperliquid endpoints. Also keyless; the live `xyz` universe drives the catalog directly.
 - **Cboe** — the real CBOE Volatility Index (**VIX**) via Cboe's free public delayed-quotes CDN
   (`cdn.cboe.com`). Keyless; fetched directly (quote + daily/intraday OHLC history).
+- **News feed service** — normalized X + Telegram feed. In development, `npm run news:server`
+  reuses YinYang's local `bird` browser-cookie auth and X list, then merges seven configured
+  Telegram channels. The installed bridge publishes signed snapshots to a protected
+  Cloudflare Worker for physical-device feeds and push alerts; see `docs/news-feed.md`.
 
 ## Stack
 
@@ -25,7 +29,22 @@ The native stack (Skia, MMKV, Reanimated) requires a custom dev client.
 npx expo run:ios          # build + launch on the iOS simulator
 # then, for subsequent JS work, just:
 npx expo start            # Fast Refresh over the dev client
+# in a second terminal:
+npm run news:server       # X list feed through the local bird CLI
 ```
+
+Install the feed as a per-user background service so it starts automatically at login:
+
+```bash
+npm run news:install
+```
+
+Deploy the authenticated HTTPS relay with `npm run relay:deploy`. Relay credentials
+stay in macOS Keychain and Cloudflare encrypted secrets. In the app, enable remote
+alerts under **Settings → News Alerts**.
+
+For Telegram channels that hide their public web history, run `npm run telegram:login` once.
+The API credentials and reusable session are stored in macOS Keychain, not the repository.
 
 > The dev client connects to the React Native default port **8081**. If another Metro server
 > is already on 8081, free it first (the dev client ignores `--port` overrides in this SDK).
@@ -33,7 +52,7 @@ npx expo start            # Fast Refresh over the dev client
 ## Structure
 
 ```
-src/app/            Expo Router routes (tabs: Watchlist | Markets | Settings; symbol/[id])
+src/app/            Expo Router routes (tabs: Watchlist | Markets | News | Account | Settings)
 src/providers/      hyperliquid/ (rest, ws, coins, provider) · cboe/ · registry
 src/data/           React Query hooks (useMarkets, useCandles, useLivePriceFeed)
 src/store/          Zustand stores (watchlists + MMKV persistence, live prices)

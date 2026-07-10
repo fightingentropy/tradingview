@@ -9,6 +9,7 @@ import { AlertHost } from '@/components/AlertHost';
 import { SymbolMenuProvider } from '@/components/SymbolMenu';
 import { Colors } from '@/constants/theme';
 import { AlertWatcher } from '@/hooks/useAlertWatcher';
+import { NewsPushRegistration } from '@/hooks/useNewsPushRegistration';
 import { PERSIST_MAX_AGE, queryClient, queryPersister } from '@/lib/queryClient';
 
 // Victory Native's candlestick paths emit Skia path deprecation warnings; harmless and noisy.
@@ -54,7 +55,16 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <PersistQueryClientProvider
           client={queryClient}
-          persistOptions={{ persister: queryPersister, maxAge: PERSIST_MAX_AGE, buster: '1' }}>
+          persistOptions={{
+            persister: queryPersister,
+            maxAge: PERSIST_MAX_AGE,
+            buster: '1',
+            // A connected News feed may contain posts from private Telegram
+            // channels. Keep that cache in memory only, never in MMKV.
+            dehydrateOptions: {
+              shouldDehydrateQuery: (query) => query.queryKey[0] !== 'news-feed',
+            },
+          }}>
           <ThemeProvider value={navTheme}>
             <StatusBar style="light" />
             <SymbolMenuProvider>
@@ -76,6 +86,7 @@ export default function RootLayout() {
               </Stack>
             </SymbolMenuProvider>
             <AlertWatcher />
+            <NewsPushRegistration />
             <AlertHost />
           </ThemeProvider>
         </PersistQueryClientProvider>
