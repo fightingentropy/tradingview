@@ -34,37 +34,75 @@ function compactBody(text) {
 }
 
 export class NewsPushService {
-  tokens = new Set();
+  subscriptions = new Map();
   seen = new Set();
   initialized = false;
   receipts = new Map();
+
+  constructor({ xListId, telegramChannels }) {
+    this.xSourceId = `x:list:${xListId}`;
+    this.validSourceIds = new Set([
+      this.xSourceId,
+      ...telegramChannels.map((handle) => `telegram:${handle.toLowerCase()}`),
+    ]);
+  }
+
+  normalizeSourceIds(value) {
+    if (!Array.isArray(value)) return [...this.validSourceIds];
+    return [...new Set(value.filter((id) => typeof id === 'string'))].filter((id) =>
+      this.validSourceIds.has(id),
+    );
+  }
+
+  sourceIdForItem(item) {
+    if (item?.source === 'x') return this.xSourceId;
+    const handle = String(item?.author?.handle ?? '').replace(/^@/, '').toLowerCase();
+    const sourceId = handle ? `telegram:${handle}` : undefined;
+    return sourceId && this.validSourceIds.has(sourceId) ? sourceId : undefined;
+  }
 
   async initialize() {
     if (this.initialized) return;
     const tokens = await readJson(TOKENS_FILE, []);
     const seen = await readJson(SEEN_FILE, []);
     if (Array.isArray(tokens)) {
-      for (const token of tokens) if (TOKEN_PATTERN.test(token)) this.tokens.add(token);
+      for (const value of tokens) {
+        if (typeof value === 'string' && TOKEN_PATTERN.test(value)) {
+          this.subscriptions.set(value, [...this.validSourceIds]);
+          continue;
+        }
+        if (!value || typeof value !== 'object' || !TOKEN_PATTERN.test(value.token)) continue;
+        const sourceIds = this.normalizeSourceIds(value.sourceIds);
+        if (sourceIds.length > 0) this.subscriptions.set(value.token, sourceIds);
+      }
     }
     if (Array.isArray(seen)) for (const key of seen) if (typeof key === 'string') this.seen.add(key);
     this.initialized = true;
   }
 
-  async register(token) {
+  async register(token, sourceIds) {
     await this.initialize();
     if (!TOKEN_PATTERN.test(token)) throw new Error('Invalid Expo push token');
-    this.tokens.add(token);
+    if (sourceIds !== undefined && !Array.isArray(sourceIds)) {
+      throw new Error('sourceIds must be an array');
+    }
+    const normalizedSourceIds = this.normalizeSourceIds(sourceIds);
+    if (normalizedSourceIds.length === 0) throw new Error('Choose at least one notification source');
+    this.subscriptions.set(token, normalizedSourceIds);
     await this.saveTokens();
   }
 
   async unregister(token) {
     await this.initialize();
-    this.tokens.delete(token);
+    this.subscriptions.delete(token);
     await this.saveTokens();
   }
 
   async saveTokens() {
-    await atomicWriteJson(TOKENS_FILE, [...this.tokens]);
+    await atomicWriteJson(
+      TOKENS_FILE,
+      [...this.subscriptions].map(([token, sourceIds]) => ({ token, sourceIds })),
+    );
   }
 
   async processSnapshot(items) {
@@ -79,36 +117,41 @@ export class NewsPushService {
     const fresh = items.filter((item) => !this.seen.has(itemKey(item)));
     this.seen = new Set([...keys, ...this.seen].slice(0, 1000));
     await atomicWriteJson(SEEN_FILE, [...this.seen]);
-    if (fresh.length === 0 || this.tokens.size === 0) return;
+    if (fresh.length === 0 || this.subscriptions.size === 0) return;
 
     await this.sendItems(fresh);
   }
 
   async sendItems(items) {
-    const selected = items.slice(0, 3);
-    const notifications = selected.map((item) => ({
-      sound: 'default',
-      title: `${item.source === 'x' ? 'X' : 'Telegram'} · ${item.author.name}`,
-      body: compactBody(item.text),
-      data: {
-        type: 'news',
-        screen: '/news',
-        itemUrl: item.url,
-        itemId: itemKey(item),
-      },
-    }));
-    if (items.length > selected.length) {
-      notifications.push({
-        sound: 'default',
-        title: `${items.length - selected.length} more news updates`,
-        body: 'Open the News tab to see the latest X and Telegram posts.',
-        data: { type: 'news', screen: '/news', itemId: 'news:summary' },
+    const messages = [...this.subscriptions].flatMap(([to, sourceIds]) => {
+      const allowed = new Set(sourceIds);
+      const allowedItems = items.filter((item) => {
+        const sourceId = this.sourceIdForItem(item);
+        return sourceId ? allowed.has(sourceId) : false;
       });
-    }
-
-    const messages = [...this.tokens].flatMap((to) =>
-      notifications.map((notification) => ({ to, ...notification })),
-    );
+      const selected = allowedItems.slice(0, 3);
+      const notifications = selected.map((item) => ({
+        sound: 'default',
+        title: `${item.source === 'x' ? 'X' : 'Telegram'} · ${item.author.name}`,
+        body: compactBody(item.text),
+        data: {
+          type: 'news',
+          screen: '/news',
+          itemUrl: item.url,
+          itemId: itemKey(item),
+        },
+      }));
+      if (allowedItems.length > selected.length) {
+        notifications.push({
+          sound: 'default',
+          title: `${allowedItems.length - selected.length} more selected news updates`,
+          body: 'Open the News tab to see the latest posts from your alert sources.',
+          data: { type: 'news', screen: '/news', itemId: 'news:summary' },
+        });
+      }
+      return notifications.map((notification) => ({ to, ...notification }));
+    });
+    if (messages.length === 0) return;
     const response = await fetch(PUSH_SEND_URL, {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -123,7 +166,7 @@ export class NewsPushService {
       if (ticket?.status === 'ok' && typeof ticket.id === 'string' && token) {
         this.receipts.set(ticket.id, token);
       } else if (ticket?.details?.error === 'DeviceNotRegistered' && token) {
-        this.tokens.delete(token);
+        this.subscriptions.delete(token);
       }
     });
     await this.saveTokens();
@@ -144,7 +187,9 @@ export class NewsPushService {
       const receipt = payload.data?.[id];
       if (!receipt) continue;
       const token = this.receipts.get(id);
-      if (receipt.details?.error === 'DeviceNotRegistered' && token) this.tokens.delete(token);
+      if (receipt.details?.error === 'DeviceNotRegistered' && token) {
+        this.subscriptions.delete(token);
+      }
       this.receipts.delete(id);
     }
     await this.saveTokens();

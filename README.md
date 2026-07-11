@@ -41,7 +41,8 @@ npm run news:install
 
 Deploy the authenticated HTTPS relay with `npm run relay:deploy`. Relay credentials
 stay in macOS Keychain and Cloudflare encrypted secrets. In the app, enable remote
-alerts under **Settings → News Alerts**.
+alerts under **Settings → News Alerts**, then choose the X list and individual Telegram
+channels that are allowed to notify this device.
 
 For Telegram channels that hide their public web history, run `npm run telegram:login` once.
 The API credentials and reusable session are stored in macOS Keychain, not the repository.

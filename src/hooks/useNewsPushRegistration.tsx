@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
 
+import { normalizeNewsNotificationSourceIds } from '@/domain/newsNotificationSources';
 import { registerNewsPushNotifications } from '@/lib/newsPush';
 import { usePreferences } from '@/store/preferences';
 
@@ -14,7 +15,12 @@ export function NewsPushRegistration() {
   const enabled = usePreferences((state) => state.newsNotifications);
 
   useEffect(() => {
-    if (enabled) void registerNewsPushNotifications().catch(() => undefined);
+    const sourceIds = normalizeNewsNotificationSourceIds(
+      usePreferences.getState().newsNotificationSources,
+    );
+    if (enabled && sourceIds.length > 0) {
+      void registerNewsPushNotifications(sourceIds).catch(() => undefined);
+    }
   }, [enabled]);
 
   useEffect(() => {

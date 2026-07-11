@@ -1,12 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { HlAccountCard } from '@/components/HlAccountCard';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import {
+  ALL_NEWS_NOTIFICATION_SOURCE_IDS,
+  NEWS_NOTIFICATION_SOURCES,
+  normalizeNewsNotificationSourceIds,
+} from '@/domain/newsNotificationSources';
 import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
 import { formatPrice } from '@/lib/format';
 import { ensureNotificationPermission } from '@/lib/notifications';
@@ -34,6 +39,7 @@ function StatusRow({ label, detail, color }: { label: string; detail: string; co
 }
 
 export default function SettingsScreen() {
+  const [newsAlertsUpdating, setNewsAlertsUpdating] = useState(false);
   const resetDefaults = useWatchlists((s) => s.resetDefaults);
   const alerts = useAlerts((s) => s.alerts);
   const removeAlert = useAlerts((s) => s.remove);
@@ -46,6 +52,11 @@ export default function SettingsScreen() {
   const setAlertNotifications = usePreferences((s) => s.setAlertNotifications);
   const newsNotifications = usePreferences((s) => s.newsNotifications);
   const setNewsNotifications = usePreferences((s) => s.setNewsNotifications);
+  const storedNewsNotificationSources = usePreferences((s) => s.newsNotificationSources);
+  const setNewsNotificationSources = usePreferences((s) => s.setNewsNotificationSources);
+  const newsNotificationSources = normalizeNewsNotificationSourceIds(
+    storedNewsNotificationSources,
+  );
 
   const onReset = () =>
     Alert.alert('Reset watchlists?', 'Restores the default Crypto and Stocks lists.', [
@@ -72,19 +83,56 @@ export default function SettingsScreen() {
   };
 
   const onToggleNewsNotifications = async (value: boolean) => {
-    if (!value) {
-      setNewsNotifications(false);
-      await unregisterNewsPushNotifications().catch(() => undefined);
-      return;
-    }
+    if (newsAlertsUpdating) return;
+    setNewsAlertsUpdating(true);
     try {
-      await registerNewsPushNotifications();
+      if (!value) {
+        setNewsNotifications(false);
+        await unregisterNewsPushNotifications().catch(() => undefined);
+        return;
+      }
+      const sourceIds =
+        newsNotificationSources.length > 0
+          ? newsNotificationSources
+          : [...ALL_NEWS_NOTIFICATION_SOURCE_IDS];
+      if (newsNotificationSources.length === 0) setNewsNotificationSources(sourceIds);
+      await registerNewsPushNotifications(sourceIds);
       setNewsNotifications(true);
     } catch (error) {
       Alert.alert(
         'News alerts unavailable',
         error instanceof Error ? error.message : 'Could not register this device for news alerts.',
       );
+    } finally {
+      setNewsAlertsUpdating(false);
+    }
+  };
+
+  const onToggleNewsSource = async (sourceId: string, value: boolean) => {
+    if (newsAlertsUpdating) return;
+    setNewsAlertsUpdating(true);
+    const previous = newsNotificationSources;
+    const next = value
+      ? normalizeNewsNotificationSourceIds([...previous, sourceId])
+      : previous.filter((id) => id !== sourceId);
+    setNewsNotificationSources(next);
+
+    try {
+      if (!newsNotifications) return;
+      if (next.length === 0) {
+        setNewsNotifications(false);
+        await unregisterNewsPushNotifications().catch(() => undefined);
+        return;
+      }
+      await registerNewsPushNotifications(next);
+    } catch (error) {
+      setNewsNotificationSources(previous);
+      Alert.alert(
+        'Could not update news alerts',
+        error instanceof Error ? error.message : 'The selected sources could not be saved.',
+      );
+    } finally {
+      setNewsAlertsUpdating(false);
     }
   };
 
@@ -184,16 +232,38 @@ export default function SettingsScreen() {
             <View style={styles.rowText}>
               <AppText variant="body">Push notifications</AppText>
               <AppText variant="caption" muted>
-                Notify me when a new X or Telegram feed item arrives.
+                Notify me only when a selected feed source publishes.
               </AppText>
             </View>
             <Switch
               value={newsNotifications}
               onValueChange={onToggleNewsNotifications}
+              disabled={newsAlertsUpdating}
               trackColor={{ false: Colors.surfaceAlt, true: Colors.accent }}
               ios_backgroundColor={Colors.surfaceAlt}
             />
           </View>
+          {NEWS_NOTIFICATION_SOURCES.map((source) => (
+            <Fragment key={source.id}>
+              <View style={styles.divider} />
+              <View style={[styles.row, styles.sourceRow]}>
+                <View style={styles.rowText}>
+                  <AppText variant="body">{source.label}</AppText>
+                  <AppText variant="caption" muted>
+                    {source.detail}
+                  </AppText>
+                </View>
+                <Switch
+                  value={newsNotificationSources.includes(source.id)}
+                  onValueChange={(value) => void onToggleNewsSource(source.id, value)}
+                  disabled={newsAlertsUpdating}
+                  trackColor={{ false: Colors.surfaceAlt, true: Colors.accent }}
+                  ios_backgroundColor={Colors.surfaceAlt}
+                  accessibilityLabel={`${source.label} news alerts`}
+                />
+              </View>
+            </Fragment>
+          ))}
         </View>
         <View style={styles.card}>
           {alerts.length === 0 ? (
@@ -266,6 +336,7 @@ const styles = StyleSheet.create({
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   rowText: { flex: 1, gap: 2, paddingRight: Spacing.md },
+  sourceRow: { paddingLeft: Spacing.xl },
   alertText: { flex: 1, gap: 2 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.border, marginLeft: Spacing.lg },

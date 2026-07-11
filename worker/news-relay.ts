@@ -1,3 +1,9 @@
+import {
+  ALL_NEWS_NOTIFICATION_SOURCE_IDS,
+  filterNewsItemsByNotificationSources,
+  normalizeNewsNotificationSourceIds,
+} from '../src/domain/newsNotificationSources';
+
 const FEED_KEY = 'feed:all';
 const RECEIPTS_KEY = 'push:receipts';
 const TOKEN_PREFIX = 'push:token:';
@@ -35,6 +41,12 @@ interface FeedSnapshot {
 interface PushReceiptRef {
   id: string;
   tokenKey: string;
+}
+
+interface PushSubscription {
+  token: string;
+  sourceIds: string[];
+  updatedAt: string;
 }
 
 interface ExpoPushTicket {
@@ -209,14 +221,42 @@ async function tokenKey(token: string): Promise<string> {
     .join('')}`;
 }
 
-async function listTokens(env: Env): Promise<Array<{ key: string; token: string }>> {
+function parseSubscription(raw: string): PushSubscription | undefined {
+  if (TOKEN_PATTERN.test(raw)) {
+    return {
+      token: raw,
+      sourceIds: [...ALL_NEWS_NOTIFICATION_SOURCE_IDS],
+      updatedAt: new Date(0).toISOString(),
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    const value = parsed as Record<string, unknown>;
+    if (typeof value.token !== 'string' || !TOKEN_PATTERN.test(value.token)) return undefined;
+    const sourceIds = normalizeNewsNotificationSourceIds(value.sourceIds);
+    if (sourceIds.length === 0) return undefined;
+    return {
+      token: value.token,
+      sourceIds,
+      updatedAt: asString(value.updatedAt, 64) ?? new Date(0).toISOString(),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function listSubscriptions(
+  env: Env,
+): Promise<Array<{ key: string; subscription: PushSubscription }>> {
   const listed = await env.NEWS_RELAY_KV.list({ prefix: TOKEN_PREFIX, limit: MAX_PUSH_TOKENS });
   const entries = await Promise.all(
-    listed.keys.map(async ({ name }) => ({ key: name, token: await env.NEWS_RELAY_KV.get(name) })),
+    listed.keys.map(async ({ name }) => ({ key: name, raw: await env.NEWS_RELAY_KV.get(name) })),
   );
-  return entries.flatMap((entry) =>
-    entry.token && TOKEN_PATTERN.test(entry.token) ? [{ key: entry.key, token: entry.token }] : [],
-  );
+  return entries.flatMap((entry) => {
+    const subscription = entry.raw ? parseSubscription(entry.raw) : undefined;
+    return subscription ? [{ key: entry.key, subscription }] : [];
+  });
 }
 
 function compactBody(text: string): string {
@@ -250,28 +290,33 @@ async function checkReceipts(env: Env): Promise<void> {
 async function sendNewsPushes(env: Env, items: NewsItem[]): Promise<void> {
   await checkReceipts(env);
   if (items.length === 0) return;
-  const tokens = await listTokens(env);
-  if (tokens.length === 0) return;
+  const subscriptions = await listSubscriptions(env);
+  if (subscriptions.length === 0) return;
 
-  const selected = items.slice(0, 3);
-  const notifications = selected.map((item) => ({
-    sound: 'default',
-    title: `${item.source === 'x' ? 'X' : 'Telegram'} · ${item.author.name}`,
-    body: compactBody(item.text),
-    data: { type: 'news', screen: '/news', itemUrl: item.url, itemId: itemKey(item) },
-  }));
-  if (items.length > selected.length) {
-    notifications.push({
+  const messages = subscriptions.flatMap(({ key, subscription }) => {
+    const allowedItems = filterNewsItemsByNotificationSources(items, subscription.sourceIds);
+    const selected = allowedItems.slice(0, 3);
+    const notifications = selected.map((item) => ({
       sound: 'default',
-      title: `${items.length - selected.length} more news updates`,
-      body: 'Open the News tab to see the latest X and Telegram posts.',
-      data: { type: 'news', screen: '/news', itemUrl: undefined, itemId: 'news:summary' },
-    });
-  }
-
-  const messages = tokens.flatMap(({ key, token }) =>
-    notifications.map((notification) => ({ key, token, message: { to: token, ...notification } })),
-  );
+      title: `${item.source === 'x' ? 'X' : 'Telegram'} · ${item.author.name}`,
+      body: compactBody(item.text),
+      data: { type: 'news', screen: '/news', itemUrl: item.url, itemId: itemKey(item) },
+    }));
+    if (allowedItems.length > selected.length) {
+      notifications.push({
+        sound: 'default',
+        title: `${allowedItems.length - selected.length} more selected news updates`,
+        body: 'Open the News tab to see the latest posts from your alert sources.',
+        data: { type: 'news', screen: '/news', itemUrl: undefined, itemId: 'news:summary' },
+      });
+    }
+    return notifications.map((notification) => ({
+      key,
+      token: subscription.token,
+      message: { to: subscription.token, ...notification },
+    }));
+  });
+  if (messages.length === 0) return;
   const response = await fetch(PUSH_SEND_URL, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -312,13 +357,28 @@ async function handleFeed(request: Request, env: Env): Promise<Response> {
 async function handleRegistration(request: Request, env: Env): Promise<Response> {
   const contentLength = Number(request.headers.get('Content-Length') ?? 0);
   if (contentLength > 16_384) return json({ error: 'Request body is too large' }, 413, true);
-  const payload = (await request.json()) as { expoPushToken?: unknown };
+  const payload = (await request.json()) as { expoPushToken?: unknown; sourceIds?: unknown };
   if (typeof payload.expoPushToken !== 'string' || !TOKEN_PATTERN.test(payload.expoPushToken)) {
     return json({ error: 'Invalid Expo push token' }, 400, true);
   }
+  if (payload.sourceIds !== undefined && !Array.isArray(payload.sourceIds)) {
+    return json({ error: 'sourceIds must be an array' }, 400, true);
+  }
   const key = await tokenKey(payload.expoPushToken);
-  if (request.method === 'POST') await env.NEWS_RELAY_KV.put(key, payload.expoPushToken);
-  else await env.NEWS_RELAY_KV.delete(key);
+  if (request.method === 'POST') {
+    const sourceIds = normalizeNewsNotificationSourceIds(payload.sourceIds);
+    if (sourceIds.length === 0) {
+      return json({ error: 'Choose at least one notification source' }, 400, true);
+    }
+    const subscription: PushSubscription = {
+      token: payload.expoPushToken,
+      sourceIds,
+      updatedAt: new Date().toISOString(),
+    };
+    await env.NEWS_RELAY_KV.put(key, JSON.stringify(subscription));
+  } else {
+    await env.NEWS_RELAY_KV.delete(key);
+  }
   return json({ ok: true }, 200, true);
 }
 

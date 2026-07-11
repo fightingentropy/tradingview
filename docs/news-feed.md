@@ -24,7 +24,7 @@ in macOS Keychain.
 The production relay is deployed at
 `https://tradingview-news-relay.erlinhoxha.workers.dev`. The Mac bridge signs each
 snapshot with an ingest secret, then publishes it to the relay. Cloudflare KV holds
-the latest normalized feed and registered Expo push tokens. Both relay secrets are
+the latest normalized feed and per-device Expo push subscriptions. Both relay secrets are
 stored in macOS Keychain and Cloudflare encrypted secret bindings.
 
 The app uses `EXPO_PUBLIC_NEWS_FEED_URL` and
@@ -93,8 +93,11 @@ The Cloudflare relay:
 
 - Requires a separate bearer token for feed reads and device registration.
 - Stores each device token under its own hashed KV key, avoiding shared-key write races.
+- Stores an allow-list with each token for the X list and individual Telegram channels;
+  legacy token-only registrations safely default to every configured source.
 - Sends no notifications on the initial snapshot, then deduplicates later snapshots.
-- Sends at most three individual news alerts plus one summary per poll.
+- Filters every fresh batch per device, then sends at most three allowed alerts plus one
+  summary per poll.
 - Checks Expo push receipts and removes devices reported as unregistered.
 - Keeps preview URLs disabled and emits structured Worker logs.
 
@@ -105,7 +108,11 @@ changing its host.
 ## Push provisioning
 
 The app asks for notification permission only when **Settings → News Alerts → Push
-notifications** is enabled. It obtains the Expo push token using the EAS project ID,
-registers it with the relay, and routes notification taps to the News tab. Apple push
-credentials still need to be configured once through EAS for the paid Apple Developer
-team before installing the physical-device build.
+notifications** is enabled. The master switch is followed by one switch for the X list
+and one for every configured Telegram channel. Changing a source switch immediately
+updates that device's relay allow-list; disabling the last selected source turns the
+master switch off and unregisters the device. The app obtains the Expo push token using
+the EAS project ID and routes notification taps to the News tab.
+
+Apple push key `9MRJ86RC8V` is assigned to `com.erlinhoxha.tradingview` on team
+`T29NU9NCA2`. EAS also has an active ad-hoc profile containing Erlin's iPhone.

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { SortMode } from '@/components/SortControl';
+import { ALL_NEWS_NOTIFICATION_SOURCE_IDS } from '@/domain/newsNotificationSources';
 import { mmkvStorage } from '@/lib/mmkv';
 
 /** USD threshold below which a balance counts as "dust". */
@@ -32,6 +33,9 @@ interface PreferencesState {
   /** Receive remote push notifications when the configured news feeds publish. */
   newsNotifications: boolean;
   setNewsNotifications: (value: boolean) => void;
+  /** X list and Telegram channels allowed to send remote news notifications. */
+  newsNotificationSources: string[];
+  setNewsNotificationSources: (value: string[]) => void;
 }
 
 export const usePreferences = create<PreferencesState>()(
@@ -49,6 +53,8 @@ export const usePreferences = create<PreferencesState>()(
       setAlertNotifications: (value) => set({ alertNotifications: value }),
       newsNotifications: false,
       setNewsNotifications: (value) => set({ newsNotifications: value }),
+      newsNotificationSources: [...ALL_NEWS_NOTIFICATION_SOURCE_IDS],
+      setNewsNotificationSources: (value) => set({ newsNotificationSources: value }),
     }),
     {
       name: 'preferences-v1',

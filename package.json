@@ -61,6 +61,7 @@
     "news:server": "node scripts/news-feed-server.mjs",
     "news:install": "node scripts/news-service.mjs install",
     "news:uninstall": "node scripts/news-service.mjs uninstall",
+    "test:news-push": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/news-notification-sources.test.mjs",
     "relay:deploy": "node scripts/news-relay-deploy.mjs",
     "relay:dev": "wrangler dev",
     "telegram:login": "node scripts/telegram-login.mjs",

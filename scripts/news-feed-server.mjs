@@ -31,7 +31,7 @@ let inFlight;
 let telegramCached;
 let telegramInFlight;
 let telegramClientPromise;
-const pushService = new NewsPushService();
+const pushService = new NewsPushService({ xListId: LIST_ID, telegramChannels: TELEGRAM_CHANNELS });
 
 function findBird() {
   const candidates = [
@@ -393,8 +393,11 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await readJsonBody(request);
       if (typeof body.expoPushToken !== 'string') throw new Error('expoPushToken is required');
-      if (request.method === 'POST') await pushService.register(body.expoPushToken);
-      else await pushService.unregister(body.expoPushToken);
+      if (request.method === 'POST') {
+        await pushService.register(body.expoPushToken, body.sourceIds);
+      } else {
+        await pushService.unregister(body.expoPushToken);
+      }
       sendJson(response, 200, { ok: true });
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : 'Invalid request' });
