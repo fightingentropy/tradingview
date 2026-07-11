@@ -2,6 +2,17 @@ import { load } from 'cheerio';
 
 export const DIGG_TECH_URL = 'https://digg.com/tech';
 
+function faviconUrl($) {
+  const href = $('link[rel="icon"][href]').first().attr('href')?.trim();
+  if (!href) return undefined;
+  try {
+    const url = new URL(href, DIGG_TECH_URL);
+    return url.protocol === 'https:' && url.hostname === 'digg.com' ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function storyTimestamps(html) {
   const timestamps = new Map();
   const pattern = /\{\\"clusterId\\":\\"([^"\\]+)\\"[\s\S]{0,4000}?\\"createdAt\\":\\"([^"\\]+)\\"/g;
@@ -15,6 +26,7 @@ function storyTimestamps(html) {
 export function parseDiggTech(html) {
   const $ = load(html);
   const timestamps = storyTimestamps(html);
+  const avatarUrl = faviconUrl($);
   const items = [];
 
   $('[data-testid="top-stories-stack"] [data-story-row="true"]').each((_, node) => {
@@ -38,7 +50,7 @@ export function parseDiggTech(html) {
     items.push({
       id,
       source: 'digg',
-      author: { name: 'Digg Tech', handle: 'tech' },
+      author: { name: 'Digg Tech', handle: 'tech', ...(avatarUrl ? { avatarUrl } : {}) },
       text: summary ? `${title}\n\n${summary}` : title,
       publishedAt,
       url,

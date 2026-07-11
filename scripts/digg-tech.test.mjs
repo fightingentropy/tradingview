@@ -5,6 +5,7 @@ import { parseDiggTech } from './digg-tech.mjs';
 
 test('parses only ranked Digg Tech stories with stable timestamps', () => {
   const html = `
+    <head><link rel="icon" href="/icon.svg?current"></head>
     <div data-testid="top-stories-stack">
       <div data-story-row="true" data-story-id="story-one">
         <a href="/tech/abc123"><h3>First tech story</h3></a>
@@ -24,7 +25,11 @@ test('parses only ranked Digg Tech stories with stable timestamps', () => {
     {
       id: 'story-one',
       source: 'digg',
-      author: { name: 'Digg Tech', handle: 'tech' },
+      author: {
+        name: 'Digg Tech',
+        handle: 'tech',
+        avatarUrl: 'https://digg.com/icon.svg?current',
+      },
       text: 'First tech story\n\nA useful summary.',
       publishedAt: '2026-07-11T08:04:15.230Z',
       url: 'https://digg.com/tech/abc123',
