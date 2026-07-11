@@ -32,7 +32,7 @@ function parseItem(value: unknown): NewsItem | null {
   const author = item.author as Record<string, unknown> | undefined;
   if (
     typeof item.id !== 'string' ||
-    (item.source !== 'x' && item.source !== 'telegram') ||
+    (item.source !== 'x' && item.source !== 'telegram' && item.source !== 'digg') ||
     typeof item.text !== 'string' ||
     typeof item.publishedAt !== 'string' ||
     !Number.isFinite(Date.parse(item.publishedAt)) ||
@@ -76,7 +76,7 @@ function parseNotice(value: unknown): NewsFeedNotice | null {
   const notice = value as Record<string, unknown>;
   if (
     typeof notice.id !== 'string' ||
-    (notice.source !== 'x' && notice.source !== 'telegram') ||
+    (notice.source !== 'x' && notice.source !== 'telegram' && notice.source !== 'digg') ||
     typeof notice.message !== 'string'
   ) {
     return null;

@@ -14,7 +14,7 @@ const MAX_FEED_ITEMS = 200;
 const MAX_PUSH_TOKENS = 25;
 const encoder = new TextEncoder();
 
-type NewsSource = 'x' | 'telegram';
+type NewsSource = 'x' | 'telegram' | 'digg';
 
 interface NewsItem {
   id: string;
@@ -99,7 +99,7 @@ function normalizeItem(value: unknown): NewsItem | undefined {
     !publishedAt ||
     !name ||
     !Number.isFinite(Date.parse(publishedAt)) ||
-    (item.source !== 'x' && item.source !== 'telegram')
+    (item.source !== 'x' && item.source !== 'telegram' && item.source !== 'digg')
   ) {
     return undefined;
   }
@@ -135,7 +135,11 @@ function normalizeNotice(value: unknown): NewsNotice | undefined {
   const notice = value as Record<string, unknown>;
   const id = asString(notice.id, 256);
   const message = asString(notice.message, 1_000);
-  if (!id || !message || (notice.source !== 'x' && notice.source !== 'telegram')) {
+  if (
+    !id ||
+    !message ||
+    (notice.source !== 'x' && notice.source !== 'telegram' && notice.source !== 'digg')
+  ) {
     return undefined;
   }
   return { id, source: notice.source, message };
@@ -342,8 +346,8 @@ async function handleFeed(request: Request, env: Env): Promise<Response> {
   if (!snapshot) return json({ error: 'The news bridge has not published yet.' }, 503, true);
   const url = new URL(request.url);
   const source = url.searchParams.get('source') ?? 'all';
-  if (source !== 'all' && source !== 'x' && source !== 'telegram') {
-    return json({ error: 'source must be all, x, or telegram' }, 400, true);
+  if (source !== 'all' && source !== 'x' && source !== 'telegram' && source !== 'digg') {
+    return json({ error: 'source must be all, x, telegram, or digg' }, 400, true);
   }
   const requested = Number(url.searchParams.get('limit') ?? 40);
   const limit = Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.floor(requested))) : 40;

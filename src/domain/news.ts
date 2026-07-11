@@ -1,9 +1,9 @@
-export type NewsSource = 'x' | 'telegram';
+export type NewsSource = 'x' | 'telegram' | 'digg';
 export type NewsSourceFilter = 'all' | NewsSource;
 
 export interface NewsAuthor {
   name: string;
-  /** X @handle or Telegram channel handle, without a required leading @. */
+  /** X @handle, Telegram channel handle, or source slug, without a required leading @. */
   handle?: string;
   avatarUrl?: string;
 }
@@ -21,7 +21,7 @@ export interface NewsItem {
   author: NewsAuthor;
   text: string;
   publishedAt: string;
-  /** Canonical x.com or t.me URL. */
+  /** Canonical source URL. */
   url?: string;
   media?: NewsMedia[];
 }

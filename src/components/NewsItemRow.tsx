@@ -27,6 +27,13 @@ function SourceMark({ source }: Pick<NewsItem, 'source'>) {
       </View>
     );
   }
+  if (source === 'digg') {
+    return (
+      <View style={[styles.sourceMark, styles.diggMark]}>
+        <AppText style={styles.diggGlyph}>D</AppText>
+      </View>
+    );
+  }
   return (
     <View style={[styles.sourceMark, styles.telegramMark]}>
       <Ionicons name="paper-plane" size={13} color="#FFFFFF" />
@@ -115,7 +122,9 @@ const styles = StyleSheet.create({
   },
   xMark: { backgroundColor: '#16181C', borderWidth: StyleSheet.hairlineWidth, borderColor: '#3B3F46' },
   telegramMark: { backgroundColor: '#229ED9' },
+  diggMark: { backgroundColor: '#FF5C35' },
   xGlyph: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  diggGlyph: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   body: { fontSize: 15, lineHeight: 21, fontWeight: '400' },
   mediaWrap: {
     height: 190,

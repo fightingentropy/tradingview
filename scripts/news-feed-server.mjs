@@ -5,6 +5,7 @@ import os from 'node:os';
 import { promisify } from 'node:util';
 import { load } from 'cheerio';
 
+import { DIGG_TECH_URL, fetchDiggTech } from './digg-tech.mjs';
 import { NewsPushService } from './news-push.mjs';
 import { publishNewsRelaySnapshot } from './news-relay-client.mjs';
 import { readTelegramCredentials } from './telegram-keychain.mjs';
@@ -31,6 +32,8 @@ let inFlight;
 let telegramCached;
 let telegramInFlight;
 let telegramClientPromise;
+let diggCached;
+let diggInFlight;
 const pushService = new NewsPushService({ xListId: LIST_ID, telegramChannels: TELEGRAM_CHANNELS });
 
 function findBird() {
@@ -321,6 +324,41 @@ async function fetchXTimeline(count) {
   }
 }
 
+async function fetchDiggTimeline(count) {
+  const now = Date.now();
+  if (diggCached && now - diggCached.fetchedAt < CACHE_TTL_MS) {
+    return diggCached.items.slice(0, count);
+  }
+  if (diggInFlight) return (await diggInFlight).slice(0, count);
+
+  diggInFlight = (async () => {
+    const items = await fetchDiggTech();
+    diggCached = { fetchedAt: Date.now(), items };
+    return items;
+  })();
+
+  try {
+    return (await diggInFlight).slice(0, count);
+  } finally {
+    diggInFlight = undefined;
+  }
+}
+
+async function fetchDiggSnapshot(count) {
+  try {
+    return { items: await fetchDiggTimeline(count), notices: [] };
+  } catch {
+    return {
+      items: [],
+      notices: [{
+        id: 'digg:tech:unavailable',
+        source: 'digg',
+        message: 'Digg Tech is temporarily unavailable.',
+      }],
+    };
+  }
+}
+
 function sendJson(response, status, body) {
   response.writeHead(status, {
     'Access-Control-Allow-Origin': '*',
@@ -339,20 +377,17 @@ async function readJsonBody(request) {
   return JSON.parse(body || '{}');
 }
 
-async function latestCombinedItems(count = MAX_COUNT) {
-  return (await latestCombinedSnapshot(count)).items;
-}
-
 async function latestCombinedSnapshot(count = MAX_COUNT) {
-  const [xItems, telegram] = await Promise.all([
+  const [xItems, telegram, digg] = await Promise.all([
     fetchXTimeline(count),
     fetchTelegramTimeline(count),
+    fetchDiggSnapshot(count),
   ]);
   return {
-    items: [...xItems, ...telegram.items]
+    items: [...xItems, ...telegram.items, ...digg.items]
       .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
       .slice(0, count),
-    notices: telegram.notices,
+    notices: [...telegram.notices, ...digg.notices],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -413,6 +448,7 @@ const server = http.createServer(async (request, response) => {
       ok: true,
       xSource: `list:${LIST_ID}`,
       telegramChannels: TELEGRAM_CHANNELS,
+      diggSource: DIGG_TECH_URL,
     });
     return;
   }
@@ -422,8 +458,8 @@ const server = http.createServer(async (request, response) => {
   }
 
   const source = url.searchParams.get('source') ?? 'all';
-  if (!['all', 'x', 'telegram'].includes(source)) {
-    sendJson(response, 400, { error: 'source must be all, x, or telegram' });
+  if (!['all', 'x', 'telegram', 'digg'].includes(source)) {
+    sendJson(response, 400, { error: 'source must be all, x, telegram, or digg' });
     return;
   }
   const requested = Number(url.searchParams.get('limit') ?? 40);
@@ -438,10 +474,12 @@ const server = http.createServer(async (request, response) => {
       const telegram = await fetchTelegramTimeline(count);
       items = telegram.items;
       notices = telegram.notices;
+    } else if (source === 'digg') {
+      items = await fetchDiggTimeline(count);
     } else {
-      const telegram = await fetchTelegramTimeline(count);
-      items = await latestCombinedItems(count);
-      notices = telegram.notices;
+      const snapshot = await latestCombinedSnapshot(count);
+      items = snapshot.items;
+      notices = snapshot.notices;
     }
     sendJson(response, 200, { items, notices, updatedAt: new Date().toISOString() });
   } catch (error) {
@@ -453,6 +491,7 @@ const server = http.createServer(async (request, response) => {
 server.listen(PORT, HOST, () => {
   console.log(`News feed bridge listening on http://${HOST}:${PORT}`);
   console.log(`X source: https://x.com/i/lists/${LIST_ID} via bird browser-cookie auth`);
+  console.log(`Digg source: ${DIGG_TECH_URL}`);
   void pollForPushNotifications();
   setInterval(() => void pollForPushNotifications(), POLL_INTERVAL_MS).unref();
 });

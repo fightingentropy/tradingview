@@ -21,6 +21,10 @@ history and therefore needs an authenticated Telegram user session. Run
 `npm run telegram:login` once; the API ID, hash, and reusable session are stored
 in macOS Keychain.
 
+Digg stories are read from the ranked Top Tech Stories at `https://digg.com/tech`.
+The bridge extracts each story's stable cluster ID, headline, summary, creation time,
+and canonical Digg link. No Digg account or credential is required.
+
 The production relay is deployed at
 `https://tradingview-news-relay.erlinhoxha.workers.dev`. The Mac bridge signs each
 snapshot with an ingest secret, then publishes it to the relay. Cloudflare KV holds
@@ -45,7 +49,7 @@ Accept: application/json
 Authorization: Bearer app-access-token
 ```
 
-`source` is `all`, `x`, or `telegram`.
+`source` is `all`, `x`, `telegram`, or `digg`.
 
 ## Response
 
@@ -53,17 +57,16 @@ Authorization: Bearer app-access-token
 {
   "items": [
     {
-      "id": "x:1900000000000000000",
-      "source": "x",
+      "id": "b9d9b03b-3021-4391-9ba6-0342072f8e96",
+      "source": "digg",
       "author": {
-        "name": "Example Research",
-        "handle": "example",
-        "avatarUrl": "https://..."
+        "name": "Digg Tech",
+        "handle": "tech"
       },
-      "text": "Post or channel message text",
+      "text": "Tech story headline and summary",
       "publishedAt": "2026-07-10T10:30:00.000Z",
-      "url": "https://x.com/example/status/1900000000000000000",
-      "media": [{ "type": "image", "previewUrl": "https://..." }]
+      "url": "https://digg.com/tech/example-story",
+      "media": []
     }
   ],
   "notices": [],
@@ -84,6 +87,7 @@ The included bridge:
 - Never logs tweet bodies or browser-cookie credentials.
 - Fetches the configured Telegram public feeds independently, so one unavailable
   channel does not blank the others.
+- Fetches Digg Tech independently, so a temporary Digg failure does not blank X or Telegram.
 - Polls once per minute when installed with `npm run news:install`, detects only
   newly published items, and publishes an HMAC-authenticated snapshot to the relay.
 - Persists push tokens and the seen-item watermark in the user's Application
