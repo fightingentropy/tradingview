@@ -90,8 +90,10 @@ The included bridge:
 - Fetches the configured Telegram public feeds independently, so one unavailable
   channel does not blank the others.
 - Fetches Digg Tech independently, so a temporary Digg failure does not blank X or Telegram.
-- Polls once per minute when installed with `npm run news:install`, detects only
-  newly published items, and publishes an HMAC-authenticated snapshot to the relay.
+- Runs a lightweight scheduler once per minute when installed with `npm run news:install`.
+  Upstream pulls are cached independently: X refreshes hourly, Telegram every five minutes,
+  and Digg hourly. Each scheduler tick detects newly published items and publishes an
+  HMAC-authenticated snapshot to the relay without re-fetching sources that are still fresh.
 - Persists push tokens and the seen-item watermark in the user's Application
   Support directory with user-only permissions.
 

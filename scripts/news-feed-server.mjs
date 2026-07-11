@@ -7,6 +7,11 @@ import { load } from 'cheerio';
 
 import { DIGG_TECH_URL, fetchDiggTech } from './digg-tech.mjs';
 import { NewsPushService } from './news-push.mjs';
+import {
+  NEWS_SCHEDULER_INTERVAL_MS,
+  NEWS_SOURCE_REFRESH_INTERVAL_MS,
+  isNewsSourceCacheFresh,
+} from './news-refresh-policy.mjs';
 import { publishNewsRelaySnapshot } from './news-relay-client.mjs';
 import { readTelegramCredentials } from './telegram-keychain.mjs';
 
@@ -14,9 +19,7 @@ const execFileAsync = promisify(execFile);
 const LIST_ID = '1933193197817135501';
 const HOST = process.env.NEWS_FEED_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.NEWS_FEED_PORT ?? 8430);
-const CACHE_TTL_MS = 20_000;
 const MAX_COUNT = 100;
-const POLL_INTERVAL_MS = 60_000;
 const TELEGRAM_CHANNELS = [
   'tradfi_t3',
   'trad_fin',
@@ -257,7 +260,7 @@ async function fetchAuthenticatedTelegramChannel(handle) {
 
 async function fetchTelegramTimeline(count) {
   const now = Date.now();
-  if (telegramCached && now - telegramCached.fetchedAt < CACHE_TTL_MS) {
+  if (telegramCached && isNewsSourceCacheFresh('telegram', telegramCached.fetchedAt, now)) {
     return { ...telegramCached, items: telegramCached.items.slice(0, count) };
   }
   if (telegramInFlight) {
@@ -297,7 +300,11 @@ async function fetchTelegramTimeline(count) {
 
 async function fetchXTimeline(count) {
   const now = Date.now();
-  if (cached && now - cached.fetchedAt < CACHE_TTL_MS && cached.requestedCount >= count) {
+  if (
+    cached &&
+    isNewsSourceCacheFresh('x', cached.fetchedAt, now) &&
+    cached.requestedCount >= count
+  ) {
     return cached.items.slice(0, count);
   }
   if (inFlight) return (await inFlight).slice(0, count);
@@ -326,7 +333,7 @@ async function fetchXTimeline(count) {
 
 async function fetchDiggTimeline(count) {
   const now = Date.now();
-  if (diggCached && now - diggCached.fetchedAt < CACHE_TTL_MS) {
+  if (diggCached && isNewsSourceCacheFresh('digg', diggCached.fetchedAt, now)) {
     return diggCached.items.slice(0, count);
   }
   if (diggInFlight) return (await diggInFlight).slice(0, count);
@@ -449,6 +456,12 @@ const server = http.createServer(async (request, response) => {
       xSource: `list:${LIST_ID}`,
       telegramChannels: TELEGRAM_CHANNELS,
       diggSource: DIGG_TECH_URL,
+      refreshIntervalsMs: NEWS_SOURCE_REFRESH_INTERVAL_MS,
+      lastFetchedAt: {
+        x: cached ? new Date(cached.fetchedAt).toISOString() : null,
+        telegram: telegramCached ? new Date(telegramCached.fetchedAt).toISOString() : null,
+        digg: diggCached ? new Date(diggCached.fetchedAt).toISOString() : null,
+      },
     });
     return;
   }
@@ -492,6 +505,11 @@ server.listen(PORT, HOST, () => {
   console.log(`News feed bridge listening on http://${HOST}:${PORT}`);
   console.log(`X source: https://x.com/i/lists/${LIST_ID} via bird browser-cookie auth`);
   console.log(`Digg source: ${DIGG_TECH_URL}`);
+  console.log(
+    `Refresh intervals: X ${NEWS_SOURCE_REFRESH_INTERVAL_MS.x / 60_000}m, ` +
+    `Telegram ${NEWS_SOURCE_REFRESH_INTERVAL_MS.telegram / 60_000}m, ` +
+    `Digg ${NEWS_SOURCE_REFRESH_INTERVAL_MS.digg / 60_000}m`,
+  );
   void pollForPushNotifications();
-  setInterval(() => void pollForPushNotifications(), POLL_INTERVAL_MS).unref();
+  setInterval(() => void pollForPushNotifications(), NEWS_SCHEDULER_INTERVAL_MS).unref();
 });
