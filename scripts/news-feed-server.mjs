@@ -26,7 +26,6 @@ const TELEGRAM_CHANNELS = [
   'WatcherGuru',
   'chain_alerts',
   'dbnewsdelayed',
-  'tradexyz_announcements',
   'hyperliquid_announcements',
 ];
 

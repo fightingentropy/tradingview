@@ -47,12 +47,6 @@ export const NEWS_NOTIFICATION_SOURCES = [
     detail: 'Telegram channel',
   },
   {
-    id: 'telegram:tradexyz_announcements',
-    source: 'telegram',
-    label: '@tradexyz_announcements',
-    detail: 'Telegram channel · login required',
-  },
-  {
     id: 'telegram:hyperliquid_announcements',
     source: 'telegram',
     label: '@hyperliquid_announcements',

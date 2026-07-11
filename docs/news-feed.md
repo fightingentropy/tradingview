@@ -12,7 +12,6 @@ Telegram posts are read from the public web feeds for these configured channels:
 - `@WatcherGuru`
 - `@chain_alerts`
 - `@dbnewsdelayed`
-- `@tradexyz_announcements`
 - `@hyperliquid_announcements`
 
 No Telegram credentials are needed for channels that expose public message

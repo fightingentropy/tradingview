@@ -50,7 +50,6 @@ export default function NewsScreen() {
   const [source, setSource] = useState<NewsSourceFilter>('all');
   const {
     items,
-    notices,
     isLoading,
     isError,
     error,
@@ -92,15 +91,6 @@ export default function NewsScreen() {
           );
         })}
       </View>
-
-      {source === 'telegram' && notices.length > 0 ? (
-        <View style={styles.notice}>
-          <Ionicons name="information-circle-outline" size={18} color={Colors.warning} />
-          <AppText variant="caption" style={styles.noticeText}>
-            {notices.map((notice) => notice.message).join(' ')}
-          </AppText>
-        </View>
-      ) : null}
 
       {!isNewsFeedConfigured ? (
         <SetupState />
@@ -178,18 +168,6 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: Colors.surfaceAlt },
   chipLabel: { color: Colors.textMuted, fontSize: 13, fontWeight: '600' },
   chipLabelActive: { color: Colors.text },
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.sm,
-    marginHorizontal: Spacing.lg,
-    marginTop: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 10,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surface,
-  },
-  noticeText: { flex: 1, lineHeight: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   stateWrap: {
     flex: 1,

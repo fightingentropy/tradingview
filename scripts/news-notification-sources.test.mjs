@@ -17,6 +17,10 @@ const tradfiItem = {
   source: 'telegram',
   author: { name: 'TradFi', handle: '@tradfi_t3' },
 };
+const removedTradeXyzItem = {
+  source: 'telegram',
+  author: { name: 'TradeXYZ', handle: '@tradexyz_announcements' },
+};
 
 test('normalizes, validates, and de-duplicates selected source IDs', () => {
   assert.deepEqual(normalizeNewsNotificationSourceIds(undefined), ALL_NEWS_NOTIFICATION_SOURCE_IDS);
@@ -34,6 +38,7 @@ test('maps feed items to stable X-list and Telegram-channel IDs', () => {
   assert.equal(newsNotificationSourceIdForItem(xItem), 'x:list:1933193197817135501');
   assert.equal(newsNotificationSourceIdForItem(watcherGuruItem), 'telegram:watcherguru');
   assert.equal(newsNotificationSourceIdForItem(tradfiItem), 'telegram:tradfi_t3');
+  assert.equal(newsNotificationSourceIdForItem(removedTradeXyzItem), undefined);
   assert.equal(
     newsNotificationSourceIdForItem({ source: 'telegram', author: { name: 'Other' } }),
     undefined,
