@@ -29,7 +29,9 @@ The production relay is deployed at
 `https://tradingview-news-relay.erlinhoxha.workers.dev`. The Mac bridge signs each
 snapshot with an ingest secret, then publishes it to the relay. Cloudflare KV holds
 the latest normalized feed and per-device Expo push subscriptions. Both relay secrets are
-stored in macOS Keychain and Cloudflare encrypted secret bindings.
+stored in Cloudflare encrypted secret bindings. The always-on Mac mini keeps its copy in
+`~/Library/Application Support/TradingView News/relay.json` with user-only permissions;
+the bridge also supports macOS Keychain for interactive installations.
 
 The app uses `EXPO_PUBLIC_NEWS_FEED_URL` and
 `EXPO_PUBLIC_NEWS_RELAY_ACCESS_TOKEN`. The access token is a lightweight guard for
