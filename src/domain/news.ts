@@ -1,4 +1,4 @@
-export type NewsSource = 'x' | 'telegram' | 'digg';
+export type NewsSource = 'x' | 'telegram' | 'digg' | 'paste';
 export type NewsSourceFilter = 'all' | NewsSource;
 
 export interface NewsAuthor {

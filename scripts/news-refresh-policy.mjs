@@ -2,6 +2,7 @@ export const NEWS_SOURCE_REFRESH_INTERVAL_MS = Object.freeze({
   x: 60 * 60_000,
   telegram: 5 * 60_000,
   digg: 60 * 60_000,
+  paste: 60 * 60_000,
 });
 
 // A lightweight scheduler tick publishes cached snapshots and retries overdue sources.

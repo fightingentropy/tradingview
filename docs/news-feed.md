@@ -24,6 +24,12 @@ Digg stories are read from the ranked Top Tech Stories at `https://digg.com/tech
 The bridge extracts each story's stable cluster ID, headline, summary, creation time,
 and canonical Digg link. No Digg account or credential is required.
 
+Paste trade calls are read from the public show index and show-detail endpoints at
+`https://app.paste.trade`. The signed-in global feed is not used. The bridge selects shows
+active within the last 14 days, refreshes details only when a show's latest-published timestamp
+changes, and turns each recent source into a compact card containing up to six extracted
+LONG/SHORT theses. No Paste account, session, or credential is required.
+
 The production relay is deployed at
 `https://tradingview-news-relay.erlinhoxha.workers.dev`. The Mac bridge signs each
 snapshot with an ingest secret, then publishes it to the relay. Cloudflare KV holds
@@ -50,7 +56,7 @@ Accept: application/json
 Authorization: Bearer app-access-token
 ```
 
-`source` is `all`, `x`, `telegram`, or `digg`.
+`source` is `all`, `x`, `telegram`, `digg`, or `paste`.
 
 ## Response
 
@@ -89,9 +95,11 @@ The included bridge:
 - Fetches the configured Telegram public feeds independently, so one unavailable
   channel does not blank the others.
 - Fetches Digg Tech independently, so a temporary Digg failure does not blank X or Telegram.
+- Fetches Paste independently and reuses unchanged show histories, so its larger public payloads
+  are not downloaded on every scheduler tick.
 - Runs a lightweight scheduler once per minute when installed with `npm run news:install`.
   Upstream pulls are cached independently: X refreshes hourly, Telegram every five minutes,
-  and Digg hourly. Each scheduler tick detects newly published items and publishes an
+  Digg hourly, and Paste hourly. Each scheduler tick detects newly published items and publishes an
   HMAC-authenticated snapshot to the relay without re-fetching sources that are still fresh.
 - Persists push tokens and the seen-item watermark in the user's Application
   Support directory with user-only permissions.

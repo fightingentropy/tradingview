@@ -11,9 +11,10 @@ where they trade, tap a symbol for a live candlestick chart.
   *same* Hyperliquid endpoints. Also keyless; the live `xyz` universe drives the catalog directly.
 - **Cboe** — the real CBOE Volatility Index (**VIX**) via Cboe's free public delayed-quotes CDN
   (`cdn.cboe.com`). Keyless; fetched directly (quote + daily/intraday OHLC history).
-- **News feed service** — normalized X + Telegram feed. In development, `npm run news:server`
-  reuses YinYang's local `bird` browser-cookie auth and X list, then merges seven configured
-  Telegram channels. The installed bridge publishes signed snapshots to a protected
+- **News feed service** — normalized X, Telegram, Paste Trade, and Digg feed. In development,
+  `npm run news:server` reuses YinYang's local `bird` browser-cookie auth and X list, then
+  merges configured Telegram channels plus the public Paste and Digg sources. The installed
+  bridge publishes signed snapshots to a protected
   Cloudflare Worker for physical-device feeds and push alerts; see `docs/news-feed.md`.
 
 ## Stack

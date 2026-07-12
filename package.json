@@ -64,6 +64,7 @@
     "news:uninstall": "node scripts/news-service.mjs uninstall",
     "test:news-push": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/news-notification-sources.test.mjs",
     "test:digg": "node --test scripts/digg-tech.test.mjs",
+    "test:paste": "node --test scripts/paste-trade.test.mjs",
     "test:news-refresh": "node --test scripts/news-refresh-policy.test.mjs",
     "test:trading": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/account-risk.test.mjs scripts/execution-estimate.test.mjs && npm run verify:signing && npm run verify:identity",
     "relay:deploy": "node scripts/news-relay-deploy.mjs",

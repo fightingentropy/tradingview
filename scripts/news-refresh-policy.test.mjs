@@ -12,6 +12,7 @@ test('uses the configured per-source refresh intervals', () => {
     x: 3_600_000,
     telegram: 300_000,
     digg: 3_600_000,
+    paste: 3_600_000,
   });
   assert.equal(NEWS_SCHEDULER_INTERVAL_MS, 60_000);
 });
@@ -22,4 +23,6 @@ test('expires each source cache at its own refresh boundary', () => {
   assert.equal(isNewsSourceCacheFresh('telegram', fetchedAt, fetchedAt + 300_000), false);
   assert.equal(isNewsSourceCacheFresh('x', fetchedAt, fetchedAt + 300_000), true);
   assert.equal(isNewsSourceCacheFresh('digg', fetchedAt, fetchedAt + 3_600_000), false);
+  assert.equal(isNewsSourceCacheFresh('paste', fetchedAt, fetchedAt + 3_599_999), true);
+  assert.equal(isNewsSourceCacheFresh('paste', fetchedAt, fetchedAt + 3_600_000), false);
 });

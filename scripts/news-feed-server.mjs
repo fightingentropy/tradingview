@@ -12,6 +12,7 @@ import {
   NEWS_SOURCE_REFRESH_INTERVAL_MS,
   isNewsSourceCacheFresh,
 } from './news-refresh-policy.mjs';
+import { PASTE_TRADE_URL, fetchPasteTrade } from './paste-trade.mjs';
 import { publishNewsRelaySnapshot } from './news-relay-client.mjs';
 import { readTelegramCredentials } from './telegram-keychain.mjs';
 
@@ -36,6 +37,8 @@ let telegramInFlight;
 let telegramClientPromise;
 let diggCached;
 let diggInFlight;
+let pasteCached;
+let pasteInFlight;
 const pushService = new NewsPushService({ xListId: LIST_ID, telegramChannels: TELEGRAM_CHANNELS });
 
 function findBird() {
@@ -365,6 +368,41 @@ async function fetchDiggSnapshot(count) {
   }
 }
 
+async function fetchPasteTimeline(count) {
+  const now = Date.now();
+  if (pasteCached && isNewsSourceCacheFresh('paste', pasteCached.fetchedAt, now)) {
+    return pasteCached.items.slice(0, count);
+  }
+  if (pasteInFlight) return (await pasteInFlight).slice(0, count);
+
+  pasteInFlight = (async () => {
+    const items = await fetchPasteTrade({ count: MAX_COUNT });
+    pasteCached = { fetchedAt: Date.now(), items };
+    return items;
+  })();
+
+  try {
+    return (await pasteInFlight).slice(0, count);
+  } finally {
+    pasteInFlight = undefined;
+  }
+}
+
+async function fetchPasteSnapshot(count) {
+  try {
+    return { items: await fetchPasteTimeline(count), notices: [] };
+  } catch {
+    return {
+      items: [],
+      notices: [{
+        id: 'paste:trade:unavailable',
+        source: 'paste',
+        message: 'Paste Trade is temporarily unavailable.',
+      }],
+    };
+  }
+}
+
 function sendJson(response, status, body) {
   response.writeHead(status, {
     'Access-Control-Allow-Origin': '*',
@@ -384,16 +422,17 @@ async function readJsonBody(request) {
 }
 
 async function latestCombinedSnapshot(count = MAX_COUNT) {
-  const [xItems, telegram, digg] = await Promise.all([
+  const [xItems, telegram, digg, paste] = await Promise.all([
     fetchXTimeline(count),
     fetchTelegramTimeline(count),
     fetchDiggSnapshot(count),
+    fetchPasteSnapshot(count),
   ]);
   return {
-    items: [...xItems, ...telegram.items, ...digg.items]
+    items: [...xItems, ...telegram.items, ...digg.items, ...paste.items]
       .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
       .slice(0, count),
-    notices: [...telegram.notices, ...digg.notices],
+    notices: [...telegram.notices, ...digg.notices, ...paste.notices],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -455,11 +494,13 @@ const server = http.createServer(async (request, response) => {
       xSource: `list:${LIST_ID}`,
       telegramChannels: TELEGRAM_CHANNELS,
       diggSource: DIGG_TECH_URL,
+      pasteSource: PASTE_TRADE_URL,
       refreshIntervalsMs: NEWS_SOURCE_REFRESH_INTERVAL_MS,
       lastFetchedAt: {
         x: cached ? new Date(cached.fetchedAt).toISOString() : null,
         telegram: telegramCached ? new Date(telegramCached.fetchedAt).toISOString() : null,
         digg: diggCached ? new Date(diggCached.fetchedAt).toISOString() : null,
+        paste: pasteCached ? new Date(pasteCached.fetchedAt).toISOString() : null,
       },
     });
     return;
@@ -470,8 +511,8 @@ const server = http.createServer(async (request, response) => {
   }
 
   const source = url.searchParams.get('source') ?? 'all';
-  if (!['all', 'x', 'telegram', 'digg'].includes(source)) {
-    sendJson(response, 400, { error: 'source must be all, x, telegram, or digg' });
+  if (!['all', 'x', 'telegram', 'digg', 'paste'].includes(source)) {
+    sendJson(response, 400, { error: 'source must be all, x, telegram, digg, or paste' });
     return;
   }
   const requested = Number(url.searchParams.get('limit') ?? 40);
@@ -488,6 +529,8 @@ const server = http.createServer(async (request, response) => {
       notices = telegram.notices;
     } else if (source === 'digg') {
       items = await fetchDiggTimeline(count);
+    } else if (source === 'paste') {
+      items = await fetchPasteTimeline(count);
     } else {
       const snapshot = await latestCombinedSnapshot(count);
       items = snapshot.items;
@@ -504,10 +547,12 @@ server.listen(PORT, HOST, () => {
   console.log(`News feed bridge listening on http://${HOST}:${PORT}`);
   console.log(`X source: https://x.com/i/lists/${LIST_ID} via bird browser-cookie auth`);
   console.log(`Digg source: ${DIGG_TECH_URL}`);
+  console.log(`Paste source: ${PASTE_TRADE_URL}`);
   console.log(
     `Refresh intervals: X ${NEWS_SOURCE_REFRESH_INTERVAL_MS.x / 60_000}m, ` +
     `Telegram ${NEWS_SOURCE_REFRESH_INTERVAL_MS.telegram / 60_000}m, ` +
-    `Digg ${NEWS_SOURCE_REFRESH_INTERVAL_MS.digg / 60_000}m`,
+    `Digg ${NEWS_SOURCE_REFRESH_INTERVAL_MS.digg / 60_000}m, ` +
+    `Paste ${NEWS_SOURCE_REFRESH_INTERVAL_MS.paste / 60_000}m`,
   );
   void pollForPushNotifications();
   setInterval(() => void pollForPushNotifications(), NEWS_SCHEDULER_INTERVAL_MS).unref();

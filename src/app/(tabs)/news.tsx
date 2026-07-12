@@ -14,11 +14,12 @@ import { isNewsFeedConfigured, usesLocalNewsFeed } from '@/providers/news/client
 const FILTERS: {
   key: NewsSourceFilter;
   label: string;
-  icon?: 'logo-twitter' | 'paper-plane' | 'newspaper';
+  icon?: 'logo-twitter' | 'paper-plane' | 'newspaper' | 'clipboard-outline';
 }[] = [
   { key: 'all', label: 'All' },
   { key: 'x', label: 'X', icon: 'logo-twitter' },
   { key: 'telegram', label: 'Telegram', icon: 'paper-plane' },
+  { key: 'paste', label: 'Paste', icon: 'clipboard-outline' },
   { key: 'digg', label: 'Digg', icon: 'newspaper' },
 ];
 
@@ -33,8 +34,8 @@ function SetupState() {
       </AppText>
       <AppText muted style={styles.stateBody}>
         Add the feed service URL to receive posts from your X timeline or lists, messages from
-        your Telegram channels, and Digg Tech stories. Account credentials stay on the service,
-        not in this app.
+        your Telegram channels, Paste trade calls, and Digg Tech stories. Account credentials
+        stay on the service, not in this app.
       </AppText>
       <View style={styles.privacyRow}>
         <Ionicons name="shield-checkmark-outline" size={17} color={Colors.up} />
@@ -118,7 +119,7 @@ export default function NewsScreen() {
           <Ionicons name="file-tray-outline" size={30} color={Colors.textMuted} />
           <AppText variant="heading" style={styles.stateTitle}>Nothing here yet</AppText>
           <AppText muted style={styles.stateBody}>
-            New posts, channel messages, and tech stories will appear here automatically.
+            New posts, channel messages, trade calls, and tech stories will appear here automatically.
           </AppText>
         </View>
       ) : (
