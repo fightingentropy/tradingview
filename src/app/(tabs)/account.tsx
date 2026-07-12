@@ -1254,7 +1254,6 @@ export default function AccountScreen() {
     () => (account ? buildAccountRiskSummary(account, openOrders ?? []) : null),
     [account, openOrders],
   );
-  const protectionLoaded = openOrders !== undefined;
   const existingTpSlOrders: TpSlExistingOrder[] = (() => {
     if (!tpSlTarget) return [];
     const closingSide = tpSlTarget.side === 'long' ? 'sell' : 'buy';
@@ -1381,12 +1380,7 @@ export default function AccountScreen() {
         </View>
 
         {/* Live risk outranks historical portfolio aesthetics while capital is deployed. */}
-        <RiskStrip
-          summary={riskSummary!}
-          positions={sortedPositions.length}
-          protectionLoaded={protectionLoaded}
-          hidden={privacyMode}
-        />
+        <RiskStrip summary={riskSummary!} hidden={privacyMode} />
 
         {/* Positions / Orders / Balances / History tabs */}
         <View style={styles.tabBarWrap}>
@@ -1442,9 +1436,6 @@ export default function AccountScreen() {
                     (reverseMutation.isPending && reverseMutation.variables?.coin === p.coin)
                   }
                   hidden={privacyMode}
-                  stopCoverage={
-                    protectionLoaded ? (riskSummary!.stopCoverageByCoin.get(p.coin) ?? 0) : null
-                  }
                   onToggle={() => toggleExpand(p.coin)}
                   onChart={() => openChart(p.coin)}
                   onLimitClose={() => openCloseTicket(p, 'limit')}
@@ -1664,13 +1655,9 @@ function riskUsd(value: number): string {
 
 function RiskStrip({
   summary,
-  positions,
-  protectionLoaded,
   hidden,
 }: {
   summary: AccountRiskSummary;
-  positions: number;
-  protectionLoaded: boolean;
   hidden: boolean;
 }) {
   const maintenance = summary.maintenanceUsagePct;
@@ -1681,12 +1668,10 @@ function RiskStrip({
     liquidation != null && liquidation.distancePct <= LIQUIDATION_URGENT_PCT;
   const liquidationWarning =
     liquidation != null && liquidation.distancePct <= LIQUIDATION_WARNING_PCT;
-  const noStops = protectionLoaded ? summary.unprotectedCoins.length : null;
   const hasWarning =
     maintenanceWarning ||
     liquidationWarning ||
-    (summary.effectiveLeverage ?? 0) >= LEVERAGE_WARNING ||
-    (noStops ?? 0) > 0;
+    (summary.effectiveLeverage ?? 0) >= LEVERAGE_WARNING;
   const mask = (value: string) => (hidden ? MASK : value);
 
   return (
@@ -1732,12 +1717,6 @@ function RiskStrip({
           sub={liquidation ? (hidden ? MASK : cleanCoin(liquidation.coin)) : 'No liq. price'}
           color={liquidationUrgent ? Colors.down : liquidationWarning ? Colors.warning : undefined}
         />
-        <RiskMetric
-          label="Stop gap"
-          value={noStops == null ? '…' : String(noStops)}
-          sub={positions === 1 ? 'position' : `${positions} positions`}
-          color={(noStops ?? 0) > 0 ? Colors.warning : Colors.up}
-        />
       </View>
 
       {maintenanceWarning ? (
@@ -1757,24 +1736,6 @@ function RiskStrip({
             hidden
               ? 'A position is close to liquidation.'
               : `${cleanCoin(liquidation!.coin)} is ${liquidation!.distancePct.toFixed(1)}% from liquidation.`
-          }
-        />
-      ) : null}
-      {protectionLoaded && summary.unprotectedCoins.length > 0 ? (
-        <RiskWarning
-          text={
-            hidden
-              ? 'An open position is not fully covered by stop-loss size.'
-              : summary.unprotectedCoins.length === 1
-                ? `${cleanCoin(summary.unprotectedCoins[0]!)} is not fully covered by stop-loss size.`
-                : `${summary.unprotectedCoins
-                    .slice(0, 3)
-                    .map(cleanCoin)
-                    .join(', ')}${
-                    summary.unprotectedCoins.length > 3
-                      ? ` +${summary.unprotectedCoins.length - 3} more`
-                      : ''
-                  } are not fully covered by stop-loss size.`
           }
         />
       ) : null}
@@ -1874,8 +1835,7 @@ const PositionCard = memo(PositionCardImpl, (prev, next) =>
   prev.expanded === next.expanded &&
   prev.tradable === next.tradable &&
   prev.busy === next.busy &&
-  prev.hidden === next.hidden &&
-  prev.stopCoverage === next.stopCoverage,
+  prev.hidden === next.hidden,
 );
 
 function PositionCardImpl({
@@ -1885,7 +1845,6 @@ function PositionCardImpl({
   tradable,
   busy,
   hidden,
-  stopCoverage,
   onToggle,
   onChart,
   onLimitClose,
@@ -1900,8 +1859,6 @@ function PositionCardImpl({
   tradable: boolean;
   busy: boolean;
   hidden: boolean;
-  /** Null while orders load; otherwise fraction of the position covered by stop size. */
-  stopCoverage: number | null;
   onToggle: () => void;
   onChart: () => void;
   onLimitClose: () => void;
@@ -1946,13 +1903,6 @@ function PositionCardImpl({
                 </AppText>
               </View>
             ) : null}
-            {stopCoverage !== null && stopCoverage < 0.999999 ? (
-              <View style={styles.noStopBadge}>
-                <AppText variant="caption" color={Colors.warning}>
-                  {stopCoverage > 0 ? `SL ${Math.round(stopCoverage * 100)}%` : 'No SL'}
-                </AppText>
-              </View>
-            ) : null}
           </View>
           <AppText style={styles.sub} numeric numberOfLines={1}>
             {hidden ? `${symbol} · ${MASK}` : `${qty(p.size)} ${symbol} · ${usd(p.positionValue)}`}
@@ -1986,7 +1936,7 @@ function PositionCardImpl({
           label="TP / SL"
           onPress={onSetTpSl}
           disabled={!tradable || busy}
-          tone={stopCoverage !== null && stopCoverage < 0.999999 ? Colors.warning : Colors.accent}
+          tone={Colors.accent}
         />
         <PositionQuickAction
           icon="remove-circle-outline"
@@ -2600,12 +2550,6 @@ const styles = StyleSheet.create({
   sub: { fontSize: 13, color: Colors.textMuted },
   sideBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: Radius.sm },
   xyzBadge: { backgroundColor: Colors.surfaceAlt, paddingHorizontal: 5, paddingVertical: 1, borderRadius: Radius.sm },
-  noStopBadge: {
-    backgroundColor: Colors.warning + '14',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: Radius.sm,
-  },
   right: { alignItems: 'flex-end', marginLeft: Spacing.sm, gap: 2 },
   pnl: { fontSize: 16, fontWeight: '600' },
   roe: { fontSize: 13, fontWeight: '500' },

@@ -14,15 +14,44 @@ export const hyperliquidProvider: MarketDataProvider = {
   source: 'hyperliquid',
 
   async loadMarkets(): Promise<MarketSnapshot> {
-    const [perp, spot, xyz] = await Promise.all([
+    // These catalogs are independent. In particular, the spot payload is much
+    // larger than either perp payload and can fail on a mobile connection while
+    // the default + xyz dexes are healthy. Treating the three reads as one
+    // Promise.all used to reject the entire provider in that case, leaving the
+    // independently-loaded VIX as the only resolvable watchlist row.
+    const [perpResult, spotResult, xyzResult] = await Promise.allSettled([
       fetchPerpMeta(),
       fetchSpotMeta(),
-      fetchPerpMeta(XYZ_DEX).catch(() => null),
+      fetchPerpMeta(XYZ_DEX),
     ]);
 
-    const perps = buildPerps(perp, 'default');
-    const spots = buildSpot(spot);
-    const xyzs = xyz ? buildPerps(xyz, 'xyz') : { instruments: [], quotes: {} };
+    const perps =
+      perpResult.status === 'fulfilled'
+        ? buildPerps(perpResult.value, 'default')
+        : { instruments: [], quotes: {} };
+    const spots =
+      spotResult.status === 'fulfilled'
+        ? buildSpot(spotResult.value)
+        : { instruments: [], quotes: {} };
+    const xyzs =
+      xyzResult.status === 'fulfilled'
+        ? buildPerps(xyzResult.value, 'xyz')
+        : { instruments: [], quotes: {} };
+
+    if (
+      perps.instruments.length === 0 &&
+      spots.instruments.length === 0 &&
+      xyzs.instruments.length === 0
+    ) {
+      const reasons = [perpResult, spotResult, xyzResult]
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) =>
+          result.reason instanceof Error ? result.reason.message : String(result.reason),
+        );
+      throw new Error(
+        `Hyperliquid market catalogs unavailable${reasons.length ? `: ${reasons.join('; ')}` : ''}`,
+      );
+    }
 
     return {
       instruments: [...perps.instruments, ...xyzs.instruments, ...spots.instruments],
