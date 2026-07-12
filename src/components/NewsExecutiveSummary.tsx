@@ -6,7 +6,12 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { NewsSourceIcon } from '@/components/NewsSourceIcon';
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import type { NewsExecutiveSummary, NewsPulseLabel } from '@/domain/news';
+import type {
+  NewsConfidence,
+  NewsExecutiveSummary,
+  NewsPulseChange,
+  NewsPulseLabel,
+} from '@/domain/news';
 
 function relativeTime(value: string): string {
   const elapsed = Math.max(0, Date.now() - Date.parse(value));
@@ -28,10 +33,45 @@ const pulseColor: Record<NewsPulseLabel, string> = {
 const pulseLabel: Record<NewsPulseLabel, string> = {
   'risk-on': 'Risk on',
   'risk-off': 'Risk off',
-  mixed: 'Mixed',
+  mixed: 'Mixed signals',
   calm: 'Calm',
-  'event-driven': 'Event driven',
+  'event-driven': 'Event risk elevated',
 };
+
+const changeLabel: Record<NewsPulseChange, string> = {
+  new: 'New',
+  changed: 'Changed',
+  unchanged: 'Unchanged',
+};
+
+const changeColor: Record<NewsPulseChange, string> = {
+  new: Colors.accent,
+  changed: Colors.warning,
+  unchanged: Colors.textFaint,
+};
+
+const confidenceLabel: Record<NewsConfidence, string> = {
+  confirmed: 'Confirmed',
+  reported: 'Reported',
+  disputed: 'Disputed',
+  speculative: 'Speculative',
+};
+
+const confidenceColor: Record<NewsConfidence, string> = {
+  confirmed: Colors.up,
+  reported: '#7EA2FF',
+  disputed: Colors.down,
+  speculative: Colors.warning,
+};
+
+function StatusBadge({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={[styles.statusBadge, { borderColor: `${color}70`, backgroundColor: `${color}14` }]}>
+      <View style={[styles.statusDot, { backgroundColor: color }]} />
+      <AppText style={[styles.statusText, { color }]}>{label}</AppText>
+    </View>
+  );
+}
 
 export function NewsExecutiveSummaryView({
   summary,
@@ -43,6 +83,7 @@ export function NewsExecutiveSummaryView({
   onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [showSecondary, setShowSecondary] = useState(false);
   const signalCount = summary.analyzedItems || Object.values(summary.sourceCounts).reduce((sum, count) => sum + count, 0);
 
   return (
@@ -51,34 +92,26 @@ export function NewsExecutiveSummaryView({
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
       }>
-      <View style={styles.kickerRow}>
+      <View style={styles.topline}>
         <View style={styles.kickerBadge}>
-          <Ionicons name="pulse" size={13} color={Colors.accent} />
-          <AppText style={styles.kicker}>HOURLY PULSE</AppText>
+          <View style={[styles.liveDot, { backgroundColor: pulseColor[summary.pulse.label] }]} />
+          <AppText style={[styles.kicker, { color: pulseColor[summary.pulse.label] }]}>
+            {pulseLabel[summary.pulse.label].toUpperCase()}
+          </AppText>
         </View>
         <AppText variant="caption">Updated {relativeTime(summary.generatedAt)}</AppText>
       </View>
 
       <View style={styles.hero}>
-        <View style={styles.pulseRow}>
-          <View style={[styles.pulseDot, { backgroundColor: pulseColor[summary.pulse.label] }]} />
-          <AppText style={[styles.pulseName, { color: pulseColor[summary.pulse.label] }]}>
-            {pulseLabel[summary.pulse.label]}
-          </AppText>
-          <AppText variant="caption">· {signalCount} signals analyzed</AppText>
-        </View>
         <AppText variant="heading" style={styles.headline}>{summary.headline}</AppText>
         <AppText style={styles.overview}>{summary.overview}</AppText>
-        <View style={styles.pulseSummary}>
-          <Ionicons name="analytics-outline" size={16} color={Colors.accent} />
-          <AppText style={styles.pulseSummaryText}>{summary.pulse.summary}</AppText>
+        <View style={styles.marketRead}>
+          <AppText style={styles.marketReadLabel}>MARKET READ</AppText>
+          <AppText style={styles.marketReadText}>{summary.pulse.summary}</AppText>
         </View>
       </View>
 
-      <View style={styles.sectionHeading}>
-        <AppText style={styles.sectionTitle}>What matters now</AppText>
-        <AppText variant="caption">Tap a point to expand</AppText>
-      </View>
+      <AppText style={styles.sectionTitle}>Top developments</AppText>
 
       <View style={styles.bulletList}>
         {summary.bullets.map((bullet, index) => {
@@ -89,49 +122,58 @@ export function NewsExecutiveSummaryView({
                 onPress={() => setExpanded(isExpanded ? null : index)}
                 accessibilityRole="button"
                 accessibilityState={{ expanded: isExpanded }}
+                accessibilityLabel={`${bullet.headline}. ${isExpanded ? 'Collapse' : 'Expand'} evidence`}
                 style={({ pressed }) => [styles.bulletButton, pressed && styles.pressed]}>
-                <View style={styles.bulletDot}><View style={styles.bulletDotCore} /></View>
-                <View style={styles.bulletCopy}>
+                <View style={styles.cardMeta}>
+                  <AppText style={styles.cardNumber}>{String(index + 1).padStart(2, '0')}</AppText>
+                  <StatusBadge label={changeLabel[bullet.change]} color={changeColor[bullet.change]} />
+                  <StatusBadge label={confidenceLabel[bullet.confidence]} color={confidenceColor[bullet.confidence]} />
+                  <View style={styles.sourceIcons}>
+                    {bullet.sources.map((source) => (
+                      <View key={source.itemKey} style={styles.sourceIconShell}>
+                        <NewsSourceIcon source={source.source} size={16} />
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={styles.cardCopy}>
                   <AppText style={styles.bulletHeadline}>{bullet.headline}</AppText>
                   <AppText style={styles.bulletSummary}>{bullet.summary}</AppText>
+                  <View style={styles.impactRow}>
+                    <Ionicons name="trending-up-outline" size={14} color={Colors.textFaint} />
+                    <AppText style={styles.impactText}>{bullet.marketImpact}</AppText>
+                  </View>
                 </View>
-                <Ionicons
-                  name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                  size={17}
-                  color={Colors.textMuted}
-                />
-              </Pressable>
 
-              <View style={styles.sourcesRow}>
-                <AppText variant="caption" style={styles.sourcesLabel}>SOURCES</AppText>
-                {bullet.sources.map((source) => (
-                  <Pressable
-                    key={source.itemKey}
-                    onPress={() => void Linking.openURL(source.url)}
-                    accessibilityRole="link"
-                    accessibilityLabel={`Open ${source.author} source`}
-                    hitSlop={7}
-                    style={({ pressed }) => [styles.sourceButton, pressed && styles.sourcePressed]}>
-                    <NewsSourceIcon source={source.source} size={19} />
-                  </Pressable>
-                ))}
-              </View>
+                <View style={styles.expandHint}>
+                  <AppText style={styles.expandHintText}>{isExpanded ? 'Hide evidence' : 'View evidence'}</AppText>
+                  <Ionicons
+                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color={Colors.textFaint}
+                  />
+                </View>
+              </Pressable>
 
               {isExpanded ? (
                 <View style={styles.expandedBody}>
-                  <View style={styles.whyBlock}>
-                    <AppText style={styles.whyLabel}>WHY IT MATTERS</AppText>
-                    <AppText style={styles.whyText}>{bullet.whyItMatters}</AppText>
-                  </View>
+                  <View style={styles.divider} />
+                  <AppText style={styles.evidenceLabel}>EVIDENCE</AppText>
                   <AppText style={styles.details}>{bullet.details}</AppText>
                   <View style={styles.sourceDetails}>
                     {bullet.sources.map((source) => (
                       <Pressable
                         key={`detail:${source.itemKey}`}
                         onPress={() => void Linking.openURL(source.url)}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open ${source.author} source`}
                         style={({ pressed }) => [styles.sourceDetailRow, pressed && styles.pressed]}>
-                        <NewsSourceIcon source={source.source} size={18} />
-                        <AppText style={styles.sourceDetailText} numberOfLines={1}>{source.author}</AppText>
+                        <NewsSourceIcon source={source.source} size={17} />
+                        <View style={styles.sourceDetailCopy}>
+                          <AppText style={styles.sourceDetailAuthor} numberOfLines={1}>{source.author}</AppText>
+                          <AppText variant="caption" numberOfLines={1}>{source.title}</AppText>
+                        </View>
                         <Ionicons name="open-outline" size={13} color={Colors.textFaint} />
                       </Pressable>
                     ))}
@@ -143,122 +185,136 @@ export function NewsExecutiveSummaryView({
         })}
       </View>
 
+      {summary.secondarySignals.length > 0 ? (
+        <View style={styles.secondarySection}>
+          <Pressable
+            onPress={() => setShowSecondary((value) => !value)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showSecondary }}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}>
+            <View style={styles.secondaryTitleRow}>
+              <Ionicons name="layers-outline" size={15} color={Colors.textMuted} />
+              <AppText style={styles.secondaryTitle}>More signals</AppText>
+              <AppText variant="caption">{summary.secondarySignals.length}</AppText>
+            </View>
+            <Ionicons name={showSecondary ? 'chevron-up' : 'chevron-down'} size={15} color={Colors.textFaint} />
+          </Pressable>
+          {showSecondary ? (
+            <View style={styles.secondaryList}>
+              {summary.secondarySignals.map((item, index) => (
+                <View key={`${index}:${item}`} style={styles.secondaryRow}>
+                  <View style={styles.secondaryDot} />
+                  <AppText style={styles.secondaryText}>{item}</AppText>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       {summary.watchNext.length > 0 ? (
-        <View style={styles.watchCard}>
+        <View style={styles.watchSection}>
           <View style={styles.watchHeading}>
-            <Ionicons name="eye-outline" size={17} color={Colors.warning} />
+            <Ionicons name="eye-outline" size={15} color={Colors.warning} />
             <AppText style={styles.watchTitle}>Watch next</AppText>
           </View>
           {summary.watchNext.map((item, index) => (
             <View key={`${index}:${item}`} style={styles.watchRow}>
-              <AppText style={styles.watchNumber}>{index + 1}</AppText>
+              <AppText style={styles.watchNumber}>{String(index + 1).padStart(2, '0')}</AppText>
               <AppText style={styles.watchText}>{item}</AppText>
             </View>
           ))}
         </View>
       ) : null}
 
-      <View style={styles.noiseCard}>
-        <Ionicons name="filter-outline" size={16} color={Colors.textMuted} />
-        <View style={styles.noiseCopy}>
-          <AppText style={styles.noiseTitle}>Noise filtered</AppText>
-          <AppText variant="caption" style={styles.noiseText}>{summary.noiseSummary}</AppText>
-        </View>
+      <View style={styles.footer}>
+        <AppText variant="caption" style={styles.footerText}>
+          {signalCount} source items scanned · refreshed hourly
+        </AppText>
+        <AppText variant="caption" style={styles.footerText}>{summary.noiseSummary}</AppText>
       </View>
-
-      <AppText variant="caption" style={styles.modelLine}>
-        Synthesized by {summary.model} · {summary.reasoningEffort} reasoning · Sources remain one tap away
-      </AppText>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { padding: Spacing.lg, paddingBottom: 40, gap: Spacing.lg },
-  kickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  kickerBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  kicker: { color: Colors.accent, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
-  hero: { gap: Spacing.sm },
-  pulseRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  pulseDot: { width: 7, height: 7, borderRadius: 4 },
-  pulseName: { fontSize: 12, fontWeight: '800' },
-  headline: { fontSize: 26, lineHeight: 31, letterSpacing: -0.5 },
-  overview: { color: Colors.textMuted, fontSize: 15, lineHeight: 22, fontWeight: '400' },
-  pulseSummary: {
-    marginTop: Spacing.xs,
+  content: { padding: Spacing.lg, paddingBottom: 44, gap: Spacing.lg },
+  topline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  kickerBadge: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  liveDot: { width: 6, height: 6, borderRadius: 3 },
+  kicker: { fontSize: 10, fontWeight: '800', letterSpacing: 0.85 },
+  hero: { gap: 9 },
+  headline: { fontSize: 27, lineHeight: 31, letterSpacing: -0.65 },
+  overview: { color: Colors.textMuted, fontSize: 14, lineHeight: 20, fontWeight: '400' },
+  marketRead: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.accentSoft,
+    gap: 10,
+    paddingTop: 3,
   },
-  pulseSummaryText: { flex: 1, fontSize: 13, lineHeight: 19, fontWeight: '500' },
-  sectionHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  sectionTitle: { fontSize: 17, fontWeight: '800' },
-  bulletList: { gap: Spacing.sm },
+  marketReadLabel: { width: 72, color: Colors.accent, fontSize: 9, lineHeight: 18, fontWeight: '800', letterSpacing: 0.7 },
+  marketReadText: { flex: 1, color: Colors.text, fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  sectionTitle: { fontSize: 16, fontWeight: '800' },
+  bulletList: { gap: 10 },
   bulletCard: {
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     backgroundColor: Colors.surface,
   },
-  bulletCardExpanded: { borderColor: '#2A3A55' },
-  bulletButton: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: Spacing.md },
-  pressed: { opacity: 0.72 },
-  bulletDot: {
-    width: 18,
-    height: 18,
-    marginTop: 1,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.accentSoft,
-  },
-  bulletDotCore: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.accent },
-  bulletCopy: { flex: 1, gap: 5 },
-  bulletHeadline: { fontSize: 15, lineHeight: 19, fontWeight: '700' },
-  bulletSummary: { color: Colors.textMuted, fontSize: 13, lineHeight: 19, fontWeight: '400' },
-  sourcesRow: {
-    minHeight: 31,
+  bulletCardExpanded: { borderColor: '#30425F', backgroundColor: '#121922' },
+  bulletButton: { gap: 11, padding: Spacing.md },
+  pressed: { opacity: 0.7 },
+  cardMeta: { minHeight: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardNumber: { marginRight: 1, color: Colors.textFaint, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.md,
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.pill,
   },
-  sourcesLabel: { marginRight: 1, fontSize: 9, letterSpacing: 0.7 },
-  sourceButton: { borderRadius: 7 },
-  sourcePressed: { opacity: 0.55, transform: [{ scale: 0.94 }] },
-  expandedBody: { gap: Spacing.md, padding: Spacing.md, paddingTop: 0 },
-  whyBlock: { gap: 5, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: Colors.accent },
-  whyLabel: { color: Colors.accent, fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
-  whyText: { fontSize: 13, lineHeight: 19, fontWeight: '600' },
-  details: { color: Colors.textMuted, fontSize: 13, lineHeight: 20, fontWeight: '400' },
-  sourceDetails: { gap: 2 },
-  sourceDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
-  sourceDetailText: { flex: 1, color: Colors.textMuted, fontSize: 12, fontWeight: '500' },
-  watchCard: { gap: 10, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: '#211E12' },
-  watchHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  watchTitle: { fontSize: 15, fontWeight: '800' },
-  watchRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
-  watchNumber: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  statusDot: { width: 4, height: 4, borderRadius: 2 },
+  statusText: { fontSize: 9, lineHeight: 10, fontWeight: '800' },
+  sourceIcons: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 },
+  sourceIconShell: { opacity: 0.82 },
+  cardCopy: { gap: 5 },
+  bulletHeadline: { fontSize: 16, lineHeight: 20, fontWeight: '700', letterSpacing: -0.15 },
+  bulletSummary: { color: Colors.textMuted, fontSize: 13, lineHeight: 18, fontWeight: '400' },
+  impactRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingTop: 3 },
+  impactText: { flex: 1, color: '#BBC2CC', fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  expandHint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 3 },
+  expandHintText: { color: Colors.textFaint, fontSize: 10, fontWeight: '600' },
+  expandedBody: { gap: 9, padding: Spacing.md, paddingTop: 0 },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.border },
+  evidenceLabel: { color: Colors.textFaint, fontSize: 9, fontWeight: '800', letterSpacing: 0.75 },
+  details: { color: Colors.textMuted, fontSize: 13, lineHeight: 19, fontWeight: '400' },
+  sourceDetails: { gap: 1 },
+  sourceDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
+  sourceDetailCopy: { flex: 1, gap: 1 },
+  sourceDetailAuthor: { color: Colors.text, fontSize: 12, fontWeight: '600' },
+  secondarySection: {
     overflow: 'hidden',
-    textAlign: 'center',
-    color: Colors.warning,
-    backgroundColor: '#342D12',
-    fontSize: 11,
-    lineHeight: 18,
-    fontWeight: '800',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
   },
-  watchText: { flex: 1, fontSize: 13, lineHeight: 19, fontWeight: '500' },
-  noiseCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingHorizontal: 4 },
-  noiseCopy: { flex: 1, gap: 3 },
-  noiseTitle: { color: Colors.textMuted, fontSize: 12, fontWeight: '700' },
-  noiseText: { lineHeight: 16, fontWeight: '400' },
-  modelLine: { textAlign: 'center', color: Colors.textFaint, lineHeight: 16 },
+  secondaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
+  secondaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  secondaryTitle: { fontSize: 13, fontWeight: '700' },
+  secondaryList: { gap: 9, paddingBottom: 12 },
+  secondaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
+  secondaryDot: { width: 4, height: 4, marginTop: 7, borderRadius: 2, backgroundColor: Colors.textFaint },
+  secondaryText: { flex: 1, color: Colors.textMuted, fontSize: 12, lineHeight: 18 },
+  watchSection: { gap: 9 },
+  watchHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  watchTitle: { fontSize: 14, fontWeight: '800' },
+  watchRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  watchNumber: { width: 18, color: Colors.warning, fontSize: 10, lineHeight: 18, fontWeight: '800' },
+  watchText: { flex: 1, color: '#C6CBD3', fontSize: 12, lineHeight: 18, fontWeight: '500' },
+  footer: { gap: 4, paddingTop: 3 },
+  footerText: { color: Colors.textFaint, textAlign: 'center', lineHeight: 16 },
 });

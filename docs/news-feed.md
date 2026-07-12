@@ -63,6 +63,7 @@ Authorization: Bearer app-access-token
 ```json
 {
   "executiveSummary": {
+    "formatVersion": 2,
     "generatedAt": "2026-07-12T20:00:00.000Z",
     "headline": "Markets weigh a concentrated set of catalysts",
     "overview": "A crisp summary of what changed and what matters.",
@@ -74,8 +75,10 @@ Authorization: Bearer app-access-token
       {
         "headline": "The material development",
         "summary": "The collapsed executive bullet.",
-        "whyItMatters": "The market relevance.",
+        "marketImpact": "The market relevance.",
         "details": "Expanded context, uncertainty, and corroboration.",
+        "change": "new",
+        "confidence": "confirmed",
         "sources": [
           {
             "source": "x",
@@ -85,6 +88,7 @@ Authorization: Bearer app-access-token
         ]
       }
     ],
+    "secondarySignals": ["A lower-priority development."],
     "watchNext": ["The next confirmation to monitor."],
     "noiseSummary": "Duplicates and unsupported reactions were excluded.",
     "model": "gpt-5.6-sol",
@@ -129,7 +133,10 @@ The included bridge:
   Upstream pulls are cached independently: X refreshes hourly, Telegram every five minutes,
   Digg hourly, and Paste hourly. Each scheduler tick detects newly published items and publishes an
   HMAC-authenticated snapshot to the relay without re-fetching sources that are still fresh.
-- Builds a new executive pulse once per hour from up to six hours of recent source context. It
+- Builds a new executive pulse once per hour from up to six hours of recent source context. The
+  format is deliberately terse: a nine-word headline, a two-sentence lead, exactly three ranked
+  developments with change and confidence labels, optional secondary signals, and two watch items.
+  It
   invokes the Mac mini's authenticated Codex CLI in an ephemeral, read-only session with
   `gpt-5.6-sol`, `xhigh` reasoning, web search disabled, and a strict JSON output schema.
 - Persists the last valid pulse under `~/Library/Application Support/TradingView News/` and keeps

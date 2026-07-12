@@ -44,6 +44,7 @@ interface NewsSummarySourceReference {
 }
 
 interface NewsExecutiveSummary {
+  formatVersion: number;
   id: string;
   generatedAt: string;
   windowStart: string;
@@ -57,10 +58,13 @@ interface NewsExecutiveSummary {
   bullets: Array<{
     headline: string;
     summary: string;
-    whyItMatters: string;
+    marketImpact: string;
     details: string;
+    change: 'new' | 'changed' | 'unchanged';
+    confidence: 'confirmed' | 'reported' | 'disputed' | 'speculative';
     sources: NewsSummarySourceReference[];
   }>;
+  secondarySignals: string[];
   watchNext: string[];
   noiseSummary: string;
   analyzedItems: number;
@@ -252,10 +256,10 @@ function normalizeExecutiveSummary(value: unknown): NewsExecutiveSummary | undef
   const generatedAt = asString(summary.generatedAt, 64);
   const windowStart = asString(summary.windowStart, 64);
   const windowEnd = asString(summary.windowEnd, 64);
-  const headline = asString(summary.headline, 120);
-  const overview = asString(summary.overview, 700);
+  const headline = asString(summary.headline, 80);
+  const overview = asString(summary.overview, 240);
   const pulseLabel = asString(pulse?.label, 32);
-  const pulseSummary = asString(pulse?.summary, 400);
+  const pulseSummary = asString(pulse?.summary, 180);
   const validPulseLabels = ['risk-on', 'risk-off', 'mixed', 'calm', 'event-driven'] as const;
   if (
     !id || !generatedAt || !windowStart || !windowEnd || !headline || !overview ||
@@ -270,24 +274,43 @@ function normalizeExecutiveSummary(value: unknown): NewsExecutiveSummary | undef
   const bullets = summary.bullets.flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return [];
     const bullet = entry as Record<string, unknown>;
-    const bulletHeadline = asString(bullet.headline, 110);
-    const bulletSummary = asString(bullet.summary, 360);
-    const whyItMatters = asString(bullet.whyItMatters, 420);
-    const details = asString(bullet.details, 900);
+    const bulletHeadline = asString(bullet.headline, 80);
+    const bulletSummary = asString(bullet.summary, 220);
+    const marketImpact = asString(bullet.marketImpact ?? bullet.whyItMatters, 180);
+    const details = asString(bullet.details, 600);
+    const change = asString(bullet.change, 16) ?? 'unchanged';
+    const confidence = asString(bullet.confidence, 16) ?? 'reported';
+    const validChanges = ['new', 'changed', 'unchanged'] as const;
+    const validConfidence = ['confirmed', 'reported', 'disputed', 'speculative'] as const;
     const sources = Array.isArray(bullet.sources)
-      ? bullet.sources.map(normalizeSummarySource).filter((source): source is NewsSummarySourceReference => Boolean(source)).slice(0, 6)
+      ? bullet.sources.map(normalizeSummarySource).filter((source): source is NewsSummarySourceReference => Boolean(source)).slice(0, 4)
       : [];
-    if (!bulletHeadline || !bulletSummary || !whyItMatters || !details || sources.length === 0) {
+    if (
+      !bulletHeadline || !bulletSummary || !marketImpact || !details || sources.length === 0 ||
+      !validChanges.includes(change as (typeof validChanges)[number]) ||
+      !validConfidence.includes(confidence as (typeof validConfidence)[number])
+    ) {
       return [];
     }
-    return [{ headline: bulletHeadline, summary: bulletSummary, whyItMatters, details, sources }];
-  }).slice(0, 7);
+    return [{
+      headline: bulletHeadline,
+      summary: bulletSummary,
+      marketImpact,
+      details,
+      change: change as NewsExecutiveSummary['bullets'][number]['change'],
+      confidence: confidence as NewsExecutiveSummary['bullets'][number]['confidence'],
+      sources,
+    }];
+  }).slice(0, 3);
   if (bullets.length === 0) return undefined;
 
   const watchNext = Array.isArray(summary.watchNext)
-    ? summary.watchNext.flatMap((entry) => asString(entry, 240) ?? []).slice(0, 5)
+    ? summary.watchNext.flatMap((entry) => asString(entry, 160) ?? []).slice(0, 2)
     : [];
-  const noiseSummary = asString(summary.noiseSummary, 400);
+  const secondarySignals = Array.isArray(summary.secondarySignals)
+    ? summary.secondarySignals.flatMap((entry) => asString(entry, 140) ?? []).slice(0, 3)
+    : [];
+  const noiseSummary = asString(summary.noiseSummary, 220);
   if (!noiseSummary) return undefined;
   const sourceCountsValue = summary.sourceCounts as Record<string, unknown> | undefined;
   const sourceCounts = Object.fromEntries(
@@ -299,6 +322,10 @@ function normalizeExecutiveSummary(value: unknown): NewsExecutiveSummary | undef
     ]),
   ) as Record<NewsSource, number>;
   return {
+    formatVersion:
+      typeof summary.formatVersion === 'number' && Number.isFinite(summary.formatVersion)
+        ? Math.max(1, Math.floor(summary.formatVersion))
+        : 1,
     id,
     generatedAt: new Date(generatedAt).toISOString(),
     windowStart: new Date(windowStart).toISOString(),
@@ -310,6 +337,7 @@ function normalizeExecutiveSummary(value: unknown): NewsExecutiveSummary | undef
       summary: pulseSummary,
     },
     bullets,
+    secondarySignals,
     watchNext,
     noiseSummary,
     analyzedItems:

@@ -3,19 +3,30 @@ import { test } from 'node:test';
 
 import {
   NEWS_EXECUTIVE_SUMMARY_INTERVAL_MS,
+  NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION,
   hydrateCodexSummary,
   shouldGenerateExecutiveSummary,
 } from './news-executive-summary.mjs';
 
 const now = Date.parse('2026-07-12T20:00:00.000Z');
-const items = [{
-  id: '123',
-  source: 'x',
-  author: { name: 'Primary source' },
-  text: 'A material market update with supporting context.',
-  publishedAt: '2026-07-12T19:30:00.000Z',
-  url: 'https://x.com/source/status/123',
-}];
+const items = [
+  {
+    id: '123',
+    source: 'x',
+    author: { name: 'Primary source' },
+    text: 'A material market update with supporting context.',
+    publishedAt: '2026-07-12T19:30:00.000Z',
+    url: 'https://x.com/source/status/123',
+  },
+  {
+    id: '124',
+    source: 'x',
+    author: { name: 'Primary Source' },
+    text: 'A follow-up from the same publisher.',
+    publishedAt: '2026-07-12T19:31:00.000Z',
+    url: 'https://x.com/source/status/124',
+  },
+];
 
 const codexSummary = {
   headline: 'Markets digest a material update',
@@ -24,10 +35,13 @@ const codexSummary = {
   bullets: Array.from({ length: 3 }, (_, index) => ({
     headline: `The verified update leads ${index + 1}`,
     summary: 'One primary-source item contains the only material new information.',
-    whyItMatters: 'It can change near-term expectations while reposts add no evidence.',
+    marketImpact: 'It can change near-term expectations while reposts add no evidence.',
     details: 'The primary source published the update during the current window.',
-    sourceKeys: ['x:123', 'x:missing'],
+    change: 'new',
+    confidence: 'confirmed',
+    sourceKeys: ['x:123', 'x:124', 'x:missing'],
   })),
+  secondarySignals: ['A lower-priority development remains unconfirmed.'],
   watchNext: ['Watch for direct confirmation and market follow-through.'],
   noiseSummary: 'Duplicate reactions and unsupported takes were excluded.',
 };
@@ -38,12 +52,19 @@ test('hydrates only valid source references and records the xhigh Codex run', ()
   assert.equal(result.bullets[0].sources[0].itemKey, 'x:123');
   assert.equal(result.model, 'gpt-5.6-sol');
   assert.equal(result.reasoningEffort, 'xhigh');
-  assert.deepEqual(result.sourceCounts, { x: 1, telegram: 0, digg: 0, paste: 0 });
+  assert.equal(result.formatVersion, NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION);
+  assert.equal(result.bullets.length, 3);
+  assert.equal(result.bullets[0].marketImpact, codexSummary.bullets[0].marketImpact);
+  assert.deepEqual(result.sourceCounts, { x: 2, telegram: 0, digg: 0, paste: 0 });
 });
 
 test('runs immediately without a pulse, then once per hour', () => {
   assert.equal(shouldGenerateExecutiveSummary(undefined, now), true);
-  const summary = { generatedAt: new Date(now).toISOString() };
+  const summary = {
+    formatVersion: NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION,
+    generatedAt: new Date(now).toISOString(),
+  };
   assert.equal(shouldGenerateExecutiveSummary(summary, now + NEWS_EXECUTIVE_SUMMARY_INTERVAL_MS - 1), false);
   assert.equal(shouldGenerateExecutiveSummary(summary, now + NEWS_EXECUTIVE_SUMMARY_INTERVAL_MS), true);
+  assert.equal(shouldGenerateExecutiveSummary({ ...summary, formatVersion: 1 }, now), true);
 });

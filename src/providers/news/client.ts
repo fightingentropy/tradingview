@@ -122,6 +122,8 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
   const summary = value as Record<string, unknown>;
   const pulse = summary.pulse as Record<string, unknown> | undefined;
   const pulseLabels = ['risk-on', 'risk-off', 'mixed', 'calm', 'event-driven'] as const;
+  const changeLabels = ['new', 'changed', 'unchanged'] as const;
+  const confidenceLabels = ['confirmed', 'reported', 'disputed', 'speculative'] as const;
   if (
     typeof summary.id !== 'string' ||
     typeof summary.generatedAt !== 'string' ||
@@ -145,13 +147,31 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
   const bullets = summary.bullets.flatMap((value): NewsExecutiveSummaryBullet[] => {
     if (!value || typeof value !== 'object') return [];
     const bullet = value as Record<string, unknown>;
-    const sources = Array.isArray(bullet.sources)
+    const parsedSources = Array.isArray(bullet.sources)
       ? bullet.sources.map(parseSummarySource).filter((source): source is NewsSummarySourceReference => source !== null)
       : [];
+    const seenPublishers = new Set<string>();
+    const sources = parsedSources.filter((source) => {
+      const publisher = source.author.toLowerCase().replace(/[^a-z0-9]/g, '') || source.itemKey;
+      if (seenPublishers.has(publisher)) return false;
+      seenPublishers.add(publisher);
+      return true;
+    });
+    const marketImpact = typeof bullet.marketImpact === 'string'
+      ? bullet.marketImpact
+      : typeof bullet.whyItMatters === 'string'
+        ? bullet.whyItMatters
+        : undefined;
+    const change = typeof bullet.change === 'string' && changeLabels.includes(bullet.change as (typeof changeLabels)[number])
+      ? bullet.change as NewsExecutiveSummaryBullet['change']
+      : 'unchanged';
+    const confidence = typeof bullet.confidence === 'string' && confidenceLabels.includes(bullet.confidence as (typeof confidenceLabels)[number])
+      ? bullet.confidence as NewsExecutiveSummaryBullet['confidence']
+      : 'reported';
     if (
       typeof bullet.headline !== 'string' ||
       typeof bullet.summary !== 'string' ||
-      typeof bullet.whyItMatters !== 'string' ||
+      !marketImpact ||
       typeof bullet.details !== 'string' ||
       sources.length === 0
     ) {
@@ -160,11 +180,13 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
     return [{
       headline: bullet.headline,
       summary: bullet.summary,
-      whyItMatters: bullet.whyItMatters,
+      marketImpact,
       details: bullet.details,
-      sources,
+      change,
+      confidence,
+      sources: sources.slice(0, 4),
     }];
-  });
+  }).slice(0, 3);
   if (bullets.length === 0) return undefined;
 
   const count = (source: 'x' | 'telegram' | 'digg' | 'paste') => {
@@ -172,6 +194,9 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
     return typeof candidate === 'number' && Number.isFinite(candidate) ? Math.max(0, Math.floor(candidate)) : 0;
   };
   return {
+    formatVersion: typeof summary.formatVersion === 'number' && Number.isFinite(summary.formatVersion)
+      ? Math.max(1, Math.floor(summary.formatVersion))
+      : 1,
     id: summary.id,
     generatedAt: summary.generatedAt,
     windowStart: summary.windowStart,
@@ -183,8 +208,11 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
       summary: pulse.summary,
     },
     bullets,
+    secondarySignals: Array.isArray(summary.secondarySignals)
+      ? summary.secondarySignals.filter((item): item is string => typeof item === 'string').slice(0, 3)
+      : [],
     watchNext: Array.isArray(summary.watchNext)
-      ? summary.watchNext.filter((item): item is string => typeof item === 'string').slice(0, 5)
+      ? summary.watchNext.filter((item): item is string => typeof item === 'string').slice(0, 2)
       : [],
     noiseSummary: summary.noiseSummary,
     analyzedItems: typeof summary.analyzedItems === 'number' && Number.isFinite(summary.analyzedItems)

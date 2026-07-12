@@ -27,6 +27,8 @@ export interface NewsItem {
 }
 
 export type NewsPulseLabel = 'risk-on' | 'risk-off' | 'mixed' | 'calm' | 'event-driven';
+export type NewsPulseChange = 'new' | 'changed' | 'unchanged';
+export type NewsConfidence = 'confirmed' | 'reported' | 'disputed' | 'speculative';
 
 export interface NewsSummarySourceReference {
   itemKey: string;
@@ -40,12 +42,15 @@ export interface NewsSummarySourceReference {
 export interface NewsExecutiveSummaryBullet {
   headline: string;
   summary: string;
-  whyItMatters: string;
+  marketImpact: string;
   details: string;
+  change: NewsPulseChange;
+  confidence: NewsConfidence;
   sources: NewsSummarySourceReference[];
 }
 
 export interface NewsExecutiveSummary {
+  formatVersion: number;
   id: string;
   generatedAt: string;
   windowStart: string;
@@ -54,6 +59,7 @@ export interface NewsExecutiveSummary {
   overview: string;
   pulse: { label: NewsPulseLabel; summary: string };
   bullets: NewsExecutiveSummaryBullet[];
+  secondarySignals: string[];
   watchNext: string[];
   noiseSummary: string;
   analyzedItems: number;
