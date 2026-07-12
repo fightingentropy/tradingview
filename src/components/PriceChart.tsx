@@ -9,7 +9,7 @@ import {
 } from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -59,6 +59,10 @@ export interface ChartPosition {
   unrealizedPnl: number;
   /** Return on equity as a fraction (0.07 = +7%). */
   roe: number;
+  /** Effective leverage, shown in the compact on-chart position label. */
+  leverage?: number;
+  /** Fraction of the position covered by reduce-only stops. Null = not loaded. */
+  stopCoverage?: number | null;
 }
 
 export type ChartOrderKind = 'take-profit' | 'stop-loss' | 'limit' | 'trigger';
@@ -125,6 +129,8 @@ interface Props {
   symbol?: string;
   /** Privacy mode: mask the position's size + PnL (price levels stay visible). */
   hideValues?: boolean;
+  /** Opens the position-management surface when the on-chart position tag is tapped. */
+  onPositionPress?: () => void;
 }
 
 /** Height of the position tag chip riding the entry-price line. */
@@ -186,6 +192,7 @@ export function PriceChart({
   orderLevels = [],
   symbol,
   hideValues = false,
+  onPositionPress,
 }: Props) {
   // While a finger is pressing the chart, hold the candle series steady so live
   // websocket ticks can't shift the bar under the crosshair (or reset gestures).
@@ -227,11 +234,9 @@ export function PriceChart({
     if (visibleCount == null || shown.length <= visibleCount) return undefined;
     return { x: [shown.length - visibleCount, shown.length - 1] };
   }, [shown.length, visibleCount]);
-
-  // Scale the price axis to the candles *currently on screen* (plus a little
-  // headroom), not the indicator overlays or the off-screen history — so panning
-  // back through time refits the bars instead of squashing them. SMA lines are
-  // clamped to the band (below) when they fall outside it.
+  // Scale the price axis to the candles *currently on screen*. Account overlays
+  // stay out of the domain so a distant entry, liquidation price, target, or stop
+  // cannot flatten the candles; off-screen labels pin to the nearest chart edge.
   const yDomain = useMemo<[number, number] | undefined>(() => {
     if (R === 0) return undefined;
     let lo = Infinity;
@@ -606,6 +611,7 @@ export function PriceChart({
             priceM={priceMSV}
             priceB={priceBSV}
             bounds={boundsSV}
+            onPress={onPositionPress}
           />
         ) : null}
 
@@ -789,13 +795,13 @@ function Crosshair({
 }
 
 /**
- * Overlays an open position on the price area: a horizontal entry line spanning
- * the full width, an optional liquidation line, a left-edge tag with side / size /
- * unrealized PnL, and right-edge price tags on the axis side. Everything rides the
+ * Overlays an open position on the price area: a dashed horizontal entry line
+ * spanning the full width, an optional liquidation line, an inline tag with side /
+ * leverage / size / unrealized PnL, and right-edge price tags. Everything rides the
  * existing pixel↔price coefficients (`price = m·y + b`, inverted to `y = (price − b)/m`),
  * so the lines track the y-scale as it refits on pan — no chart-geometry changes.
- * A line whose price is off the visible band fades out instead of drawing over the
- * axis. Pure overlay (pointerEvents none), so the crosshair gesture still passes through.
+ * A line whose price is off the visible band fades out while its label pins to the
+ * nearest edge, preserving both candle scale and access to position management.
  */
 function PositionOverlay({
   position,
@@ -805,6 +811,7 @@ function PositionOverlay({
   priceM,
   priceB,
   bounds,
+  onPress,
 }: {
   position: ChartPosition;
   symbol: string;
@@ -813,6 +820,7 @@ function PositionOverlay({
   priceM: SharedValue<number>;
   priceB: SharedValue<number>;
   bounds: SharedValue<Bounds>;
+  onPress?: () => void;
 }) {
   const sideColor = position.side === 'long' ? Colors.up : Colors.down;
   const pnlColor = position.unrealizedPnl >= 0 ? Colors.up : Colors.down;
@@ -828,10 +836,9 @@ function PositionOverlay({
     hasLiq ? yForPrice(position.liquidationPx as number, priceM.value, priceB.value) : Number.NaN,
   );
 
-  // A line/tag is visible only while its price sits inside the plot band; the
-  // translate is clamped so a NaN (pre-geometry-flush, or no liq price) never
-  // produces an invalid transform. Four unconditional hooks keeps the hook order
-  // stable even if the position gains/loses a liq price (cross↔isolated) in place.
+  // Lines are visible only while their price sits inside the plot band. The entry
+  // tag stays visible and pins to the closest edge, so a distant winning position
+  // never crushes the candle scale or loses its management control.
   const entryLineStyle = useAnimatedStyle(() => {
     const v = entryY.value;
     const b = bounds.value;
@@ -841,8 +848,11 @@ function PositionOverlay({
   const entryTagStyle = useAnimatedStyle(() => {
     const v = entryY.value;
     const b = bounds.value;
-    const on = Number.isFinite(v) && v >= b.top && v <= b.bottom;
-    return { opacity: on ? 1 : 0, transform: [{ translateY: (Number.isFinite(v) ? v : 0) - POS_TAG_H / 2 }] };
+    const ready = b.bottom > b.top && Number.isFinite(v);
+    const clamped = ready
+      ? Math.max(b.top + POS_TAG_H / 2, Math.min(b.bottom - POS_TAG_H / 2, v))
+      : POS_TAG_H / 2;
+    return { opacity: ready ? 1 : 0, transform: [{ translateY: clamped - POS_TAG_H / 2 }] };
   });
   const liqLineStyle = useAnimatedStyle(() => {
     const v = liqY.value;
@@ -857,11 +867,22 @@ function PositionOverlay({
     return { opacity: on ? 1 : 0, transform: [{ translateY: (Number.isFinite(v) ? v : 0) - POS_TAG_H / 2 }] };
   });
 
-  const sideWord = position.side === 'long' ? 'Long' : 'Short';
+  const sideWord = position.side === 'long' ? 'LONG' : 'SHORT';
+  const leverageText =
+    position.leverage != null && Number.isFinite(position.leverage) && position.leverage > 0
+      ? ` ${formatPositionSize(position.leverage)}×`
+      : '';
   const sizeText = hideValues ? POS_MASK : `${formatPositionSize(position.size)} ${symbol}`.trim();
   const pnlText = hideValues
     ? POS_MASK
-    : `${signedUsd(position.unrealizedPnl)} (${formatPercent(position.roe * 100)})`;
+    : `${signedUsd(position.unrealizedPnl)} · ${formatPercent(position.roe * 100)}`;
+  const stopCoverage = position.stopCoverage;
+  const protectionText =
+    stopCoverage == null || stopCoverage >= 0.999999
+      ? ''
+      : stopCoverage <= 0
+        ? 'NO SL'
+        : `SL ${Math.round(stopCoverage * 100)}%`;
 
   return (
     <>
@@ -872,20 +893,48 @@ function PositionOverlay({
         />
       ) : null}
       <Animated.View
-        style={[styles.posLine, { backgroundColor: sideColor }, entryLineStyle]}
+        style={[styles.posLine, { borderTopColor: sideColor }, entryLineStyle]}
         pointerEvents="none"
       />
 
-      {/* Left tag: your side / size / unrealized PnL. */}
+      {/* Inline tag: the essential position state at its actual entry price. */}
       <Animated.View
         style={[styles.posTag, styles.posTagLeft, { borderColor: sideColor }, entryTagStyle]}
-        pointerEvents="none">
-        <AppText variant="caption" color={sideColor} numeric>
-          {sideWord} {sizeText}
-        </AppText>
-        <AppText variant="caption" color={pnlColor} numeric>
-          {pnlText}
-        </AppText>
+        pointerEvents={onPress ? 'auto' : 'none'}>
+        <Pressable
+          style={({ pressed }) => [styles.posTagContent, pressed && styles.posTagPressed]}
+          disabled={!onPress}
+          onPress={onPress}
+          hitSlop={12}
+          accessibilityRole={onPress ? 'button' : undefined}
+          accessibilityLabel={onPress ? `Manage ${position.side} position` : undefined}>
+          <View style={[styles.posSideBadge, { backgroundColor: `${sideColor}24` }]}>
+            <AppText variant="caption" color={sideColor} numeric style={styles.posSideText}>
+              {sideWord}{leverageText}
+            </AppText>
+          </View>
+          {protectionText ? (
+            <AppText
+              variant="caption"
+              color={Colors.warning}
+              numberOfLines={1}
+              style={styles.posProtectionText}>
+              {protectionText}
+            </AppText>
+          ) : null}
+          <AppText variant="caption" numeric numberOfLines={1} style={styles.posSizeText}>
+            {sizeText}
+          </AppText>
+          <AppText
+            variant="caption"
+            color={pnlColor}
+            numeric
+            numberOfLines={1}
+            ellipsizeMode="clip"
+            style={styles.posPnlText}>
+            {pnlText}
+          </AppText>
+        </Pressable>
       </Animated.View>
 
       {/* Right (axis-side) price tags — price levels, shown even in privacy mode. */}
@@ -1101,7 +1150,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: 4,
     backgroundColor: '#363A45',
-    zIndex: 3,
+    zIndex: 7,
   },
   pricePillText: {
     minWidth: 58,
@@ -1118,25 +1167,42 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 0,
-    height: 1.5,
+    height: 0,
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
     zIndex: 2,
   },
-  posLiqLine: { height: 1, backgroundColor: Colors.warning, opacity: 0.7 },
-  // Left chip: side / size / unrealized PnL, on a surface background with a side-colored edge.
+  posLiqLine: { borderTopColor: Colors.warning, opacity: 0.7 },
+  // Compact Hyperliquid-style position chip riding the dashed entry line.
   posTag: {
     position: 'absolute',
     top: 0,
     height: POS_TAG_H,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 6,
     borderRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
     backgroundColor: Colors.surfaceAlt,
-    zIndex: 3,
+    overflow: 'hidden',
+    zIndex: 6,
   },
-  posTagLeft: { left: Spacing.sm },
+  posTagLeft: { left: Spacing.sm, maxWidth: '78%' },
+  posTagContent: {
+    height: POS_TAG_H - StyleSheet.hairlineWidth * 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingRight: 6,
+  },
+  posTagPressed: { backgroundColor: Colors.surfacePress },
+  posSideBadge: {
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  posSideText: { fontWeight: '700' },
+  posProtectionText: { flexShrink: 0, fontWeight: '700' },
+  posSizeText: { color: Colors.text, flexShrink: 0 },
+  // PnL yields first on narrow charts; side, protection, and size remain visible.
+  posPnlText: { flexShrink: 1 },
   // Right (axis-side) price tag — the entry/liq price level.
   posPriceTag: {
     position: 'absolute',
@@ -1146,7 +1212,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 6,
     borderRadius: 4,
-    zIndex: 3,
+    zIndex: 6,
   },
   posLiqTag: { backgroundColor: Colors.warning },
   orderLevelLine: {

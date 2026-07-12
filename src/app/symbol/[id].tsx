@@ -2,7 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useIsRestoring, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActionSheetIOS,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 
 import { IndicatorMenu } from '@/components/IndicatorMenu';
 import { PriceChart, type ChartOrderLevel, type ChartType } from '@/components/PriceChart';
@@ -229,38 +237,36 @@ export default function SymbolScreen() {
 
   const chartOrderLevels = useMemo<ChartOrderLevel[]>(
     () =>
-      !showPosition
-        ? []
-        : symbolOrders
-            .map((order): ChartOrderLevel | null => {
-              const price = order.isTrigger ? order.triggerPx : order.limitPx;
-              if (price == null || price <= 0) return null;
-              // A reduce-only trigger protects this position only when its order
-              // side actually closes the current direction. Hide stale/wrong-side
-              // reduce-only triggers rather than presenting them as protection.
-              if (order.reduceOnly && order.isTrigger) {
-                if (!position || !isProtectionOrder(order, position)) return null;
-                const kind = protectionType(order, position);
-                return {
-                  id: order.oid,
-                  price,
-                  kind: kind === 'tp' ? 'take-profit' : 'stop-loss',
-                  label: kind === 'tp' ? 'TP' : 'SL',
-                  size: order.size,
-                };
-              }
-              return {
-                id: order.oid,
-                price,
-                kind: order.isTrigger ? 'trigger' : 'limit',
-                label: order.isTrigger
-                  ? 'Trigger'
-                  : `${order.side === 'buy' ? 'Buy' : 'Sell'} limit`,
-                size: order.size,
-              };
-            })
-            .filter((level): level is ChartOrderLevel => level !== null),
-    [showPosition, symbolOrders, position],
+      symbolOrders
+        .map((order): ChartOrderLevel | null => {
+          const price = order.isTrigger ? order.triggerPx : order.limitPx;
+          if (price == null || price <= 0) return null;
+          // A reduce-only trigger protects this position only when its order
+          // side actually closes the current direction. Hide stale/wrong-side
+          // reduce-only triggers rather than presenting them as protection.
+          if (order.reduceOnly && order.isTrigger) {
+            if (!position || !isProtectionOrder(order, position)) return null;
+            const kind = protectionType(order, position);
+            return {
+              id: order.oid,
+              price,
+              kind: kind === 'tp' ? 'take-profit' : 'stop-loss',
+              label: kind === 'tp' ? 'TP' : 'SL',
+              size: order.size,
+            };
+          }
+          return {
+            id: order.oid,
+            price,
+            kind: order.isTrigger ? 'trigger' : 'limit',
+            label: order.isTrigger
+              ? 'Trigger'
+              : `${order.side === 'buy' ? 'Buy' : 'Sell'} limit`,
+            size: order.size,
+          };
+        })
+        .filter((level): level is ChartOrderLevel => level !== null),
+    [symbolOrders, position],
   );
 
   const cancelMutation = useMutation({
@@ -629,7 +635,6 @@ export default function SymbolScreen() {
   const tpOrders = existingProtection.filter((order) => order.tpsl === 'tp');
   const slOrders = existingProtection.filter((order) => order.tpsl === 'sl');
   const stoppedSize = slOrders.reduce((sum, order) => sum + Math.max(0, order.size), 0);
-  const fullyStopped = !!position && stoppedSize >= position.size * 0.999999;
   const protectionLevel = (orders: TpSlExistingOrder[], label: string) => {
     if (orders.length === 0) return `${label} —`;
     const coveredSize = orders.reduce((sum, order) => sum + Math.max(0, order.size), 0);
@@ -645,6 +650,81 @@ export default function SymbolScreen() {
       : `${protectionLevel(tpOrders, 'TP')} · ${
           slOrders.length > 0 ? protectionLevel(slOrders, 'SL') : 'No SL'
         }`;
+  const stopCoverage = position?.size
+    ? Math.min(1, Math.max(0, stoppedSize / position.size))
+    : 0;
+  const chartPosition = position ? { ...position, stopCoverage } : null;
+  const chartPositionVisible = showPosition && candles.length > 0;
+
+  const openPositionActions = () => {
+    if (!position) return;
+    const sideLabel = position.side === 'long' ? 'LONG' : 'SHORT';
+    const title = privacyMode
+      ? `${sideLabel} ${position.leverage}× ${instrument.symbol}`
+      : `${sideLabel} ${position.leverage}× · ${qty(position.size)} ${instrument.symbol}`;
+    const message =
+      `${privacyMode ? 'Position values hidden' : `${signedUsd(position.unrealizedPnl)} · ${formatPercent(position.roe * 100)} ROE`}\n` +
+      `Entry $${formatPrice(position.entryPx, decimals)} · Mark $${formatPrice(position.markPx, decimals)}\n` +
+      protectionSummary;
+
+    if (!canTrade) {
+      Alert.alert(
+        title,
+        `${message}\n\n${
+          demo
+            ? 'Demo account · read-only.'
+            : 'Trading is unavailable until the API wallet identity is verified in Settings.'
+        }`,
+      );
+      return;
+    }
+
+    const runAction = (index: number) => {
+      if (index === 0) setTicketMode('add');
+      else if (index === 1) setTicketMode('reduce');
+      else if (index === 2) setManageOpen(true);
+      else if (index === 3) setTicketMode('close');
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title,
+          message,
+          options: ['Add to position', 'Reduce position', 'Manage TP / SL', 'Close position', 'Cancel'],
+          destructiveButtonIndex: 3,
+          cancelButtonIndex: 4,
+          userInterfaceStyle: 'dark',
+        },
+        runAction,
+      );
+      return;
+    }
+
+    // Android native alerts support three buttons, so group the four actions
+    // into two clear branches rather than dropping position management options.
+    Alert.alert(title, message, [
+      {
+        text: 'Add / Reduce',
+        onPress: () =>
+          Alert.alert('Change position size', undefined, [
+            { text: 'Add', onPress: () => runAction(0) },
+            { text: 'Reduce', onPress: () => runAction(1) },
+            { text: 'Cancel', style: 'cancel' },
+          ]),
+      },
+      {
+        text: 'Manage / Close',
+        onPress: () =>
+          Alert.alert('Manage position', undefined, [
+            { text: 'Manage TP / SL', onPress: () => runAction(2) },
+            { text: 'Close', style: 'destructive', onPress: () => runAction(3) },
+            { text: 'Cancel', style: 'cancel' },
+          ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const ticketSide: 'buy' | 'sell' =
     ticketMode === 'sell'
@@ -801,12 +881,25 @@ export default function SymbolScreen() {
             visibleCount={visible}
             renderCount={render}
             axisKind={axis}
-            position={showPosition ? position : null}
-            orderLevels={chartOrderLevels}
+            position={showPosition ? chartPosition : null}
+            orderLevels={showPosition ? chartOrderLevels : []}
             symbol={instrument.symbol}
             hideValues={privacyMode}
+            onPositionPress={openPositionActions}
           />
         )}
+        {position && !chartPositionVisible ? (
+          <Pressable
+            style={({ pressed }) => [styles.positionFallback, pressed && styles.positionFallbackPressed]}
+            onPress={openPositionActions}
+            accessibilityRole="button"
+            accessibilityLabel={`Manage ${position.side} position`}>
+            <Ionicons name="options-outline" size={16} color={Colors.accent} />
+            <AppText variant="caption" color={Colors.accent}>
+              Manage position
+            </AppText>
+          </Pressable>
+        ) : null}
       </View>
 
       {rsi && candles.length > 0 ? (
@@ -831,65 +924,7 @@ export default function SymbolScreen() {
         </View>
       </View>
 
-      {isHlTradable && position ? (
-        <View style={styles.positionCard}>
-          <View style={styles.positionSummary}>
-            <View style={styles.positionPrimary}>
-              <View
-                style={[
-                  styles.sideBadge,
-                  { backgroundColor: position.side === 'long' ? Colors.up + '1F' : Colors.down + '1F' },
-                ]}>
-                <AppText
-                  variant="caption"
-                  color={position.side === 'long' ? Colors.up : Colors.down}>
-                  {position.side === 'long' ? 'LONG' : 'SHORT'} {position.leverage}×
-                </AppText>
-              </View>
-              <AppText variant="label" numeric>
-                {privacyMode ? '••••' : `${qty(position.size)} ${instrument.symbol}`}
-              </AppText>
-              <AppText
-                variant="caption"
-                numeric
-                color={position.unrealizedPnl >= 0 ? Colors.up : Colors.down}>
-                {privacyMode
-                  ? '••••'
-                  : `${signedUsd(position.unrealizedPnl)} · ${formatPercent(position.roe * 100)} ROE`}
-              </AppText>
-            </View>
-            <View style={styles.protectionRow}>
-              <Ionicons
-                name={fullyStopped ? 'shield-checkmark-outline' : 'warning-outline'}
-                size={14}
-                color={fullyStopped ? Colors.textMuted : Colors.warning}
-              />
-              <AppText
-                variant="caption"
-                numeric
-                color={fullyStopped ? Colors.textMuted : Colors.warning}
-                numberOfLines={1}>
-                {protectionSummary}
-              </AppText>
-            </View>
-          </View>
-
-          <View style={styles.positionActions}>
-            <PositionAction label="Add" onPress={() => setTicketMode('add')} />
-            <PositionAction label="Reduce" onPress={() => setTicketMode('reduce')} />
-            <PositionAction
-              label="Manage"
-              onPress={() => setManageOpen(true)}
-              color={Colors.accent}
-            />
-            <PositionAction
-              label="Close"
-              onPress={() => setTicketMode('close')}
-              color={Colors.down}
-            />
-          </View>
-        </View>
-      ) : isHlTradable ? (
+      {isHlTradable && !position ? (
         <View style={styles.tradeBar}>
           <Pressable style={[styles.tradeBtn, styles.sellBtn]} onPress={() => setTicketMode('sell')}>
             <AppText variant="label" color="#FFFFFF">
@@ -977,29 +1012,6 @@ export default function SymbolScreen() {
   );
 }
 
-function PositionAction({
-  label,
-  onPress,
-  color = Colors.text,
-  disabled = false,
-}: {
-  label: string;
-  onPress: () => void;
-  color?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={[styles.positionAction, { borderColor: color + '55' }, disabled && styles.actionDisabled]}>
-      <AppText variant="caption" color={color} numberOfLines={1}>
-        {label}
-      </AppText>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
@@ -1008,6 +1020,22 @@ const styles = StyleSheet.create({
   name: { flexShrink: 1 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.xs, rowGap: 2 },
   chartArea: { flex: 1, marginTop: Spacing.sm },
+  positionFallback: {
+    position: 'absolute',
+    top: 48,
+    right: Spacing.sm,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.accent + '66',
+    backgroundColor: Colors.surfaceAlt,
+    zIndex: 5,
+  },
+  positionFallbackPressed: { backgroundColor: Colors.surfacePress },
   controls: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.sm },
   typeToggle: {
     width: 40,
@@ -1020,31 +1048,4 @@ const styles = StyleSheet.create({
   tradeBtn: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md },
   sellBtn: { backgroundColor: Colors.down },
   buyBtn: { backgroundColor: Colors.up },
-  positionCard: {
-    marginHorizontal: Spacing.lg,
-    marginTop: Spacing.xs,
-    padding: Spacing.sm,
-    gap: Spacing.sm,
-    borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-  },
-  positionSummary: { gap: 5 },
-  positionPrimary: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  sideBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: Radius.sm },
-  protectionRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  positionActions: { flexDirection: 'row', gap: 6 },
-  positionAction: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 34,
-    paddingHorizontal: 3,
-    borderRadius: Radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: Colors.surfaceAlt,
-  },
-  actionDisabled: { opacity: 0.45 },
 });
