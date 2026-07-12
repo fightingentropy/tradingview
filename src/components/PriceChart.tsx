@@ -958,9 +958,9 @@ function PositionOverlay({
   );
 }
 
-/** Draw all working order levels. Off-screen levels pin their labels to the
- * nearest chart edge, so protection remains discoverable without flattening the
- * candle scale to include a distant target. */
+/** Draw working order levels only at their real price. If a stop, target, or
+ * limit sits outside the visible price range, both its line and label disappear
+ * instead of pinning to an edge and implying a false on-screen level. */
 function OrderLevelsOverlay({
   levels,
   symbol,
@@ -1035,10 +1035,11 @@ function OrderLevelOverlay({
     const y = rawY.value;
     const b = bounds.value;
     const ready = b.bottom > b.top && Number.isFinite(y);
-    const clamped = ready
-      ? Math.max(b.top + POS_TAG_H / 2, Math.min(b.bottom - POS_TAG_H / 2, y))
-      : POS_TAG_H / 2;
-    return { opacity: ready ? 1 : 0, transform: [{ translateY: clamped - POS_TAG_H / 2 }] };
+    const inside = ready && y >= b.top && y <= b.bottom;
+    return {
+      opacity: inside ? 1 : 0,
+      transform: [{ translateY: (ready ? y : POS_TAG_H / 2) - POS_TAG_H / 2 }],
+    };
   });
   const sizeText =
     level.size == null

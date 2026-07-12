@@ -1,4 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import {
+  GlassContainer,
+  GlassView,
+  isGlassEffectAPIAvailable,
+  isLiquidGlassAvailable,
+} from 'expo-glass-effect';
 import { useIsRestoring, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -72,6 +78,7 @@ import { useWatchlists } from '@/store/watchlists';
 
 /** Stable empty fallback so the loading/empty chart isn't handed a fresh [] each render. */
 const EMPTY_CANDLES: Candle[] = [];
+const LIQUID_GLASS = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
 
 type TicketMode = 'buy' | 'sell' | 'add' | 'reduce' | 'close';
 
@@ -925,18 +932,10 @@ export default function SymbolScreen() {
       </View>
 
       {isHlTradable && !position ? (
-        <View style={styles.tradeBar}>
-          <Pressable style={[styles.tradeBtn, styles.sellBtn]} onPress={() => setTicketMode('sell')}>
-            <AppText variant="label" color="#FFFFFF">
-              Sell
-            </AppText>
-          </Pressable>
-          <Pressable style={[styles.tradeBtn, styles.buyBtn]} onPress={() => setTicketMode('buy')}>
-            <AppText variant="label" color="#04150E">
-              Buy
-            </AppText>
-          </Pressable>
-        </View>
+        <FlatTradeBar
+          onSell={() => setTicketMode('sell')}
+          onBuy={() => setTicketMode('buy')}
+        />
       ) : null}
 
       {isHlTradable ? (
@@ -1012,6 +1011,62 @@ export default function SymbolScreen() {
   );
 }
 
+function FlatTradeBar({ onSell, onBuy }: { onSell: () => void; onBuy: () => void }) {
+  const buttons = (
+    <>
+      <GlassTradeButton side="sell" onPress={onSell} />
+      <GlassTradeButton side="buy" onPress={onBuy} />
+    </>
+  );
+
+  return LIQUID_GLASS ? (
+    <GlassContainer spacing={10} style={styles.tradeBar}>
+      {buttons}
+    </GlassContainer>
+  ) : (
+    <View style={styles.tradeBar}>{buttons}</View>
+  );
+}
+
+function GlassTradeButton({ side, onPress }: { side: 'buy' | 'sell'; onPress: () => void }) {
+  const buy = side === 'buy';
+  const color = buy ? Colors.up : Colors.down;
+  const label = buy ? 'Buy' : 'Sell';
+  const content = (
+    <Pressable
+      style={({ pressed }) => [
+        styles.tradeBtnPressable,
+        pressed && { backgroundColor: color + '1F' },
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}>
+      <View pointerEvents="none" style={[styles.tradeBtnTint, { backgroundColor: color + '18' }]} />
+      <View pointerEvents="none" style={styles.tradeBtnHighlight} />
+      <View pointerEvents="none" style={styles.tradeBtnContent}>
+        <Ionicons name={buy ? 'arrow-up' : 'arrow-down'} size={16} color={color} />
+        <AppText style={styles.tradeBtnLabel}>{label}</AppText>
+      </View>
+    </Pressable>
+  );
+
+  const surfaceStyle = [styles.tradeBtn, { borderColor: color + '70' }];
+  if (LIQUID_GLASS) {
+    return (
+      <GlassView
+        style={surfaceStyle}
+        glassEffectStyle="regular"
+        colorScheme="dark"
+        tintColor={color + '3D'}
+        isInteractive>
+        {content}
+      </GlassView>
+    );
+  }
+
+  return <View style={[surfaceStyle, styles.tradeBtnFallback]}>{content}</View>;
+}
+
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
@@ -1044,8 +1099,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   timeframeWrap: { flex: 1 },
-  tradeBar: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
-  tradeBtn: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md },
-  sellBtn: { backgroundColor: Colors.down },
-  buyBtn: { backgroundColor: Colors.up },
+  tradeBar: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+  tradeBtn: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 56,
+    borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  tradeBtnFallback: { backgroundColor: 'rgba(20,26,34,0.92)' },
+  tradeBtnPressable: {
+    flex: 1,
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.pill,
+    overflow: 'hidden',
+  },
+  tradeBtnTint: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  tradeBtnHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 22,
+    right: 22,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.48)',
+  },
+  tradeBtnContent: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  tradeBtnLabel: { color: Colors.text, fontSize: 16, fontWeight: '700', letterSpacing: 0.2 },
 });
