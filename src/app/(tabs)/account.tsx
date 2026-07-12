@@ -1379,7 +1379,12 @@ export default function AccountScreen() {
           </View>
         </View>
 
-        {/* Live risk outranks historical portfolio aesthetics while capital is deployed. */}
+        {/* Portfolio history belongs with the account-value summary, before live risk and positions. */}
+        <View style={styles.portfolioWrap}>
+          <PortfolioCard hidden={privacyMode} />
+        </View>
+
+        {/* Current account risk follows the account-value history. */}
         <RiskStrip summary={riskSummary!} hidden={privacyMode} />
 
         {/* Positions / Orders / Balances / History tabs */}
@@ -1511,15 +1516,6 @@ export default function AccountScreen() {
             ))}
           </View>
         )}
-
-        {/* History remains available, but stays compact and below live positions/risk. */}
-        <View style={styles.portfolioWrap}>
-          <PortfolioCard
-            key={sortedPositions.length > 0 ? 'portfolio-active' : 'portfolio-flat'}
-            hidden={privacyMode}
-            compact={sortedPositions.length > 0}
-          />
-        </View>
 
         {demo ? (
           <AppText variant="caption" muted style={styles.disclaimer}>
@@ -2604,6 +2600,6 @@ const styles = StyleSheet.create({
   actionHint: { marginTop: -Spacing.xs },
   chartLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: Spacing.xs },
 
-  portfolioWrap: { paddingHorizontal: Spacing.lg, marginTop: Spacing.xl },
+  portfolioWrap: { paddingHorizontal: Spacing.lg },
   disclaimer: { textAlign: 'center', marginTop: Spacing.lg },
 });
