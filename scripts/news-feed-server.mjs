@@ -21,6 +21,7 @@ const LIST_ID = '1933193197817135501';
 const HOST = process.env.NEWS_FEED_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.NEWS_FEED_PORT ?? 8430);
 const MAX_COUNT = 100;
+const MAX_RELAY_SNAPSHOT_COUNT = 200;
 const TELEGRAM_CHANNELS = [
   'tradfi_t3',
   'trad_fin',
@@ -421,12 +422,13 @@ async function readJsonBody(request) {
   return JSON.parse(body || '{}');
 }
 
-async function latestCombinedSnapshot(count = MAX_COUNT) {
+async function latestCombinedSnapshot(count = MAX_RELAY_SNAPSHOT_COUNT) {
+  const perSourceCount = Math.min(MAX_COUNT, count);
   const [xItems, telegram, digg, paste] = await Promise.all([
-    fetchXTimeline(count),
-    fetchTelegramTimeline(count),
-    fetchDiggSnapshot(count),
-    fetchPasteSnapshot(count),
+    fetchXTimeline(perSourceCount),
+    fetchTelegramTimeline(perSourceCount),
+    fetchDiggSnapshot(perSourceCount),
+    fetchPasteSnapshot(perSourceCount),
   ]);
   return {
     items: [...xItems, ...telegram.items, ...digg.items, ...paste.items]
