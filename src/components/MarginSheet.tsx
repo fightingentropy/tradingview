@@ -17,7 +17,7 @@ import {
 
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { usd } from '@/lib/format';
+import { formatPrice, usd } from '@/lib/format';
 
 type Mode = 'add' | 'remove';
 
@@ -52,8 +52,18 @@ export interface MarginSheetProps {
   symbol: string;
   /** Current isolated margin on the position. */
   marginUsed: number;
+  /** Conservative client-side ceiling after retaining the live transfer-margin floor. */
+  removalSafetyLimit: number;
+  /** False for strict-isolated markets, where protocol rules prohibit removal. */
+  removalAllowed: boolean;
   /** Free USDC available to add. */
   available: number;
+  side: 'long' | 'short';
+  markPx: number;
+  liquidationPx: number | null;
+  positionValue: number;
+  leverage: number;
+  priceDecimals: number;
   /** Whether trading is enabled (an API key is set and it isn't the demo account). */
   tradable: boolean;
   busy: boolean;
@@ -70,7 +80,15 @@ export function MarginSheet({
   onClose,
   symbol,
   marginUsed,
+  removalSafetyLimit,
+  removalAllowed,
   available,
+  side,
+  markPx,
+  liquidationPx,
+  positionValue,
+  leverage,
+  priceDecimals,
   tradable,
   busy,
   onSubmit,
@@ -78,6 +96,10 @@ export function MarginSheet({
   const [mode, setMode] = useState<Mode>('add');
   const [amount, setAmount] = useState('');
   const amt = num(amount);
+  const liquidationDistancePct =
+    markPx > 0 && liquidationPx != null && liquidationPx > 0
+      ? (Math.abs(markPx - liquidationPx) / markPx) * 100
+      : null;
 
   const close = () => {
     setMode('add');
@@ -85,13 +107,23 @@ export function MarginSheet({
     onClose();
   };
 
-  // Cap by what's actually movable; the exchange does the final maintenance-margin check.
-  const cap = mode === 'add' ? available : marginUsed;
+  // Removal deliberately does not use all displayed margin as "Max". The caller
+  // supplies a conservative ceiling that retains the current transfer-margin floor;
+  // Hyperliquid still rechecks the live position before accepting the action.
+  const cap = mode === 'add' ? available : removalAllowed ? removalSafetyLimit : 0;
   const newMargin = mode === 'add' ? marginUsed + amt : Math.max(0, marginUsed - amt);
   const valid = amt > 0 && amt <= cap + 1e-9;
   const canSubmit = tradable && valid && !busy;
 
-  const setMax = () => setAmount(cap > 0 ? String(Number(cap.toFixed(2))) : '');
+  const setMax = () => {
+    if (mode === 'add') setAmount(cap > 0 ? String(Number(cap.toFixed(2))) : '');
+  };
+
+  const setMarginMode = (next: Mode) => {
+    setMode(next);
+    // An amount safe to add can be unsafe to remove. Force a fresh amount review.
+    setAmount('');
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
@@ -116,7 +148,7 @@ export function MarginSheet({
               <Pressable
                 key={mItem}
                 style={[styles.segmentItem, mode === mItem && styles.segmentItemActive]}
-                onPress={() => setMode(mItem)}>
+                onPress={() => setMarginMode(mItem)}>
                 <AppText variant="label" color={mode === mItem ? Colors.text : Colors.textMuted}>
                   {mItem === 'add' ? 'Add' : 'Remove'}
                 </AppText>
@@ -130,11 +162,17 @@ export function MarginSheet({
               <AppText variant="caption" muted>
                 Amount
               </AppText>
-              <Pressable onPress={setMax} hitSlop={6} disabled={cap <= 0}>
-                <AppText variant="caption" color={cap > 0 ? Colors.accent : Colors.textFaint}>
-                  Max {usd(cap)}
+              {mode === 'add' ? (
+                <Pressable onPress={setMax} hitSlop={6} disabled={cap <= 0}>
+                  <AppText variant="caption" color={cap > 0 ? Colors.accent : Colors.textFaint}>
+                    Max {usd(cap)}
+                  </AppText>
+                </Pressable>
+              ) : (
+                <AppText variant="caption" color={cap > 0 ? Colors.warning : Colors.textFaint}>
+                  Safety limit {usd(cap)}
                 </AppText>
-              </Pressable>
+              )}
             </View>
             <View style={styles.inputRow}>
               <TextInput
@@ -155,14 +193,71 @@ export function MarginSheet({
 
           {/* Summary */}
           <View style={styles.infoCard}>
-            <InfoRow label="Current margin" value={usd(marginUsed)} />
+            <InfoRow label="Margin shown now" value={usd(marginUsed)} />
             <InfoRow
-              label="New margin"
+              label="Margin if accepted"
               value={amt > 0 ? usd(newMargin) : '—'}
               valueColor={amt > 0 ? Colors.text : Colors.textMuted}
             />
-            <InfoRow label={mode === 'add' ? 'Available' : 'Removable'} value={usd(cap)} />
+            <InfoRow label="Position notional" value={usd(positionValue)} />
+            <InfoRow label="Leverage" value={`${leverage.toFixed(0)}× · ${side}`} />
+            <InfoRow
+              label={mode === 'add' ? 'Available collateral' : 'Removal safety limit'}
+              value={usd(cap)}
+              valueColor={mode === 'remove' ? Colors.warning : Colors.text}
+            />
           </View>
+
+          <View style={[styles.riskCard, mode === 'remove' && styles.riskCardDanger]}>
+            <View style={styles.riskHead}>
+              <Ionicons
+                name={mode === 'remove' ? 'warning' : 'shield-checkmark-outline'}
+                size={16}
+                color={mode === 'remove' ? Colors.down : Colors.up}
+              />
+              <AppText variant="label" color={mode === 'remove' ? Colors.down : Colors.text}>
+                Liquidation risk
+              </AppText>
+            </View>
+            <InfoRow label="Current mark" value={`$${formatPrice(markPx, priceDecimals)}`} />
+            <InfoRow
+              label="Current liquidation"
+              value={
+                liquidationPx != null && liquidationPx > 0
+                  ? `$${formatPrice(liquidationPx, priceDecimals)}`
+                  : 'Unavailable'
+              }
+              valueColor={liquidationPx != null && liquidationPx > 0 ? Colors.down : Colors.warning}
+            />
+            <InfoRow
+              label="Current distance"
+              value={liquidationDistancePct == null ? 'Unavailable' : `${liquidationDistancePct.toFixed(2)}%`}
+              valueColor={liquidationDistancePct == null ? Colors.warning : Colors.text}
+            />
+            <InfoRow
+              label="After this change"
+              value="Unknown until accepted"
+              valueColor={mode === 'remove' ? Colors.down : Colors.textMuted}
+            />
+            <AppText
+              variant="caption"
+              color={mode === 'remove' ? Colors.down : Colors.textMuted}
+              style={styles.riskCopy}>
+              {mode === 'remove'
+                ? 'Removing margin moves liquidation closer to the mark. No projected liquidation price is shown because the exchange must recalculate it from live margin tiers, price, PnL, and funding.'
+                : 'Adding margin generally moves liquidation farther away. Verify the recalculated liquidation price on the live position after acceptance.'}
+            </AppText>
+          </View>
+
+          {mode === 'remove' && !removalAllowed ? (
+            <AppText variant="caption" color={Colors.down} style={styles.hint}>
+              This is a strict-isolated market. Hyperliquid permits adding margin but does not permit removing it.
+            </AppText>
+          ) : mode === 'remove' && removalSafetyLimit <= 0 ? (
+            <AppText variant="caption" color={Colors.warning} style={styles.hint}>
+              No removal clears the current conservative margin floor. Add margin or reduce the position first.
+            </AppText>
+          ) : null}
 
           {!tradable ? (
             <AppText variant="caption" color={Colors.warning} style={styles.hint}>
@@ -175,7 +270,7 @@ export function MarginSheet({
             onPress={() => onSubmit(mode === 'add' ? amt : -amt)}
             disabled={!canSubmit}>
             <AppText variant="label" color={canSubmit ? '#04150E' : Colors.textFaint}>
-              {mode === 'add' ? 'Add margin' : 'Remove margin'}
+              {mode === 'add' ? 'Add margin' : 'Review risky removal'}
               {amt > 0 ? ` · ${usd(amt)}` : ''}
             </AppText>
           </Pressable>
@@ -184,11 +279,17 @@ export function MarginSheet({
         {Platform.OS === 'ios' ? (
           <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor="#0B0E13">
             <View style={styles.accessory}>
-              <Pressable onPress={setMax} hitSlop={8} style={styles.accBtn} disabled={cap <= 0}>
-                <AppText variant="label" color={cap > 0 ? Colors.accent : Colors.textFaint}>
-                  Max
+              {mode === 'add' ? (
+                <Pressable onPress={setMax} hitSlop={8} style={styles.accBtn} disabled={cap <= 0}>
+                  <AppText variant="label" color={cap > 0 ? Colors.accent : Colors.textFaint}>
+                    Max
+                  </AppText>
+                </Pressable>
+              ) : (
+                <AppText variant="caption" color={Colors.warning}>
+                  Live safety check on submit
                 </AppText>
-              </Pressable>
+              )}
               <Pressable onPress={() => Keyboard.dismiss()} hitSlop={8} style={styles.doneBtn}>
                 <Ionicons name="checkmark" size={16} color={Colors.accent} />
                 <AppText variant="label" color={Colors.accent}>
@@ -253,6 +354,18 @@ const styles = StyleSheet.create({
 
   infoCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
   infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+
+  riskCard: {
+    backgroundColor: GLASS_FILL,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: GLASS_HAIRLINE,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  riskCardDanger: { backgroundColor: 'rgba(246,70,93,0.09)', borderColor: 'rgba(246,70,93,0.48)' },
+  riskHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  riskCopy: { lineHeight: 17 },
 
   hint: { marginTop: -Spacing.xs },
   submit: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md, marginTop: Spacing.xs, minHeight: 48 },

@@ -9,12 +9,15 @@ import { mmkvStorage } from '@/lib/mmkv';
  * The connected Hyperliquid account. `address` is the public master account used
  * for read-only views; the order-signing key lives in the encrypted keyStore (the
  * `hasKey` flag just mirrors its presence for the UI). Trading is enabled once
- * both an address and a key are present.
+ * both are present and `userRole` verifies that the key is an API wallet for
+ * this exact direct master account.
  */
 interface HlConnectionState {
   address: string | null;
   network: HlNetwork;
   hasKey: boolean;
+  /** In-memory revision so replacing a present key re-runs identity resolution. */
+  keyRevision: number;
   /** True for the read-only demo account (disables anything that would trade). */
   demo: boolean;
   setAddress: (address: string | null) => void;
@@ -36,6 +39,7 @@ export const useHlConnection = create<HlConnectionState>()(
       address: null,
       network: 'mainnet',
       hasKey: false,
+      keyRevision: 0,
       demo: false,
       setAddress: (address) =>
         set((s) => ({
@@ -45,11 +49,12 @@ export const useHlConnection = create<HlConnectionState>()(
           demo: false,
         })),
       setNetwork: (network) => set({ network }),
-      refreshKey: () => set({ hasKey: hasAgentKey() }),
+      refreshKey: () =>
+        set((s) => ({ hasKey: hasAgentKey(), keyRevision: s.keyRevision + 1 })),
       connectDemo: (address) => set({ address, demo: true, hasKey: false }),
       disconnect: () => {
         clearAgentKey();
-        set({ address: null, hasKey: false, demo: false });
+        set((s) => ({ address: null, hasKey: false, demo: false, keyRevision: s.keyRevision + 1 }));
       },
     }),
     {

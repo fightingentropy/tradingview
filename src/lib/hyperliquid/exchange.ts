@@ -7,8 +7,45 @@
  * explicit user confirmation.
  */
 import { fetchWithTimeout, HL_API, type HlNetwork } from './info';
-import { getAgentKey } from './keyStore';
 import { priceToWire, signL1Action, sizeToWire } from './sign';
+import {
+  signingKeyForCurrentFingerprint,
+  TradingIdentityError,
+  verifySignedTradingIdentity,
+  type SignedTradingIdentityBinding,
+} from './tradingIdentity';
+
+/** Mandatory identity proof + last-moment store/context guard for real mutations. */
+export interface SignedMutationIdentity {
+  identity: SignedTradingIdentityBinding;
+  /** Action-specific network checks, after identity proof and before signing. */
+  validateImmediatelyBeforeSigning: () => Promise<void>;
+  /** Called synchronously after the validator, immediately before signing. */
+  assertIdentityCurrent: () => void;
+}
+
+interface ImmediateSignature {
+  nonce: number;
+  signature: ReturnType<typeof signL1Action>;
+}
+
+async function verifiedMutationKey(
+  network: HlNetwork,
+  auth: SignedMutationIdentity,
+  signImmediately: (key: string) => ImmediateSignature,
+): Promise<ImmediateSignature> {
+  if (network !== auth.identity.network) {
+    throw new TradingIdentityError(
+      'The mutation network does not match the verified API wallet review. No action was sent.',
+    );
+  }
+  await verifySignedTradingIdentity(auth.identity);
+  await auth.validateImmediatelyBeforeSigning();
+  // No await may be added below these checks. Signing stays inside this callback
+  // so the key never crosses an async/microtask boundary after its final reread.
+  auth.assertIdentityCurrent();
+  return signImmediately(signingKeyForCurrentFingerprint(auth.identity));
+}
 
 /** Resting/aggressive limit leg. */
 type LimitWire = { limit: { tif: 'Gtc' | 'Ioc' | 'Alo' } };
@@ -31,11 +68,24 @@ interface OrderWire {
 /** How a bulk order's legs relate to each other (Hyperliquid `grouping`). */
 type Grouping = 'na' | 'normalTpsl' | 'positionTpsl';
 
+export type OrderResultStatus =
+  | 'filled'
+  | 'resting'
+  | 'waitingForFill'
+  | 'waitingForTrigger'
+  | 'success'
+  | 'error'
+  | 'unknown';
+
+/** Exact acknowledgement returned for one leg of an order action. */
 export interface OrderResult {
-  status: 'filled' | 'resting';
+  status: OrderResultStatus;
   oid?: number;
   avgPx?: number;
   totalSz?: number;
+  error?: string;
+  /** Preserved for forward-compatible display/debugging when Hyperliquid adds a status. */
+  raw?: unknown;
 }
 
 const DEFAULT_SLIPPAGE = 0.05;
@@ -78,10 +128,6 @@ async function exchangePost(
     typeof json.response === 'object' && json.response?.data?.statuses
       ? json.response.data.statuses
       : [];
-  const errored = statuses.find(
-    (s): s is { error: string } => !!s && typeof s === 'object' && 'error' in s,
-  );
-  if (errored) throw new Error(errored.error);
   // status:'ok' with no statuses means the order neither rested nor filled —
   // don't report a phantom success to the caller.
   if (statuses.length === 0) throw new Error('Hyperliquid returned no order status');
@@ -89,10 +135,18 @@ async function exchangePost(
 }
 
 function normalizeStatus(raw: unknown): OrderResult {
+  if (typeof raw === 'string') {
+    if (raw === 'waitingForFill' || raw === 'waitingForTrigger' || raw === 'success') {
+      return { status: raw };
+    }
+    return { status: 'unknown', raw };
+  }
   const s = raw as {
     resting?: { oid: number };
     filled?: { oid: number; avgPx: string; totalSz: string };
+    error?: string;
   };
+  if (s?.error) return { status: 'error', error: s.error };
   if (s?.filled) {
     return {
       status: 'filled',
@@ -101,10 +155,15 @@ function normalizeStatus(raw: unknown): OrderResult {
       totalSz: Number(s.filled.totalSz),
     };
   }
-  return { status: 'resting', oid: s?.resting?.oid };
+  if (s?.resting) return { status: 'resting', oid: s.resting.oid };
+  return { status: 'unknown', raw };
 }
 
-export interface PlaceOrderParams {
+function throwOrderError(result: OrderResult | undefined): void {
+  if (result?.status === 'error') throw new Error(result.error ?? 'Hyperliquid rejected the order.');
+}
+
+export interface PlaceOrderParams extends SignedMutationIdentity {
   network: HlNetwork;
   assetIndex: number;
   szDecimals: number;
@@ -114,9 +173,13 @@ export interface PlaceOrderParams {
   reduceOnly?: boolean;
   /** Provide for a limit order; omit for a market order. */
   limitPrice?: number;
+  /** Rest a limit as add-liquidity-only. Ignored for market orders. */
+  postOnly?: boolean;
   /** Required for a market order — the current mark used to derive the IOC cap. */
   markPx?: number;
   slippage?: number;
+  /** Called immediately before the authenticated exchange POST begins. */
+  onPostAttempt?: () => void;
 }
 
 /**
@@ -128,14 +191,19 @@ async function submitOrders(
   network: HlNetwork,
   orders: OrderWire[],
   grouping: Grouping,
+  auth: SignedMutationIdentity,
+  onPostAttempt?: () => void,
 ): Promise<OrderResult[]> {
-  const key = getAgentKey();
-  if (!key) throw new Error('No API wallet key set. Add one in Settings to trade.');
-
   const action = { type: 'order', orders, grouping };
-  const nonce = nextNonce();
-  const signature = signL1Action(key, action, nonce, network === 'mainnet', null);
+  const { nonce, signature } = await verifiedMutationKey(network, auth, (key) => {
+    const nonce = nextNonce();
+    return {
+      nonce,
+      signature: signL1Action(key, action, nonce, network === 'mainnet', null),
+    };
+  });
 
+  onPostAttempt?.();
   const statuses = await exchangePost(network, action, signature, nonce);
   return statuses.map(normalizeStatus);
 }
@@ -149,14 +217,14 @@ export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
   const isMarket = p.limitPrice === undefined;
 
   let px: number;
-  let tif: 'Gtc' | 'Ioc';
+  let tif: 'Gtc' | 'Ioc' | 'Alo';
   if (isMarket) {
     if (!p.markPx) throw new Error('Missing mark price for market order.');
     px = marketCrossPx(p.markPx, p.isBuy, p.slippage ?? DEFAULT_SLIPPAGE);
     tif = 'Ioc';
   } else {
     px = p.limitPrice as number;
-    tif = 'Gtc';
+    tif = p.postOnly ? 'Alo' : 'Gtc';
   }
 
   const order: OrderWire = {
@@ -168,8 +236,9 @@ export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
     t: { limit: { tif } },
   };
 
-  const [res] = await submitOrders(p.network, [order], 'na');
+  const [res] = await submitOrders(p.network, [order], 'na', p, p.onPostAttempt);
   if (res === undefined) throw new Error('Hyperliquid returned no order status');
+  throwOrderError(res);
   return res;
 }
 
@@ -227,24 +296,30 @@ export function buildTriggerWire(o: {
   };
 }
 
-export interface PositionTpSlParams {
+export interface PositionTpSlParams extends SignedMutationIdentity {
   network: HlNetwork;
   assetIndex: number;
   szDecimals: number;
   /** Side of the open position being protected. */
   positionIsLong: boolean;
-  /** Position size in coins — the trigger orders close the whole position. */
+  /** Coin size protected by each trigger (can be the full position or a partial exit). */
   size: number;
   /** One or two legs (a take-profit and/or a stop-loss). */
   legs: TriggerLeg[];
   slippage?: number;
+  /** Called immediately before the authenticated exchange POST begins. */
+  onPostAttempt?: () => void;
 }
 
 /**
  * Attach a take-profit and/or stop-loss to an EXISTING open position
  * (Hyperliquid `positionTpsl` grouping). Each leg is a reduce-only trigger sized
- * to the position and placed on the opposite side, so firing it closes the
- * position. When both legs are given they form an OCO pair on the position.
+ * to the requested protected amount and placed on the opposite side. When both
+ * legs are given they form an OCO pair on that position size.
+ * Results are returned in the same order as `legs`. A per-leg rejection is
+ * preserved as `{status:'error'}` instead of throwing, because another leg in
+ * the same action may have been accepted. Transport/top-level failures still
+ * throw because no trustworthy per-leg acknowledgement was returned.
  * Real funds on mainnet — gate behind a confirm.
  */
 export async function placePositionTpSl(p: PositionTpSlParams): Promise<OrderResult[]> {
@@ -261,10 +336,10 @@ export async function placePositionTpSl(p: PositionTpSlParams): Promise<OrderRes
       slippage: p.slippage,
     }),
   );
-  return submitOrders(p.network, orders, 'positionTpsl');
+  return submitOrders(p.network, orders, 'positionTpsl', p, p.onPostAttempt);
 }
 
-export interface BracketParams {
+export interface BracketParams extends SignedMutationIdentity {
   network: HlNetwork;
   assetIndex: number;
   szDecimals: number;
@@ -274,11 +349,15 @@ export interface BracketParams {
   size: number;
   /** Limit entry price; omit for a market entry. */
   limitPrice?: number;
+  /** Rest a limit entry as add-liquidity-only. Ignored for market entries. */
+  postOnly?: boolean;
   /** Required for a market entry — mark used to derive the IOC cross price. */
   markPx?: number;
   /** Take-profit and/or stop-loss to attach to the entry. */
   legs: TriggerLeg[];
   slippage?: number;
+  /** Called immediately before the authenticated exchange POST begins. */
+  onPostAttempt?: () => void;
 }
 
 /**
@@ -293,14 +372,14 @@ export async function placeBracket(p: BracketParams): Promise<OrderResult[]> {
 
   const isMarket = p.limitPrice === undefined;
   let entryPx: number;
-  let tif: 'Gtc' | 'Ioc';
+  let tif: 'Gtc' | 'Ioc' | 'Alo';
   if (isMarket) {
     if (!p.markPx) throw new Error('Missing mark price for market entry.');
     entryPx = marketCrossPx(p.markPx, p.isBuy, p.slippage ?? DEFAULT_SLIPPAGE);
     tif = 'Ioc';
   } else {
     entryPx = p.limitPrice as number;
-    tif = 'Gtc';
+    tif = p.postOnly ? 'Alo' : 'Gtc';
   }
 
   const entry: OrderWire = {
@@ -324,16 +403,28 @@ export async function placeBracket(p: BracketParams): Promise<OrderResult[]> {
     }),
   );
 
-  return submitOrders(p.network, [entry, ...children], 'normalTpsl');
+  const results = await submitOrders(
+    p.network,
+    [entry, ...children],
+    'normalTpsl',
+    p,
+    p.onPostAttempt,
+  );
+  // A rejected parent means no entry exists. Child errors are returned intact so
+  // callers can warn that the entry may exist without its requested protection.
+  throwOrderError(results[0]);
+  return results;
 }
 
-export interface UpdateLeverageParams {
+export interface UpdateLeverageParams extends SignedMutationIdentity {
   network: HlNetwork;
   /** Order asset-id (same scheme as orders — incl. the xyz 110000+ offset). */
   assetIndex: number;
   isCross: boolean;
   /** Integer leverage, 1..maxLeverage. */
   leverage: number;
+  /** Called immediately before the authenticated exchange POST begins. */
+  onPostAttempt?: () => void;
 }
 
 /**
@@ -342,18 +433,21 @@ export interface UpdateLeverageParams {
  * so it's gated behind the same confirm as the order itself. Real funds on mainnet.
  */
 export async function updateLeverage(p: UpdateLeverageParams): Promise<void> {
-  const key = getAgentKey();
-  if (!key) throw new Error('No API wallet key set. Add one in Settings to trade.');
-
   const action = {
     type: 'updateLeverage',
     asset: p.assetIndex,
     isCross: p.isCross,
     leverage: Math.round(p.leverage),
   };
-  const nonce = nextNonce();
-  const signature = signL1Action(key, action, nonce, p.network === 'mainnet', null);
+  const { nonce, signature } = await verifiedMutationKey(p.network, p, (key) => {
+    const nonce = nextNonce();
+    return {
+      nonce,
+      signature: signL1Action(key, action, nonce, p.network === 'mainnet', null),
+    };
+  });
 
+  p.onPostAttempt?.();
   const res = await fetchWithTimeout(`${HL_API[p.network]}/exchange`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -368,12 +462,14 @@ export async function updateLeverage(p: UpdateLeverageParams): Promise<void> {
   }
 }
 
-export interface UpdateIsolatedMarginParams {
+export interface UpdateIsolatedMarginParams extends SignedMutationIdentity {
   network: HlNetwork;
   /** Order asset-id (same scheme as orders — incl. the xyz 110000+ offset). */
   assetIndex: number;
   /** USD to move: positive tops up the position's margin, negative pulls it back. */
   usd: number;
+  /** Called immediately before the authenticated exchange POST begins. */
+  onPostAttempt?: () => void;
 }
 
 /**
@@ -386,20 +482,23 @@ export interface UpdateIsolatedMarginParams {
  * API requires; direction is carried by the sign of `ntli`.)
  */
 export async function updateIsolatedMargin(p: UpdateIsolatedMarginParams): Promise<void> {
-  const key = getAgentKey();
-  if (!key) throw new Error('No API wallet key set. Add one in Settings to trade.');
-
   const action = {
     type: 'updateIsolatedMargin',
     asset: p.assetIndex,
     isBuy: true,
     ntli: Math.round(p.usd * 1e6),
   };
-  const nonce = nextNonce();
-  const signature = signL1Action(key, action, nonce, p.network === 'mainnet', null);
+  const { nonce, signature } = await verifiedMutationKey(p.network, p, (key) => {
+    const nonce = nextNonce();
+    return {
+      nonce,
+      signature: signL1Action(key, action, nonce, p.network === 'mainnet', null),
+    };
+  });
 
   // Like updateLeverage, this returns {status:'ok', response:{type:'default'}} with
   // no per-order statuses, so it doesn't go through exchangePost.
+  p.onPostAttempt?.();
   const res = await fetchWithTimeout(`${HL_API[p.network]}/exchange`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -414,26 +513,35 @@ export async function updateIsolatedMargin(p: UpdateIsolatedMarginParams): Promi
   }
 }
 
-export interface CancelOrderParams {
+export interface CancelOrderParams extends SignedMutationIdentity {
   network: HlNetwork;
   /** Order asset-id (same scheme as placing — incl. the xyz 110000+ offset). */
   assetIndex: number;
   oid: number;
+  /** Called immediately before the authenticated exchange POST begins. */
+  onPostAttempt?: () => void;
 }
 
 /** Cancel a single resting order. Real funds on mainnet — gate behind a confirm. */
 export async function cancelOrder(p: CancelOrderParams): Promise<void> {
-  const key = getAgentKey();
-  if (!key) throw new Error('No API wallet key set. Add one in Settings to trade.');
-
   const action = { type: 'cancel', cancels: [{ a: p.assetIndex, o: p.oid }] };
-  const nonce = nextNonce();
-  const signature = signL1Action(key, action, nonce, p.network === 'mainnet', null);
-  // exchangePost throws on a non-ok response or an errored status (e.g. already filled/canceled).
-  await exchangePost(p.network, action, signature, nonce);
+  const { nonce, signature } = await verifiedMutationKey(p.network, p, (key) => {
+    const nonce = nextNonce();
+    return {
+      nonce,
+      signature: signL1Action(key, action, nonce, p.network === 'mainnet', null),
+    };
+  });
+  p.onPostAttempt?.();
+  const statuses = await exchangePost(p.network, action, signature, nonce);
+  const errored = statuses.find(
+    (status): status is { error: string } =>
+      !!status && typeof status === 'object' && 'error' in status,
+  );
+  if (errored) throw new Error(errored.error);
 }
 
-export interface MarketCloseParams {
+export interface MarketCloseParams extends SignedMutationIdentity {
   network: HlNetwork;
   assetIndex: number;
   szDecimals: number;
@@ -442,6 +550,8 @@ export interface MarketCloseParams {
   size: number;
   markPx: number;
   slippage?: number;
+  /** Called immediately before the authenticated exchange POST begins. */
+  onPostAttempt?: () => void;
 }
 
 /** Flatten a position with a reduce-only market order on the opposite side. */
@@ -455,6 +565,10 @@ export async function marketClose(p: MarketCloseParams): Promise<OrderResult> {
     reduceOnly: true,
     markPx: p.markPx,
     slippage: p.slippage,
+    identity: p.identity,
+    validateImmediatelyBeforeSigning: p.validateImmediatelyBeforeSigning,
+    assertIdentityCurrent: p.assertIdentityCurrent,
+    onPostAttempt: p.onPostAttempt,
   });
 }
 
@@ -474,5 +588,9 @@ export async function reversePosition(p: MarketCloseParams): Promise<OrderResult
     reduceOnly: false,
     markPx: p.markPx,
     slippage: p.slippage,
+    identity: p.identity,
+    validateImmediatelyBeforeSigning: p.validateImmediatelyBeforeSigning,
+    assertIdentityCurrent: p.assertIdentityCurrent,
+    onPostAttempt: p.onPostAttempt,
   });
 }

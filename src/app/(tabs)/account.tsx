@@ -1,23 +1,51 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, type ComponentProps, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MarginSheet } from '@/components/MarginSheet';
 import { PortfolioCard } from '@/components/PortfolioCard';
 import { SymbolLogo } from '@/components/SymbolLogo';
-import { TpSlSheet, type TpSlLegInput } from '@/components/TpSlSheet';
+import {
+  TpSlSheet,
+  type TpSlExistingOrder,
+  type TpSlLegInput,
+} from '@/components/TpSlSheet';
 import { TradeTicket } from '@/components/TradeTicket';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useMarkets } from '@/data/useMarkets';
-import { useHlAccount, useHlFills, useHlOpenOrders } from '@/data/useHlAccount';
+import {
+  useHlAccount,
+  useHlFills,
+  useHlOpenOrders,
+  useTradingIdentity,
+} from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
-import { cancelOrder, marketClose, placePositionTpSl, reversePosition, updateIsolatedMargin } from '@/lib/hyperliquid/exchange';
+import {
+  buildAccountRiskSummary,
+  isProtectiveStop,
+  type AccountRiskSummary,
+} from '@/lib/accountRisk';
+import {
+  cancelOrder,
+  placePositionTpSl,
+  reversePosition,
+  updateIsolatedMargin,
+  type OrderResult,
+} from '@/lib/hyperliquid/exchange';
+import { fetchHlAccount, fetchOpenOrders, fetchOrderBook } from '@/lib/hyperliquid/info';
 import type { HlFill, HlOpenOrder, HlPosition, HlSpotBalance } from '@/lib/hyperliquid/info';
+import {
+  assertTradingIdentityCurrent,
+  signedIdentityBinding,
+  TradingIdentityError,
+  type SignedTradingIdentityBinding,
+} from '@/lib/hyperliquid/tradingIdentity';
 import { formatCompact, formatPercent, formatPrice, priceDecimalsFor, signedUsd, usd } from '@/lib/format';
+import { priceToWire, sizeToWire } from '@/lib/hyperliquid/sign';
 import { queryKeys } from '@/lib/queryKeys';
 import type { Instrument } from '@/domain/types';
 import { DEMO_ADDRESS, useHlConnection } from '@/store/hlConnection';
@@ -32,10 +60,76 @@ function qty(size: number): string {
   return String(Number(size.toFixed(d)));
 }
 
+const ISOLATED_MARGIN_BUFFER_USD = 0.01;
+const LIQUIDATION_REVIEW_DRIFT_PCT = 0.1;
+const REVERSE_SLIPPAGE = 0.05;
+/** A 10bp midpoint/adverse-touch move requires a fresh reverse confirmation. */
+const REVERSE_RECONFIRM_DRIFT_PCT = 0.1;
+
+/**
+ * Hyperliquid retains at least the larger of initial margin and 10% of current
+ * notional when margin is transferred out of an isolated position. Keep a cent
+ * above that floor so the UI never presents all displayed margin as removable.
+ * The exchange remains authoritative and the mutation rechecks this against a
+ * fresh account snapshot immediately before signing.
+ */
+function isolatedMarginRemovalSafetyLimit(p: HlPosition): number {
+  if (
+    !(p.marginUsed > 0) ||
+    !(p.positionValue > 0) ||
+    !(p.leverage > 0) ||
+    !(p.markPx > 0) ||
+    p.liquidationPx == null ||
+    !(p.liquidationPx > 0)
+  ) {
+    return 0;
+  }
+  const initialMarginFloor = p.positionValue / p.leverage;
+  const transferFloor = Math.max(initialMarginFloor, p.positionValue * 0.1);
+  const rawLimit = Math.max(0, p.marginUsed - transferFloor - ISOLATED_MARGIN_BUFFER_USD);
+  // The sheet displays cents; round down so the visible ceiling can never be
+  // exceeded by a hidden fraction of a cent.
+  return Math.floor(rawLimit * 100) / 100;
+}
+
+function positionLiquidationDistancePct(p: HlPosition): number | null {
+  if (!(p.markPx > 0) || p.liquidationPx == null || !(p.liquidationPx > 0)) return null;
+  return (Math.abs(p.markPx - p.liquidationPx) / p.markPx) * 100;
+}
+
 /** Token balance amount, comma-grouped with adaptive precision. */
 function tokenAmt(v: number): string {
   if (v >= 1_000_000_000) return formatCompact(v);
   return formatPrice(v, v >= 1000 ? 2 : v >= 1 ? 4 : 6);
+}
+
+function protectionAckIsAccepted(result: OrderResult | undefined): boolean {
+  return !!result && result.status !== 'error' && result.status !== 'unknown';
+}
+
+function protectionAckLabel(result: OrderResult | undefined): string {
+  if (!result || result.status === 'unknown') return 'Not confirmed';
+  if (result.status === 'error') return `Rejected · ${result.error ?? 'exchange error'}`;
+  if (result.status === 'waitingForFill') return 'Acknowledged · waiting for fill';
+  if (result.status === 'waitingForTrigger') return 'Acknowledged · waiting for trigger';
+  if (result.status === 'resting') return 'Acknowledged · resting';
+  if (result.status === 'filled') return 'Filled';
+  return 'Acknowledged · success';
+}
+
+class ProtectionPreflightError extends Error {}
+
+class AccountPreflightError extends Error {}
+
+class ReverseReconfirmationRequiredError extends AccountPreflightError {}
+
+class AccountMutationStatusUnknownError extends Error {
+  constructor(
+    readonly action: 'reverse' | 'margin' | 'cancel',
+    cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : 'Unknown exchange error');
+  }
 }
 
 /** Clean ticker for a position coin ("xyz:SNDK" → "SNDK"). */
@@ -73,14 +167,156 @@ function moneyExact(v: number): string {
 const usdExact = (v: number) => '$' + moneyExact(v);
 const signMoneyExact = (v: number) => (v >= 0 ? '+' : '-') + '$' + moneyExact(v);
 
-/** A pending "Limit Close" ticket spawned from a position. */
+/** A pending close ticket. Live size, side, and mark are re-resolved by coin. */
 interface CloseTicket {
   coin: string;
-  symbol: string;
-  markPx: number;
-  decimals: number;
-  side: 'buy' | 'sell';
-  sizeCoin: number;
+  type: 'market' | 'limit';
+}
+
+/** Immutable values the user explicitly reviews before a reverse can be signed. */
+interface ReverseDraft {
+  readonly coin: string;
+  readonly symbol: string;
+  readonly priceDecimals: number;
+  readonly expectedSide: HlPosition['side'];
+  readonly expectedSize: number;
+  readonly expectedLeverage: number;
+  readonly expectedLeverageType: HlPosition['leverageType'];
+  readonly targetSide: HlPosition['side'];
+  readonly orderIsBuy: boolean;
+  readonly requestedOrderSize: number;
+  readonly reviewedBid: number;
+  readonly reviewedAsk: number;
+  readonly reviewedMidPx: number;
+  readonly reviewedIocCapPx: number;
+  readonly reviewedIocCapWire: string;
+  readonly assetIndex: number;
+  readonly szDecimals: number;
+  readonly identity: SignedTradingIdentityBinding;
+}
+
+interface ReverseExecutionResult {
+  readonly draft: ReverseDraft;
+  readonly acknowledgement: OrderResult;
+  /** `null` means flat; `undefined` means the post-trade refresh failed. */
+  readonly actualPosition: HlPosition | null | undefined;
+  readonly refreshError?: string;
+}
+
+function lotSize(size: number, szDecimals: number): number {
+  return Number(sizeToWire(size, szDecimals));
+}
+
+function lotSizeLabel(size: number, szDecimals: number): string {
+  return sizeToWire(size, szDecimals);
+}
+
+/** Re-run every reviewed reverse invariant after identity proof, at the signing boundary. */
+async function validateReverseDraftImmediately(
+  draft: ReverseDraft,
+  currentMeta: { assetIndex: number; szDecimals: number } | undefined,
+): Promise<void> {
+  if (
+    !currentMeta ||
+    currentMeta.assetIndex !== draft.assetIndex ||
+    currentMeta.szDecimals !== draft.szDecimals
+  ) {
+    throw new ReverseReconfirmationRequiredError(
+      'Market metadata changed after review. Prepare the reverse again; no order was sent.',
+    );
+  }
+
+  let book: Awaited<ReturnType<typeof fetchOrderBook>>;
+  try {
+    book = await fetchOrderBook(draft.coin, draft.identity.network);
+  } catch (error) {
+    throw new AccountPreflightError(
+      `Could not refresh the order book; no reverse order was sent: ${
+        error instanceof Error ? error.message : 'network error'
+      }`,
+    );
+  }
+  const bestBid = book.bids[0]?.price;
+  const bestAsk = book.asks[0]?.price;
+  if (
+    !(bestBid && bestAsk) ||
+    !Number.isFinite(bestBid) ||
+    !Number.isFinite(bestAsk) ||
+    bestAsk < bestBid
+  ) {
+    throw new AccountPreflightError(
+      'A fresh two-sided order book is unavailable. No reverse order was sent.',
+    );
+  }
+
+  const liveMid = (bestBid + bestAsk) / 2;
+  const reviewedTouch = draft.orderIsBuy ? draft.reviewedAsk : draft.reviewedBid;
+  const liveTouch = draft.orderIsBuy ? bestAsk : bestBid;
+  const midpointDriftPct =
+    (Math.abs(liveMid - draft.reviewedMidPx) / draft.reviewedMidPx) * 100;
+  const adverseTouchDriftPct = draft.orderIsBuy
+    ? (Math.max(0, liveTouch - reviewedTouch) / reviewedTouch) * 100
+    : (Math.max(0, reviewedTouch - liveTouch) / reviewedTouch) * 100;
+  const reviewedCapStillMatches =
+    priceToWire(
+      draft.reviewedMidPx *
+        (draft.orderIsBuy ? 1 + REVERSE_SLIPPAGE : 1 - REVERSE_SLIPPAGE),
+      draft.szDecimals,
+    ) === draft.reviewedIocCapWire;
+  const liveTouchOutsideReviewedCap = draft.orderIsBuy
+    ? liveTouch > draft.reviewedIocCapPx
+    : liveTouch < draft.reviewedIocCapPx;
+  if (
+    !reviewedCapStillMatches ||
+    liveTouchOutsideReviewedCap ||
+    midpointDriftPct >= REVERSE_RECONFIRM_DRIFT_PCT ||
+    adverseTouchDriftPct >= REVERSE_RECONFIRM_DRIFT_PCT
+  ) {
+    throw new ReverseReconfirmationRequiredError(
+      `The executable market moved after review (midpoint ${midpointDriftPct.toFixed(
+        2,
+      )}%, adverse touch ${adverseTouchDriftPct.toFixed(
+        2,
+      )}%). Prepare the reverse again to review a new IOC cap; no order was sent.`,
+    );
+  }
+
+  // Account/position is authoritative and deliberately fetched last. Bound how
+  // long the already-validated book may age while that final read is in flight.
+  const bookValidatedAt = Date.now();
+  let liveAccount;
+  try {
+    liveAccount = await fetchHlAccount(draft.identity.accountAddress, draft.identity.network);
+  } catch (error) {
+    throw new AccountPreflightError(
+      `Could not recheck the live position; no reverse order was sent: ${
+        error instanceof Error ? error.message : 'network error'
+      }`,
+    );
+  }
+  if (Date.now() - bookValidatedAt > 1_500) {
+    throw new ReverseReconfirmationRequiredError(
+      'The final account check took too long and the reviewed book may be stale. Prepare the reverse again; no order was sent.',
+    );
+  }
+  const live = liveAccount.positions.find((position) => position.coin === draft.coin);
+  if (
+    !live ||
+    live.side !== draft.expectedSide ||
+    lotSize(live.size, draft.szDecimals) !== draft.expectedSize ||
+    live.leverage !== draft.expectedLeverage ||
+    live.leverageType !== draft.expectedLeverageType
+  ) {
+    throw new ReverseReconfirmationRequiredError(
+      'The live position side, size, leverage, or margin mode changed after review. Prepare the reverse again; no order was sent.',
+    );
+  }
+
+  if (lotSize(live.size * 2, draft.szDecimals) !== draft.requestedOrderSize) {
+    throw new ReverseReconfirmationRequiredError(
+      'The exact 2× order size changed after review. Prepare the reverse again; no order was sent.',
+    );
+  }
 }
 
 export default function AccountScreen() {
@@ -92,17 +328,22 @@ export default function AccountScreen() {
   const hasKey = useHlConnection((s) => s.hasKey);
   const connectDemo = useHlConnection((s) => s.connectDemo);
   const { data: account, isLoading, isError, refetch } = useHlAccount();
+  const { data: tradingIdentity } = useTradingIdentity();
+  const executionIdentity = signedIdentityBinding(tradingIdentity);
   const { data: openOrders } = useHlOpenOrders();
   const { data: fills } = useHlFills();
   const { data: markets } = useMarkets();
   const { data: meta } = useHlMeta();
 
-  const tradable = hasKey && !demo;
+  const tradable = hasKey && !demo && !!executionIdentity;
   const [tab, setTab] = useState<'positions' | 'orders' | 'balances' | 'history'>('positions');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [closeTicket, setCloseTicket] = useState<CloseTicket | null>(null);
-  const [marginTarget, setMarginTarget] = useState<HlPosition | null>(null);
-  const [tpSlTarget, setTpSlTarget] = useState<HlPosition | null>(null);
+  const [reversePreparingCoin, setReversePreparingCoin] = useState<string | null>(null);
+  // Long-lived sheets store identifiers only. Account state refreshes every 5s;
+  // retaining a position snapshot here could close or protect a stale size/mark.
+  const [marginTargetCoin, setMarginTargetCoin] = useState<string | null>(null);
+  const [tpSlTargetCoin, setTpSlTargetCoin] = useState<string | null>(null);
   const hideSmallBalances = usePreferences((s) => s.hideSmallBalances);
   const privacyMode = usePreferences((s) => s.privacyMode);
   const setPrivacyMode = usePreferences((s) => s.setPrivacyMode);
@@ -116,130 +357,775 @@ export default function AccountScreen() {
     [markets],
   );
 
-  const closeMutation = useMutation({
-    mutationFn: (p: HlPosition) => {
-      const m = meta?.[p.coin];
-      if (!m) throw new Error(`No market metadata for ${p.coin}`);
-      return marketClose({
-        network,
-        assetIndex: m.assetIndex,
-        szDecimals: m.szDecimals,
-        positionIsLong: p.side === 'long',
-        size: p.size,
-        markPx: p.markPx,
-      });
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() }),
-    onError: (e: unknown) =>
-      Alert.alert('Close failed', e instanceof Error ? e.message : 'Unknown error'),
-  });
+  const closePosition = closeTicket
+    ? account?.positions.find((position) => position.coin === closeTicket.coin) ?? null
+    : null;
+  const marginTarget = marginTargetCoin
+    ? account?.positions.find((position) => position.coin === marginTargetCoin) ?? null
+    : null;
+  const tpSlTarget = tpSlTargetCoin
+    ? account?.positions.find((position) => position.coin === tpSlTargetCoin) ?? null
+    : null;
 
   const reverseMutation = useMutation({
-    mutationFn: (p: HlPosition) => {
-      const m = meta?.[p.coin];
-      if (!m) throw new Error(`No market metadata for ${p.coin}`);
-      return reversePosition({
-        network,
-        assetIndex: m.assetIndex,
-        szDecimals: m.szDecimals,
-        positionIsLong: p.side === 'long',
-        size: p.size,
-        markPx: p.markPx,
-      });
+    mutationFn: async (draft: ReverseDraft): Promise<ReverseExecutionResult> => {
+      const identity = draft.identity;
+      const assertIdentityCurrent = () =>
+        assertTradingIdentityCurrent(identity, useHlConnection.getState());
+      try {
+        assertIdentityCurrent();
+      } catch (error) {
+        throw new AccountPreflightError(error instanceof Error ? error.message : 'Trading identity changed.');
+      }
+
+      const m = meta?.[draft.coin];
+      if (
+        !m ||
+        m.assetIndex !== draft.assetIndex ||
+        m.szDecimals !== draft.szDecimals
+      ) {
+        throw new ReverseReconfirmationRequiredError(
+          'Market metadata changed after review. Prepare the reverse again; no order was sent.',
+        );
+      }
+
+      let liveAccount;
+      try {
+        liveAccount = await fetchHlAccount(identity.accountAddress, identity.network);
+      } catch (error) {
+        throw new AccountPreflightError(
+          `Could not recheck the live position; no reverse order was sent: ${
+            error instanceof Error ? error.message : 'network error'
+          }`,
+        );
+      }
+      const live = liveAccount.positions.find((position) => position.coin === draft.coin);
+      if (
+        !live ||
+        live.side !== draft.expectedSide ||
+        lotSize(live.size, draft.szDecimals) !== draft.expectedSize ||
+        live.leverage !== draft.expectedLeverage ||
+        live.leverageType !== draft.expectedLeverageType
+      ) {
+        throw new ReverseReconfirmationRequiredError(
+          'The live position side, size, leverage, or margin mode changed after review. Prepare the reverse again; no order was sent.',
+        );
+      }
+
+      let book: Awaited<ReturnType<typeof fetchOrderBook>>;
+      try {
+        book = await fetchOrderBook(draft.coin, identity.network);
+      } catch (error) {
+        throw new AccountPreflightError(
+          `Could not refresh the order book; no reverse order was sent: ${
+            error instanceof Error ? error.message : 'network error'
+          }`,
+        );
+      }
+      const bestBid = book.bids[0]?.price;
+      const bestAsk = book.asks[0]?.price;
+      if (
+        !(bestBid && bestAsk) ||
+        !Number.isFinite(bestBid) ||
+        !Number.isFinite(bestAsk) ||
+        bestAsk < bestBid
+      ) {
+        throw new AccountPreflightError('A fresh two-sided order book is unavailable. No reverse order was sent.');
+      }
+
+      const liveMid = (bestBid + bestAsk) / 2;
+      const reviewedTouch = draft.orderIsBuy ? draft.reviewedAsk : draft.reviewedBid;
+      const liveTouch = draft.orderIsBuy ? bestAsk : bestBid;
+      const midpointDriftPct =
+        (Math.abs(liveMid - draft.reviewedMidPx) / draft.reviewedMidPx) * 100;
+      const adverseTouchDriftPct = draft.orderIsBuy
+        ? (Math.max(0, liveTouch - reviewedTouch) / reviewedTouch) * 100
+        : (Math.max(0, reviewedTouch - liveTouch) / reviewedTouch) * 100;
+      const reviewedCapStillMatches =
+        priceToWire(
+          draft.reviewedMidPx *
+            (draft.orderIsBuy ? 1 + REVERSE_SLIPPAGE : 1 - REVERSE_SLIPPAGE),
+          draft.szDecimals,
+        ) === draft.reviewedIocCapWire;
+      const liveTouchOutsideReviewedCap = draft.orderIsBuy
+        ? liveTouch > draft.reviewedIocCapPx
+        : liveTouch < draft.reviewedIocCapPx;
+      if (
+        !reviewedCapStillMatches ||
+        liveTouchOutsideReviewedCap ||
+        midpointDriftPct >= REVERSE_RECONFIRM_DRIFT_PCT ||
+        adverseTouchDriftPct >= REVERSE_RECONFIRM_DRIFT_PCT
+      ) {
+        throw new ReverseReconfirmationRequiredError(
+          `The executable market moved after review (midpoint ${midpointDriftPct.toFixed(
+            2,
+          )}%, adverse touch ${adverseTouchDriftPct.toFixed(
+            2,
+          )}%). Prepare the reverse again to review a new IOC cap; no order was sent.`,
+        );
+      }
+
+      const liveRequestedSize = lotSize(live.size * 2, draft.szDecimals);
+      if (liveRequestedSize !== draft.requestedOrderSize) {
+        throw new ReverseReconfirmationRequiredError(
+          'The exact 2× order size changed after review. Prepare the reverse again; no order was sent.',
+        );
+      }
+
+      let postAttempted = false;
+      let acknowledgement: OrderResult;
+      try {
+        acknowledgement = await reversePosition({
+          network: identity.network,
+          identity,
+          validateImmediatelyBeforeSigning: () =>
+            validateReverseDraftImmediately(draft, meta?.[draft.coin]),
+          assertIdentityCurrent,
+          assetIndex: draft.assetIndex,
+          szDecimals: draft.szDecimals,
+          positionIsLong: draft.expectedSide === 'long',
+          size: draft.expectedSize,
+          // The midpoint is the immutable value shown in the confirmation. The
+          // exchange derives the exact reviewed 5% IOC bound from this same value.
+          markPx: draft.reviewedMidPx,
+          slippage: REVERSE_SLIPPAGE,
+          onPostAttempt: () => {
+            postAttempted = true;
+          },
+        });
+      } catch (error) {
+        if (!postAttempted) {
+          if (error instanceof ReverseReconfirmationRequiredError) throw error;
+          throw new AccountPreflightError(
+            error instanceof Error ? error.message : 'Trading identity could not be verified. No order was sent.',
+          );
+        }
+        // Once the exchange POST begins, a timeout/lost response cannot prove the
+        // order was rejected. Treat every such error as ambiguous to prevent retries.
+        throw new AccountMutationStatusUnknownError('reverse', error);
+      }
+
+      let actualPosition: HlPosition | null | undefined;
+      let refreshError: string | undefined;
+      try {
+        const after = await fetchHlAccount(identity.accountAddress, identity.network);
+        actualPosition = after.positions.find((position) => position.coin === draft.coin) ?? null;
+      } catch (error) {
+        actualPosition = undefined;
+        refreshError = error instanceof Error ? error.message : 'network error';
+      }
+      return { draft, acknowledgement, actualPosition, refreshError };
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() }),
-    onError: (e: unknown) =>
-      Alert.alert('Reverse failed', e instanceof Error ? e.message : 'Unknown error'),
+    onSuccess: ({ draft, acknowledgement, actualPosition, refreshError }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+      qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
+      qc.invalidateQueries({ queryKey: queryKeys.hlFillsPrefix() });
+      qc.invalidateQueries({ queryKey: ['hl', 'activeAsset'] });
+
+      const requestedLabel = lotSizeLabel(draft.requestedOrderSize, draft.szDecimals);
+      const filledSize =
+        acknowledgement.status === 'filled' &&
+        acknowledgement.totalSz != null &&
+        Number.isFinite(acknowledgement.totalSz)
+          ? lotSize(acknowledgement.totalSz, draft.szDecimals)
+          : null;
+      const fullFillAcknowledged =
+        acknowledgement.status === 'filled' && filledSize === draft.requestedOrderSize;
+      const actualMatchesTarget =
+        actualPosition != null &&
+        actualPosition.side === draft.targetSide &&
+        lotSize(actualPosition.size, draft.szDecimals) === draft.expectedSize;
+      const completed = fullFillAcknowledged && actualMatchesTarget;
+      const partiallyFilled =
+        acknowledgement.status === 'filled' &&
+        filledSize != null &&
+        filledSize > 0 &&
+        filledSize < draft.requestedOrderSize;
+
+      const acknowledgementLine =
+        acknowledgement.status === 'filled'
+          ? `Exchange acknowledgement: filled ${
+              filledSize == null ? 'unknown' : lotSizeLabel(filledSize, draft.szDecimals)
+            } of ${requestedLabel} ${draft.symbol}.`
+          : `Exchange acknowledgement: ${acknowledgement.status}.`;
+      const actualLine =
+        actualPosition === undefined
+          ? `Actual position: unavailable — refresh failed${refreshError ? ` (${refreshError})` : ''}.`
+          : actualPosition === null
+            ? 'Actual position: Flat.'
+            : `Actual position: ${actualPosition.side === 'long' ? 'Long' : 'Short'} ${lotSizeLabel(
+                actualPosition.size,
+                draft.szDecimals,
+              )} ${draft.symbol}.`;
+      const title = completed
+        ? 'Reverse completed'
+        : partiallyFilled
+          ? 'Reverse partially filled'
+          : fullFillAcknowledged
+            ? 'Reverse fill not verified'
+            : 'Reverse not completed';
+      const outcome = completed
+        ? `The reviewed 2× order filled and the live position matches the expected ${draft.targetSide} ${lotSizeLabel(
+            draft.expectedSize,
+            draft.szDecimals,
+          )} ${draft.symbol}.`
+        : 'This is not a verified completed reverse. Review the live position and fills before taking another action; do not submit another reverse until verified.';
+      Alert.alert(title, `${acknowledgementLine}\n${actualLine}\n\n${outcome}`);
+    },
+    onError: (e: unknown) => {
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+      qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
+      qc.invalidateQueries({ queryKey: queryKeys.hlFillsPrefix() });
+      qc.invalidateQueries({ queryKey: ['hl', 'activeAsset'] });
+      if (e instanceof ReverseReconfirmationRequiredError) {
+        Alert.alert('Reverse needs a new review', e.message);
+        return;
+      }
+      if (e instanceof AccountPreflightError) {
+        Alert.alert('Reverse not sent', e.message);
+        return;
+      }
+      Alert.alert(
+        'Reverse status unknown',
+        `${e instanceof Error ? e.message : 'The exchange response was not confirmed.'}\n\nReview the live position, Open Orders, and fills before taking another action. Do not retry the reverse until verified.`,
+      );
+    },
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (o: HlOpenOrder) => {
+    mutationFn: async ({ o, identity }: { o: HlOpenOrder; identity: SignedTradingIdentityBinding }) => {
+      const assertIdentityCurrent = () =>
+        assertTradingIdentityCurrent(identity, useHlConnection.getState());
       const m = meta?.[o.coin];
-      if (!m) throw new Error(`No market metadata for ${o.coin}`);
-      return cancelOrder({ network, assetIndex: m.assetIndex, oid: o.oid });
+      if (!m) throw new AccountPreflightError(`No market metadata for ${o.coin}. No cancellation was sent.`);
+      const validateImmediatelyBeforeSigning = async () => {
+        let latestOrders: HlOpenOrder[];
+        try {
+          latestOrders = await fetchOpenOrders(identity.accountAddress, identity.network);
+        } catch (error) {
+          throw new AccountPreflightError(
+            `Could not recheck the live order; no cancellation was sent: ${
+              error instanceof Error ? error.message : 'network error'
+            }`,
+          );
+        }
+        const live = latestOrders.find((candidate) => candidate.oid === o.oid);
+        const sameTrigger =
+          live?.triggerPx == null && o.triggerPx == null
+            ? true
+            : live?.triggerPx != null &&
+              o.triggerPx != null &&
+              priceToWire(live.triggerPx, m.szDecimals) ===
+                priceToWire(o.triggerPx, m.szDecimals);
+        if (
+          !live ||
+          live.coin !== o.coin ||
+          live.side !== o.side ||
+          live.reduceOnly !== o.reduceOnly ||
+          live.isTrigger !== o.isTrigger ||
+          sizeToWire(live.size, m.szDecimals) !== sizeToWire(o.size, m.szDecimals) ||
+          priceToWire(live.limitPx, m.szDecimals) !== priceToWire(o.limitPx, m.szDecimals) ||
+          !sameTrigger
+        ) {
+          throw new AccountPreflightError(
+            'The reviewed order is no longer live in the same form. No cancellation was sent.',
+          );
+        }
+      };
+      let postAttempted = false;
+      try {
+        return await cancelOrder({
+          network: identity.network,
+          identity,
+          validateImmediatelyBeforeSigning,
+          assertIdentityCurrent,
+          assetIndex: m.assetIndex,
+          oid: o.oid,
+          onPostAttempt: () => {
+            postAttempted = true;
+          },
+        });
+      } catch (error) {
+        if (!postAttempted || error instanceof TradingIdentityError) {
+          throw new AccountPreflightError(
+            error instanceof Error ? error.message : 'Trading identity could not be verified. No cancellation was sent.',
+          );
+        }
+        throw new AccountMutationStatusUnknownError('cancel', error);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
       qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
     },
-    onError: (e: unknown) =>
-      Alert.alert('Cancel failed', e instanceof Error ? e.message : 'Unknown error'),
+    onError: (e: unknown) => {
+      if (e instanceof AccountPreflightError) {
+        Alert.alert('Cancellation not sent', e.message);
+        return;
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+      Alert.alert(
+        'Cancellation status unknown',
+        `${e instanceof Error ? e.message : 'The exchange response was not confirmed.'}\n\nRefresh Open Orders before trying to cancel again.`,
+      );
+    },
   });
 
   const marginMutation = useMutation({
-    mutationFn: ({ p, signedUsd }: { p: HlPosition; signedUsd: number }) => {
+    mutationFn: async ({ p, signedUsd, identity }: {
+      p: HlPosition;
+      signedUsd: number;
+      identity: SignedTradingIdentityBinding;
+    }) => {
+      const assertIdentityCurrent = () =>
+        assertTradingIdentityCurrent(identity, useHlConnection.getState());
+      try {
+        assertIdentityCurrent();
+      } catch (error) {
+        throw new AccountPreflightError(error instanceof Error ? error.message : 'Trading identity changed.');
+      }
+      if (!Number.isFinite(signedUsd) || Math.abs(signedUsd) < 0.000001) {
+        throw new AccountPreflightError('Enter a valid margin amount. Margin was not changed.');
+      }
       const mInfo = meta?.[p.coin];
-      if (!mInfo) throw new Error(`No market metadata for ${p.coin}`);
-      return updateIsolatedMargin({ network, assetIndex: mInfo.assetIndex, usd: signedUsd });
+      if (!mInfo) throw new AccountPreflightError(`No market metadata for ${p.coin}. Margin was not changed.`);
+      const latestQuery = await refetch();
+      if (latestQuery.isError || !latestQuery.data) {
+        throw new AccountPreflightError('Could not recheck the live position. Margin was not changed.');
+      }
+      const live = latestQuery.data.positions.find((position) => position.coin === p.coin);
+      const sizeTolerance = 1 / 10 ** mInfo.szDecimals;
+      if (
+        !live ||
+        live.side !== p.side ||
+        live.leverageType !== 'isolated' ||
+        Math.abs(live.size - p.size) >= sizeTolerance
+      ) {
+        throw new AccountPreflightError('The isolated position changed. Review the margin change again; margin was not changed.');
+      }
+      if (Math.abs(live.marginUsed - p.marginUsed) > ISOLATED_MARGIN_BUFFER_USD) {
+        throw new AccountPreflightError(
+          'The live isolated margin changed. Review the updated margin and liquidation risk again; margin was not changed.',
+        );
+      }
+      if (signedUsd < 0) {
+        if (mInfo.marginMode === 'strictIsolated') {
+          throw new AccountPreflightError(
+            'This strict-isolated market does not allow margin removal. No action was sent.',
+          );
+        }
+        const removal = Math.abs(signedUsd);
+        const liveRemovalLimit = isolatedMarginRemovalSafetyLimit(live);
+        if (!(liveRemovalLimit > 0) || removal > liveRemovalLimit + 0.000001) {
+          throw new AccountPreflightError(
+            'The requested removal no longer clears the conservative live margin floor. Review the updated position; margin was not changed.',
+          );
+        }
+        const reviewedDistance = positionLiquidationDistancePct(p);
+        const liveDistance = positionLiquidationDistancePct(live);
+        if (
+          reviewedDistance == null ||
+          liveDistance == null ||
+          liveDistance < reviewedDistance - LIQUIDATION_REVIEW_DRIFT_PCT
+        ) {
+          throw new AccountPreflightError(
+            'Liquidation risk worsened or could not be rechecked. Review the current mark and liquidation distance again; margin was not changed.',
+          );
+        }
+      }
+      const validateImmediatelyBeforeSigning = async () => {
+        let latestAccount;
+        try {
+          latestAccount = await fetchHlAccount(identity.accountAddress, identity.network);
+        } catch (error) {
+          throw new AccountPreflightError(
+            `Could not perform the final live margin check; margin was not changed: ${
+              error instanceof Error ? error.message : 'network error'
+            }`,
+          );
+        }
+        const finalPosition = latestAccount.positions.find(
+          (position) => position.coin === p.coin,
+        );
+        if (
+          !finalPosition ||
+          finalPosition.side !== p.side ||
+          finalPosition.leverageType !== 'isolated' ||
+          sizeToWire(finalPosition.size, mInfo.szDecimals) !==
+            sizeToWire(p.size, mInfo.szDecimals)
+        ) {
+          throw new AccountPreflightError(
+            'The isolated position changed at the signing boundary. Margin was not changed.',
+          );
+        }
+        if (
+          Math.abs(finalPosition.marginUsed - p.marginUsed) > ISOLATED_MARGIN_BUFFER_USD
+        ) {
+          throw new AccountPreflightError(
+            'The isolated margin changed at the signing boundary. Review it again; margin was not changed.',
+          );
+        }
+        if (signedUsd < 0) {
+          if (mInfo.marginMode === 'strictIsolated') {
+            throw new AccountPreflightError(
+              'This strict-isolated market does not allow margin removal. No action was sent.',
+            );
+          }
+          const removal = Math.abs(signedUsd);
+          const finalRemovalLimit = isolatedMarginRemovalSafetyLimit(finalPosition);
+          if (!(finalRemovalLimit > 0) || removal > finalRemovalLimit + 0.000001) {
+            throw new AccountPreflightError(
+              'The removal no longer clears the live liquidation-risk floor. Margin was not changed.',
+            );
+          }
+          const reviewedDistance = positionLiquidationDistancePct(p);
+          const finalDistance = positionLiquidationDistancePct(finalPosition);
+          if (
+            reviewedDistance == null ||
+            finalDistance == null ||
+            finalDistance < reviewedDistance - LIQUIDATION_REVIEW_DRIFT_PCT
+          ) {
+            throw new AccountPreflightError(
+              'Liquidation risk worsened at the signing boundary. Margin was not changed.',
+            );
+          }
+        }
+      };
+      let postAttempted = false;
+      try {
+        return await updateIsolatedMargin({
+          network: identity.network,
+          identity,
+          validateImmediatelyBeforeSigning,
+          assertIdentityCurrent,
+          assetIndex: mInfo.assetIndex,
+          usd: signedUsd,
+          onPostAttempt: () => {
+            postAttempted = true;
+          },
+        });
+      } catch (error) {
+        if (!postAttempted || error instanceof TradingIdentityError) {
+          throw new AccountPreflightError(
+            error instanceof Error ? error.message : 'Trading identity could not be verified. Margin was not changed.',
+          );
+        }
+        throw new AccountMutationStatusUnknownError('margin', error);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
-      setMarginTarget(null);
+      qc.invalidateQueries({ queryKey: ['hl', 'activeAsset'] });
+      setMarginTargetCoin(null);
     },
-    onError: (e: unknown) =>
-      Alert.alert('Margin update failed', e instanceof Error ? e.message : 'Unknown error'),
+    onError: (e: unknown) => {
+      if (e instanceof AccountPreflightError) {
+        Alert.alert('Margin not changed', e.message);
+        return;
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+      qc.invalidateQueries({ queryKey: ['hl', 'activeAsset'] });
+      Alert.alert(
+        'Margin status unknown',
+        `${e instanceof Error ? e.message : 'The exchange response was not confirmed.'}\n\nThe isolated margin may already have changed. Refresh the live position before trying again.`,
+      );
+    },
   });
 
   const tpSlMutation = useMutation({
-    mutationFn: ({ p, legs }: { p: HlPosition; legs: TpSlLegInput[] }) => {
+    mutationFn: async ({ p, legs, identity }: {
+      p: HlPosition;
+      legs: TpSlLegInput[];
+      identity: SignedTradingIdentityBinding;
+    }) => {
+      const assertIdentityCurrent = () =>
+        assertTradingIdentityCurrent(identity, useHlConnection.getState());
+      try {
+        assertIdentityCurrent();
+      } catch (error) {
+        throw new ProtectionPreflightError(error instanceof Error ? error.message : 'Trading identity changed.');
+      }
       const mInfo = meta?.[p.coin];
-      if (!mInfo) throw new Error(`No market metadata for ${p.coin}`);
-      return placePositionTpSl({
-        network,
-        assetIndex: mInfo.assetIndex,
-        szDecimals: mInfo.szDecimals,
-        positionIsLong: p.side === 'long',
-        size: p.size,
-        legs,
-      });
+      if (!mInfo) throw new ProtectionPreflightError(`No market metadata for ${p.coin}. No orders were sent.`);
+      const firstLeg = legs[0];
+      if (!firstLeg) throw new ProtectionPreflightError('Choose a take-profit or stop-loss first. No orders were sent.');
+      if (
+        !(firstLeg.size > 0) ||
+        legs.some((leg) => Math.abs(leg.size - firstLeg.size) > 1e-10)
+      ) {
+        throw new ProtectionPreflightError('TP and SL must protect the same non-zero size. No orders were sent.');
+      }
+      const latestQuery = await refetch();
+      if (latestQuery.isError || !latestQuery.data) {
+        throw new ProtectionPreflightError('Could not recheck the live position. No TP/SL order was sent.');
+      }
+      const live = latestQuery.data.positions.find((position) => position.coin === p.coin);
+      const sizeTolerance = 1 / 10 ** mInfo.szDecimals;
+      if (
+        !live ||
+        live.side !== p.side ||
+        Math.abs(live.size - p.size) >= sizeTolerance ||
+        firstLeg.size > live.size + 1e-12
+      ) {
+        throw new ProtectionPreflightError('The live position side or size changed. Review TP/SL again; no orders were sent.');
+      }
+      const triggerStillValid = legs.every((leg) =>
+        live.side === 'long'
+          ? leg.tpsl === 'tp'
+            ? leg.triggerPx > live.markPx
+            : leg.triggerPx < live.markPx
+          : leg.tpsl === 'tp'
+            ? leg.triggerPx < live.markPx
+            : leg.triggerPx > live.markPx,
+      );
+      if (!triggerStillValid) {
+        throw new ProtectionPreflightError('The mark price moved past a trigger. Review the TP/SL levels again; no orders were sent.');
+      }
+      const validateImmediatelyBeforeSigning = async () => {
+        let latestAccount;
+        try {
+          latestAccount = await fetchHlAccount(identity.accountAddress, identity.network);
+        } catch (error) {
+          throw new ProtectionPreflightError(
+            `Could not perform the final live TP/SL check; no orders were sent: ${
+              error instanceof Error ? error.message : 'network error'
+            }`,
+          );
+        }
+        const finalPosition = latestAccount.positions.find(
+          (position) => position.coin === p.coin,
+        );
+        const protectedSizeWire = sizeToWire(firstLeg.size, mInfo.szDecimals);
+        if (
+          !finalPosition ||
+          finalPosition.side !== p.side ||
+          sizeToWire(finalPosition.size, mInfo.szDecimals) !==
+            sizeToWire(p.size, mInfo.szDecimals) ||
+          Number(protectedSizeWire) <= 0 ||
+          Number(protectedSizeWire) >
+            Number(sizeToWire(finalPosition.size, mInfo.szDecimals)) ||
+          legs.some(
+            (leg) => sizeToWire(leg.size, mInfo.szDecimals) !== protectedSizeWire,
+          )
+        ) {
+          throw new ProtectionPreflightError(
+            'The live position or protected size changed at the signing boundary. No TP/SL orders were sent.',
+          );
+        }
+        const finalMark = finalPosition.markPx;
+        const invalidLeg = legs.find((leg) => {
+          if (!(leg.triggerPx > 0) || !Number.isFinite(leg.triggerPx)) return true;
+          if (leg.tpsl === 'tp') {
+            return finalPosition.side === 'long'
+              ? leg.triggerPx <= finalMark
+              : leg.triggerPx >= finalMark;
+          }
+          return finalPosition.side === 'long'
+            ? leg.triggerPx >= finalMark
+            : leg.triggerPx <= finalMark;
+        });
+        if (!(finalMark > 0) || !Number.isFinite(finalMark) || invalidLeg) {
+          throw new ProtectionPreflightError(
+            'The mark moved past a reviewed TP/SL trigger at the signing boundary. No orders were sent.',
+          );
+        }
+      };
+      let postAttempted = false;
+      try {
+        return await placePositionTpSl({
+          network: identity.network,
+          identity,
+          validateImmediatelyBeforeSigning,
+          assertIdentityCurrent,
+          assetIndex: mInfo.assetIndex,
+          szDecimals: mInfo.szDecimals,
+          positionIsLong: live.side === 'long',
+          size: firstLeg.size,
+          legs: legs.map(({ tpsl, triggerPx, isMarket, limitPx }) => ({
+            tpsl,
+            triggerPx,
+            isMarket,
+            limitPx,
+          })),
+          onPostAttempt: () => {
+            postAttempted = true;
+          },
+        });
+      } catch (error) {
+        if (!postAttempted || error instanceof TradingIdentityError) {
+          throw new ProtectionPreflightError(
+            error instanceof Error ? error.message : 'Trading identity could not be verified. No orders were sent.',
+          );
+        }
+        throw error;
+      }
     },
-    onSuccess: () => {
+    onSuccess: (results, { p, legs }) => {
       qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
       qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
-      setTpSlTarget(null);
+      setTpSlTargetCoin(null);
+      const rows = legs.map((leg, index) => {
+        const name = leg.tpsl === 'tp' ? 'Take profit' : 'Stop loss';
+        return `${name}: ${protectionAckLabel(results[index])}`;
+      });
+      const unconfirmed = legs.filter(
+        (_leg, index) => !protectionAckIsAccepted(results[index]),
+      );
+      const anyAccepted = legs.some((_leg, index) => protectionAckIsAccepted(results[index]));
+      const stopUnconfirmed = unconfirmed.some((leg) => leg.tpsl === 'sl');
+      Alert.alert(
+        unconfirmed.length === 0
+          ? 'TP/SL acknowledged'
+          : anyAccepted
+            ? 'TP/SL partially accepted'
+            : 'TP/SL not confirmed',
+        `${rows.join('\n')}\n\n${
+          stopUnconfirmed
+            ? `Your stop loss is not confirmed; treat ${cleanCoin(p.coin)} as unprotected. `
+            : ''
+        }Verify the live orders under Open Orders before relying on protection.${
+          unconfirmed.length > 0 ? ' Do not blindly retry the full batch.' : ''
+        }`,
+      );
     },
-    onError: (e: unknown) =>
-      Alert.alert('Couldn’t set TP/SL', e instanceof Error ? e.message : 'Unknown error'),
+    onError: (e: unknown) => {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      if (e instanceof ProtectionPreflightError) {
+        Alert.alert('TP/SL not sent', message);
+        return;
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
+      qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+      setTpSlTargetCoin(null);
+      Alert.alert(
+        'TP/SL status unknown',
+        `${message}\n\nThe exchange acknowledgement could not be confirmed. Review Open Orders and the live position before submitting anything again.`,
+      );
+    },
   });
 
-  const confirmClose = useCallback(
-    (p: HlPosition) => {
-      if (!tradable) return;
-      const sym = cleanCoin(p.coin);
-      Alert.alert(
-        `Market close ${sym}?`,
-        `Market-close your ${p.side} ${qty(p.size)} ${sym} position` +
-          (network === 'mainnet' ? '.\n\nThis uses real funds on mainnet.' : ' on testnet.'),
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Close position', style: 'destructive', onPress: () => closeMutation.mutate(p) },
-        ],
-      );
-    },
-    [tradable, network, closeMutation],
-  );
-
   const confirmReverse = useCallback(
-    (p: HlPosition) => {
-      if (!tradable) return;
-      const sym = cleanCoin(p.coin);
-      const target = p.side === 'long' ? 'short' : 'long';
-      Alert.alert(
-        `Reverse ${sym}?`,
-        `Close your ${p.side} ${qty(p.size)} ${sym} and open an equal ${target} (market, 2× size).` +
-          (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet order.'),
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Reverse', style: 'destructive', onPress: () => reverseMutation.mutate(p) },
-        ],
-      );
+    async (p: HlPosition) => {
+      if (!tradable || !executionIdentity) return;
+      const identity = executionIdentity;
+      setReversePreparingCoin(p.coin);
+      try {
+        assertTradingIdentityCurrent(identity, useHlConnection.getState());
+        const m = meta?.[p.coin];
+        if (!m) throw new Error(`No market metadata for ${p.coin}.`);
+
+        const freshAccount = await fetchHlAccount(identity.accountAddress, identity.network);
+        const live = freshAccount.positions.find((position) => position.coin === p.coin);
+        const reviewedSize = lotSize(p.size, m.szDecimals);
+        if (
+          !live ||
+          live.side !== p.side ||
+          lotSize(live.size, m.szDecimals) !== reviewedSize
+        ) {
+          qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
+          throw new Error('The position changed before review. Refresh the position and prepare the reverse again.');
+        }
+
+        const book = await fetchOrderBook(p.coin, identity.network);
+        const bestBid = book.bids[0]?.price;
+        const bestAsk = book.asks[0]?.price;
+        if (
+          !(bestBid && bestAsk) ||
+          !Number.isFinite(bestBid) ||
+          !Number.isFinite(bestAsk) ||
+          bestAsk < bestBid
+        ) {
+          throw new Error('A fresh two-sided order book is unavailable.');
+        }
+
+        const symbol = instrumentForCoin(p.coin)?.symbol ?? cleanCoin(p.coin);
+        const orderIsBuy = live.side === 'short';
+        const targetSide: HlPosition['side'] = live.side === 'long' ? 'short' : 'long';
+        const midpoint = (bestBid + bestAsk) / 2;
+        const rawCap = midpoint *
+          (orderIsBuy ? 1 + REVERSE_SLIPPAGE : 1 - REVERSE_SLIPPAGE);
+        const capWire = priceToWire(rawCap, m.szDecimals);
+        const requestedOrderSize = lotSize(live.size * 2, m.szDecimals);
+        if (!(requestedOrderSize > 0)) throw new Error('The exact 2× order size is invalid.');
+        const priceDecimals = priceDecimalsFor(
+          instrumentForCoin(p.coin)?.priceDecimals ?? 6,
+          midpoint,
+        );
+        const draft: ReverseDraft = Object.freeze({
+          coin: p.coin,
+          symbol,
+          priceDecimals,
+          expectedSide: live.side,
+          expectedSize: lotSize(live.size, m.szDecimals),
+          expectedLeverage: live.leverage,
+          expectedLeverageType: live.leverageType,
+          targetSide,
+          orderIsBuy,
+          requestedOrderSize,
+          reviewedBid: bestBid,
+          reviewedAsk: bestAsk,
+          reviewedMidPx: midpoint,
+          reviewedIocCapPx: Number(capWire),
+          reviewedIocCapWire: capWire,
+          assetIndex: m.assetIndex,
+          szDecimals: m.szDecimals,
+          identity,
+        });
+
+        Alert.alert(
+          `Review reverse ${symbol}`,
+          `Current position: ${draft.expectedSide === 'long' ? 'Long' : 'Short'} ${lotSizeLabel(
+            draft.expectedSize,
+            draft.szDecimals,
+          )} ${symbol}\n` +
+            `Order: ${draft.orderIsBuy ? 'Buy' : 'Sell'} ${lotSizeLabel(
+              draft.requestedOrderSize,
+              draft.szDecimals,
+            )} ${symbol} (2× current size)\n` +
+            `Reviewed bid / ask: $${formatPrice(
+              draft.reviewedBid,
+              draft.priceDecimals,
+            )} / $${formatPrice(draft.reviewedAsk, draft.priceDecimals)}\n` +
+            `Reviewed midpoint: $${formatPrice(
+              draft.reviewedMidPx,
+              draft.priceDecimals,
+            )}\n` +
+            `Exact 5% IOC ${draft.orderIsBuy ? 'buy ceiling' : 'sell floor'}: $${
+              draft.reviewedIocCapWire
+            }\n\n` +
+            `Only a complete fill would produce the expected ${draft.targetSide} ${lotSizeLabel(
+              draft.expectedSize,
+              draft.szDecimals,
+            )} ${symbol}. A partial fill can leave you ${draft.expectedSide}, flat, or with a smaller ${draft.targetSide}.` +
+            (identity.network === 'mainnet'
+              ? '\n\nThis uses real funds on mainnet.'
+              : '\n\nTestnet order.'),
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Submit reviewed reverse',
+              style: 'destructive',
+              onPress: () => reverseMutation.mutate(draft),
+            },
+          ],
+        );
+      } catch (error) {
+        Alert.alert(
+          'Reverse review unavailable',
+          `${error instanceof Error ? error.message : 'Could not prepare a fresh reverse review'}\n\nNo order was sent.`,
+        );
+      } finally {
+        setReversePreparingCoin(null);
+      }
     },
-    [tradable, network, reverseMutation],
+    [executionIdentity, instrumentForCoin, meta, qc, reverseMutation, tradable],
   );
 
   const confirmCancel = useCallback(
     (o: HlOpenOrder) => {
-      if (!tradable) return;
+      if (!tradable || !executionIdentity) return;
+      const identity = executionIdentity;
       const sym = cleanCoin(o.coin);
       const dec = priceDecimalsFor(6, o.limitPx);
       Alert.alert(
@@ -248,72 +1134,89 @@ export default function AccountScreen() {
           (network === 'mainnet' ? '.' : ' (testnet).'),
         [
           { text: 'Keep', style: 'cancel' },
-          { text: 'Cancel order', style: 'destructive', onPress: () => cancelMutation.mutate(o) },
-        ],
-      );
-    },
-    [tradable, network, cancelMutation],
-  );
-
-  const confirmAdjustMargin = useCallback(
-    (p: HlPosition, signedUsd: number) => {
-      if (!tradable || signedUsd === 0) return;
-      const sym = cleanCoin(p.coin);
-      const add = signedUsd > 0;
-      Alert.alert(
-        `${add ? 'Add' : 'Remove'} margin?`,
-        `${add ? 'Add' : 'Remove'} ${usd(Math.abs(signedUsd))} ${add ? 'to' : 'from'} your ${sym} isolated margin` +
-          (network === 'mainnet' ? '.\n\nThis uses real funds on mainnet.' : ' on testnet.'),
-        [
-          { text: 'Cancel', style: 'cancel' },
           {
-            text: add ? 'Add margin' : 'Remove margin',
-            onPress: () => marginMutation.mutate({ p, signedUsd }),
+            text: 'Cancel order',
+            style: 'destructive',
+            onPress: () => cancelMutation.mutate({ o, identity }),
           },
         ],
       );
     },
-    [tradable, network, marginMutation],
+    [executionIdentity, tradable, network, cancelMutation],
+  );
+
+  const confirmAdjustMargin = useCallback(
+    (p: HlPosition, signedUsd: number) => {
+      if (!tradable || !executionIdentity || signedUsd === 0) return;
+      const identity = executionIdentity;
+      const sym = cleanCoin(p.coin);
+      const add = signedUsd > 0;
+      const dec = priceDecimalsFor(instrumentForCoin(p.coin)?.priceDecimals ?? 6, p.markPx);
+      const distance = positionLiquidationDistancePct(p);
+      const liquidation =
+        p.liquidationPx != null && p.liquidationPx > 0
+          ? `$${formatPrice(p.liquidationPx, dec)}`
+          : 'unavailable';
+      const riskReview =
+        `Current mark: $${formatPrice(p.markPx, dec)}\n` +
+        `Current liquidation: ${liquidation}\n` +
+        `Current distance: ${distance == null ? 'unavailable' : `${distance.toFixed(2)}%`}`;
+      Alert.alert(
+        add ? `Add margin to ${sym}?` : `Remove margin and increase ${sym} liquidation risk?`,
+        add
+          ? `Add ${usd(Math.abs(signedUsd))} to your ${sym} isolated margin.\n\n${riskReview}\n\nThe exchange will recalculate liquidation after acceptance.` +
+              (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet action.')
+          : `Remove ${usd(Math.abs(signedUsd))} from your ${sym} isolated margin.\n\n${riskReview}\n\nThe post-removal liquidation price is unknown until Hyperliquid accepts and recalculates it. It will move closer to the mark. Review the live position immediately after submitting.` +
+              (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet action.'),
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: add ? 'Add margin' : 'Remove anyway',
+            style: add ? 'default' : 'destructive',
+            onPress: () => marginMutation.mutate({ p, signedUsd, identity }),
+          },
+        ],
+      );
+    },
+    [executionIdentity, instrumentForCoin, marginMutation, network, tradable],
   );
 
   const confirmTpSl = useCallback(
     (p: HlPosition, legs: TpSlLegInput[]) => {
-      if (!tradable || legs.length === 0) return;
+      if (!tradable || !executionIdentity || legs.length === 0) return;
+      const identity = executionIdentity;
       const sym = cleanCoin(p.coin);
       const dec = priceDecimalsFor(instrumentForCoin(p.coin)?.priceDecimals ?? 6, p.markPx);
+      const selected = legs[0];
+      if (!selected) return;
       const lines = legs
         .map(
           (l) =>
-            `${l.tpsl === 'tp' ? 'Take profit' : 'Stop loss'} @ $${formatPrice(l.triggerPx, dec)}`,
+            `${l.tpsl === 'tp' ? 'Take profit' : 'Stop loss'} @ $${formatPrice(l.triggerPx, dec)} · ${l.isMarket ? 'market exit' : 'limit at trigger'}`,
         )
         .join('\n');
       Alert.alert(
         `Set TP/SL on ${sym}?`,
-        `${lines}\n\nMarket triggers that reduce-only close your ${p.side} ${qty(p.size)} ${sym}.` +
+        `${lines}\n\nReduce-only for ${selected.closePct}% (${qty(selected.size)} ${sym}) of your ${p.side} position.` +
           (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet order.'),
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Set orders', onPress: () => tpSlMutation.mutate({ p, legs }) },
+          {
+            text: 'Set orders',
+            onPress: () => tpSlMutation.mutate({ p, legs, identity }),
+          },
         ],
       );
     },
-    [tradable, network, tpSlMutation, instrumentForCoin],
+    [executionIdentity, instrumentForCoin, network, tpSlMutation, tradable],
   );
 
-  const openLimitClose = useCallback(
-    (p: HlPosition) => {
+  const openCloseTicket = useCallback(
+    (p: HlPosition, type: CloseTicket['type']) => {
       if (!tradable) return;
-      const inst = instrumentForCoin(p.coin);
-      setCloseTicket({
-        coin: p.coin,
-        symbol: inst?.symbol ?? cleanCoin(p.coin),
-        markPx: p.markPx,
-        decimals: priceDecimalsFor(inst?.priceDecimals ?? 6, p.markPx),
-        side: p.side === 'long' ? 'sell' : 'buy',
-        sizeCoin: p.size,
-      });
+      setCloseTicket({ coin: p.coin, type });
     },
-    [tradable, instrumentForCoin],
+    [tradable],
   );
 
   const openChart = useCallback(
@@ -346,6 +1249,32 @@ export default function AccountScreen() {
       ),
     [account, hideSmallBalances],
   );
+
+  const riskSummary = useMemo(
+    () => (account ? buildAccountRiskSummary(account, openOrders ?? []) : null),
+    [account, openOrders],
+  );
+  const protectionLoaded = openOrders !== undefined;
+  const existingTpSlOrders: TpSlExistingOrder[] = (() => {
+    if (!tpSlTarget) return [];
+    const closingSide = tpSlTarget.side === 'long' ? 'sell' : 'buy';
+    return (openOrders ?? [])
+      .filter(
+        (order) =>
+          order.coin === tpSlTarget.coin &&
+          order.side === closingSide &&
+          order.reduceOnly &&
+          order.isTrigger &&
+          (order.triggerPx ?? order.limitPx) > 0,
+      )
+      .map((order) => ({
+        id: order.oid,
+        tpsl: isProtectiveStop(order, tpSlTarget) ? 'sl' : 'tp',
+        triggerPx: order.triggerPx ?? order.limitPx,
+        size: order.size,
+        isMarket: /market/i.test(order.orderType),
+      }));
+  })();
 
   // ---- Not connected: connect CTA + demo preview ----
   if (!address) {
@@ -451,16 +1380,13 @@ export default function AccountScreen() {
           </View>
         </View>
 
-        {/* Stats — "Available" is free spot USDC (the real deployable cash); under
-            unified margin the perp collateral is a reserved slice of it. */}
-        <View style={styles.tiles}>
-          <Stat label="Available" value={mask(usd(account.availableUsdc ?? account.withdrawable))} />
-          <Stat label="Margin Used" value={mask(usd(account.totalMarginUsed))} />
-          <Stat label="Exposure" value={mask(usd(account.totalNotional))} />
-        </View>
-
-        {/* Portfolio value sparkline + period change / drawdown. */}
-        <PortfolioCard hidden={privacyMode} />
+        {/* Live risk outranks historical portfolio aesthetics while capital is deployed. */}
+        <RiskStrip
+          summary={riskSummary!}
+          positions={sortedPositions.length}
+          protectionLoaded={protectionLoaded}
+          hidden={privacyMode}
+        />
 
         {/* Positions / Orders / Balances / History tabs */}
         <View style={styles.tabBarWrap}>
@@ -512,17 +1438,20 @@ export default function AccountScreen() {
                   expanded={expanded.has(p.coin)}
                   tradable={tradable}
                   busy={
-                    (closeMutation.isPending && closeMutation.variables?.coin === p.coin) ||
+                    reversePreparingCoin === p.coin ||
                     (reverseMutation.isPending && reverseMutation.variables?.coin === p.coin)
                   }
                   hidden={privacyMode}
+                  stopCoverage={
+                    protectionLoaded ? (riskSummary!.stopCoverageByCoin.get(p.coin) ?? 0) : null
+                  }
                   onToggle={() => toggleExpand(p.coin)}
                   onChart={() => openChart(p.coin)}
-                  onLimitClose={() => openLimitClose(p)}
-                  onMarketClose={() => confirmClose(p)}
+                  onLimitClose={() => openCloseTicket(p, 'limit')}
+                  onMarketClose={() => openCloseTicket(p, 'market')}
                   onReverse={() => confirmReverse(p)}
-                  onAdjustMargin={() => setMarginTarget(p)}
-                  onSetTpSl={() => setTpSlTarget(p)}
+                  onAdjustMargin={() => setMarginTargetCoin(p.coin)}
+                  onSetTpSl={() => setTpSlTargetCoin(p.coin)}
                 />
               ))}
             </View>
@@ -542,7 +1471,7 @@ export default function AccountScreen() {
                   o={o}
                   instrument={instrumentForCoin(o.coin)}
                   tradable={tradable}
-                  busy={cancelMutation.isPending && cancelMutation.variables?.oid === o.oid}
+                  busy={cancelMutation.isPending && cancelMutation.variables?.o.oid === o.oid}
                   hidden={privacyMode}
                   onCancel={() => confirmCancel(o)}
                 />
@@ -592,6 +1521,15 @@ export default function AccountScreen() {
           </View>
         )}
 
+        {/* History remains available, but stays compact and below live positions/risk. */}
+        <View style={styles.portfolioWrap}>
+          <PortfolioCard
+            key={sortedPositions.length > 0 ? 'portfolio-active' : 'portfolio-flat'}
+            hidden={privacyMode}
+            compact={sortedPositions.length > 0}
+          />
+        </View>
+
         {demo ? (
           <AppText variant="caption" muted style={styles.disclaimer}>
             Demo address — connect your own account in Settings to trade.
@@ -599,27 +1537,46 @@ export default function AccountScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Limit-close sheet (reduce-only, size prefilled). */}
+      {/* Reviewed close sheet (reduce-only, live size prefilled). */}
       <TradeTicket
-        key={closeTicket ? `${closeTicket.coin}-close` : 'closed'}
-        visible={closeTicket !== null}
+        key={
+          closePosition && closeTicket
+            ? `${closePosition.coin}-${closePosition.side}-${closePosition.size}-${closeTicket.type}-close`
+            : 'closed'
+        }
+        visible={closeTicket !== null && closePosition !== null}
         onClose={() => setCloseTicket(null)}
-        coin={closeTicket?.coin ?? ''}
-        symbol={closeTicket?.symbol}
-        markPx={closeTicket?.markPx ?? 0}
-        priceDecimals={closeTicket?.decimals ?? 2}
-        initialSide={closeTicket?.side}
-        initialType="limit"
-        initialSizeCoin={closeTicket?.sizeCoin}
+        coin={closePosition?.coin ?? ''}
+        symbol={
+          closePosition
+            ? instrumentForCoin(closePosition.coin)?.symbol ?? cleanCoin(closePosition.coin)
+            : undefined
+        }
+        markPx={closePosition?.markPx ?? 0}
+        priceDecimals={
+          closePosition
+            ? priceDecimalsFor(
+                instrumentForCoin(closePosition.coin)?.priceDecimals ?? 6,
+                closePosition.markPx,
+              )
+            : 2
+        }
+        initialSide={
+          closePosition ? (closePosition.side === 'long' ? 'sell' : 'buy') : undefined
+        }
+        initialType={closeTicket?.type ?? 'market'}
+        initialSizeCoin={closePosition?.size}
         closing
       />
 
       {/* Set take-profit / stop-loss on an open position (reduce-only market triggers).
           Keyed per coin so each open mounts fresh — no price carries across positions. */}
       <TpSlSheet
-        key={tpSlTarget ? `${tpSlTarget.coin}-tpsl` : 'tpsl-closed'}
+        key={
+          tpSlTarget ? `${tpSlTarget.coin}-${tpSlTarget.side}-tpsl` : 'tpsl-closed'
+        }
         visible={tpSlTarget !== null}
-        onClose={() => setTpSlTarget(null)}
+        onClose={() => setTpSlTargetCoin(null)}
         symbol={
           tpSlTarget
             ? instrumentForCoin(tpSlTarget.coin)?.symbol ?? cleanCoin(tpSlTarget.coin)
@@ -630,6 +1587,7 @@ export default function AccountScreen() {
         entryPx={tpSlTarget?.entryPx ?? 0}
         markPx={tpSlTarget?.markPx ?? 0}
         leverage={tpSlTarget?.leverage ?? 1}
+        szDecimals={tpSlTarget ? (meta?.[tpSlTarget.coin]?.szDecimals ?? 8) : 8}
         priceDecimals={
           tpSlTarget
             ? priceDecimalsFor(instrumentForCoin(tpSlTarget.coin)?.priceDecimals ?? 6, tpSlTarget.markPx)
@@ -637,6 +1595,13 @@ export default function AccountScreen() {
         }
         tradable={tradable}
         busy={tpSlMutation.isPending}
+        allowPartial
+        existingOrders={existingTpSlOrders}
+        onCancelExisting={(id) => {
+          const order = openOrders?.find((item) => item.oid === Number(id));
+          if (order) confirmCancel(order);
+        }}
+        cancelBusy={cancelMutation.isPending}
         onSubmit={(legs) => {
           if (tpSlTarget) confirmTpSl(tpSlTarget, legs);
         }}
@@ -644,6 +1609,7 @@ export default function AccountScreen() {
 
       {/* Add / remove isolated margin on a position. */}
       <MarginSheet
+        key={marginTarget ? `${marginTarget.coin}-margin` : 'margin-closed'}
         visible={marginTarget !== null}
         symbol={
           marginTarget
@@ -651,10 +1617,33 @@ export default function AccountScreen() {
             : ''
         }
         marginUsed={marginTarget?.marginUsed ?? 0}
-        available={account.availableUsdc ?? account.withdrawable ?? 0}
+        removalSafetyLimit={
+          marginTarget &&
+          meta?.[marginTarget.coin] &&
+          meta[marginTarget.coin].marginMode !== 'strictIsolated'
+            ? isolatedMarginRemovalSafetyLimit(marginTarget)
+            : 0
+        }
+        removalAllowed={
+          marginTarget ? meta?.[marginTarget.coin]?.marginMode !== 'strictIsolated' : false
+        }
+        available={account.freeCollateral}
+        side={marginTarget?.side ?? 'long'}
+        markPx={marginTarget?.markPx ?? 0}
+        liquidationPx={marginTarget?.liquidationPx ?? null}
+        positionValue={marginTarget?.positionValue ?? 0}
+        leverage={marginTarget?.leverage ?? 1}
+        priceDecimals={
+          marginTarget
+            ? priceDecimalsFor(
+                instrumentForCoin(marginTarget.coin)?.priceDecimals ?? 6,
+                marginTarget.markPx,
+              )
+            : 2
+        }
         tradable={tradable}
         busy={marginMutation.isPending}
-        onClose={() => setMarginTarget(null)}
+        onClose={() => setMarginTargetCoin(null)}
         onSubmit={(signed) => {
           if (marginTarget) confirmAdjustMargin(marginTarget, signed);
         }}
@@ -663,21 +1652,189 @@ export default function AccountScreen() {
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
+const MAINTENANCE_WARNING_PCT = 50;
+const MAINTENANCE_URGENT_PCT = 75;
+const LIQUIDATION_WARNING_PCT = 20;
+const LIQUIDATION_URGENT_PCT = 10;
+const LEVERAGE_WARNING = 5;
+
+function riskUsd(value: number): string {
+  return '$' + formatCompact(Math.abs(value));
+}
+
+function RiskStrip({
+  summary,
+  positions,
+  protectionLoaded,
+  hidden,
+}: {
+  summary: AccountRiskSummary;
+  positions: number;
+  protectionLoaded: boolean;
+  hidden: boolean;
+}) {
+  const maintenance = summary.maintenanceUsagePct;
+  const maintenanceUrgent = maintenance != null && maintenance >= MAINTENANCE_URGENT_PCT;
+  const maintenanceWarning = maintenance != null && maintenance >= MAINTENANCE_WARNING_PCT;
+  const liquidation = summary.closestLiquidation;
+  const liquidationUrgent =
+    liquidation != null && liquidation.distancePct <= LIQUIDATION_URGENT_PCT;
+  const liquidationWarning =
+    liquidation != null && liquidation.distancePct <= LIQUIDATION_WARNING_PCT;
+  const noStops = protectionLoaded ? summary.unprotectedCoins.length : null;
+  const hasWarning =
+    maintenanceWarning ||
+    liquidationWarning ||
+    (summary.effectiveLeverage ?? 0) >= LEVERAGE_WARNING ||
+    (noStops ?? 0) > 0;
+  const mask = (value: string) => (hidden ? MASK : value);
+
   return (
-    <View style={styles.tile}>
-      <AppText variant="caption" muted>
+    <View style={styles.riskCard}>
+      <View style={styles.riskHead}>
+        <View style={styles.riskTitleRow}>
+          <Ionicons
+            name={hasWarning ? 'warning-outline' : 'shield-checkmark-outline'}
+            size={16}
+            color={hasWarning ? Colors.warning : Colors.up}
+          />
+          <AppText variant="label">Live risk</AppText>
+        </View>
+        <View
+          style={[
+            styles.maintenanceBadge,
+            maintenanceWarning && styles.maintenanceBadgeWarning,
+            maintenanceUrgent && styles.maintenanceBadgeUrgent,
+          ]}>
+          <AppText
+            variant="caption"
+            numeric
+            color={maintenanceUrgent ? Colors.down : maintenanceWarning ? Colors.warning : Colors.textMuted}>
+            Maintenance {maintenance == null ? '—' : mask(`${maintenance.toFixed(1)}%`)}
+          </AppText>
+        </View>
+      </View>
+
+      <View style={styles.riskMetrics}>
+        <RiskMetric label="Free collateral" value={mask(riskUsd(summary.freeCollateral))} />
+        <RiskMetric
+          label="Exposure"
+          value={mask(riskUsd(summary.totalExposure))}
+          sub={
+            summary.effectiveLeverage == null
+              ? '—'
+              : mask(`${summary.effectiveLeverage.toFixed(1)}× equity`)
+          }
+        />
+        <RiskMetric
+          label="Closest liq."
+          value={liquidation ? mask(`${liquidation.distancePct.toFixed(1)}%`) : '—'}
+          sub={liquidation ? (hidden ? MASK : cleanCoin(liquidation.coin)) : 'No liq. price'}
+          color={liquidationUrgent ? Colors.down : liquidationWarning ? Colors.warning : undefined}
+        />
+        <RiskMetric
+          label="Stop gap"
+          value={noStops == null ? '…' : String(noStops)}
+          sub={positions === 1 ? 'position' : `${positions} positions`}
+          color={(noStops ?? 0) > 0 ? Colors.warning : Colors.up}
+        />
+      </View>
+
+      {maintenanceWarning ? (
+        <RiskWarning
+          urgent={maintenanceUrgent}
+          text={
+            hidden
+              ? 'Maintenance usage is elevated.'
+              : `Maintenance uses ${maintenance!.toFixed(1)}% of perp equity${maintenanceUrgent ? ' — liquidation risk is high.' : '.'}`
+          }
+        />
+      ) : null}
+      {liquidationWarning ? (
+        <RiskWarning
+          urgent={liquidationUrgent}
+          text={
+            hidden
+              ? 'A position is close to liquidation.'
+              : `${cleanCoin(liquidation!.coin)} is ${liquidation!.distancePct.toFixed(1)}% from liquidation.`
+          }
+        />
+      ) : null}
+      {protectionLoaded && summary.unprotectedCoins.length > 0 ? (
+        <RiskWarning
+          text={
+            hidden
+              ? 'An open position is not fully covered by stop-loss size.'
+              : summary.unprotectedCoins.length === 1
+                ? `${cleanCoin(summary.unprotectedCoins[0]!)} is not fully covered by stop-loss size.`
+                : `${summary.unprotectedCoins
+                    .slice(0, 3)
+                    .map(cleanCoin)
+                    .join(', ')}${
+                    summary.unprotectedCoins.length > 3
+                      ? ` +${summary.unprotectedCoins.length - 3} more`
+                      : ''
+                  } are not fully covered by stop-loss size.`
+          }
+        />
+      ) : null}
+      {(summary.effectiveLeverage ?? 0) >= LEVERAGE_WARNING ? (
+        <RiskWarning
+          text={
+            hidden
+              ? 'Gross account leverage is elevated.'
+              : `Gross exposure is ${summary.effectiveLeverage!.toFixed(1)}× perp equity.`
+          }
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function RiskMetric({
+  label,
+  value,
+  sub,
+  color,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  color?: string;
+}) {
+  return (
+    <View style={styles.riskMetric}>
+      <AppText variant="caption" muted numberOfLines={1}>
         {label}
       </AppText>
       <AppText
         variant="label"
         numeric
         color={color}
-        style={styles.tileValue}
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.7}>
         {value}
+      </AppText>
+      {sub ? (
+        <AppText variant="caption" color={Colors.textFaint} numberOfLines={1}>
+          {sub}
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
+
+function RiskWarning({ text, urgent = false }: { text: string; urgent?: boolean }) {
+  return (
+    <View style={[styles.riskWarning, urgent && styles.riskWarningUrgent]}>
+      <Ionicons
+        name={urgent ? 'alert-circle' : 'warning'}
+        size={13}
+        color={urgent ? Colors.down : Colors.warning}
+      />
+      <AppText variant="caption" color={urgent ? Colors.down : Colors.warning} style={styles.riskWarningText}>
+        {text}
       </AppText>
     </View>
   );
@@ -717,7 +1874,8 @@ const PositionCard = memo(PositionCardImpl, (prev, next) =>
   prev.expanded === next.expanded &&
   prev.tradable === next.tradable &&
   prev.busy === next.busy &&
-  prev.hidden === next.hidden,
+  prev.hidden === next.hidden &&
+  prev.stopCoverage === next.stopCoverage,
 );
 
 function PositionCardImpl({
@@ -727,6 +1885,7 @@ function PositionCardImpl({
   tradable,
   busy,
   hidden,
+  stopCoverage,
   onToggle,
   onChart,
   onLimitClose,
@@ -741,6 +1900,8 @@ function PositionCardImpl({
   tradable: boolean;
   busy: boolean;
   hidden: boolean;
+  /** Null while orders load; otherwise fraction of the position covered by stop size. */
+  stopCoverage: number | null;
   onToggle: () => void;
   onChart: () => void;
   onLimitClose: () => void;
@@ -785,6 +1946,13 @@ function PositionCardImpl({
                 </AppText>
               </View>
             ) : null}
+            {stopCoverage !== null && stopCoverage < 0.999999 ? (
+              <View style={styles.noStopBadge}>
+                <AppText variant="caption" color={Colors.warning}>
+                  {stopCoverage > 0 ? `SL ${Math.round(stopCoverage * 100)}%` : 'No SL'}
+                </AppText>
+              </View>
+            ) : null}
           </View>
           <AppText style={styles.sub} numeric numberOfLines={1}>
             {hidden ? `${symbol} · ${MASK}` : `${qty(p.size)} ${symbol} · ${usd(p.positionValue)}`}
@@ -810,6 +1978,24 @@ function PositionCardImpl({
           style={styles.chevron}
         />
       </Pressable>
+
+      <View style={styles.quickActions}>
+        <PositionQuickAction icon="stats-chart-outline" label="Chart" onPress={onChart} />
+        <PositionQuickAction
+          icon="shield-half-outline"
+          label="TP / SL"
+          onPress={onSetTpSl}
+          disabled={!tradable || busy}
+          tone={stopCoverage !== null && stopCoverage < 0.999999 ? Colors.warning : Colors.accent}
+        />
+        <PositionQuickAction
+          icon="remove-circle-outline"
+          label="Close"
+          onPress={onMarketClose}
+          disabled={!tradable || busy}
+          tone={Colors.down}
+        />
+      </View>
 
       {expanded ? (
         <View style={styles.detail}>
@@ -837,22 +2023,7 @@ function PositionCardImpl({
             />
           </View>
 
-          <Pressable
-            style={({ pressed }) => [styles.tpslBtn, pressed && tradable && !busy && styles.actionBtnPressed]}
-            onPress={onSetTpSl}
-            disabled={!tradable || busy}>
-            <Ionicons
-              name="shield-half-outline"
-              size={15}
-              color={!tradable || busy ? Colors.textFaint : Colors.accent}
-            />
-            <AppText variant="label" color={!tradable || busy ? Colors.textFaint : Colors.accent}>
-              Set TP / SL
-            </AppText>
-          </Pressable>
-
           <View style={styles.actions}>
-            <ActionBtn label="Limit Close" onPress={onLimitClose} disabled={!tradable || busy} />
             <ActionBtn
               label="Market Close"
               onPress={onMarketClose}
@@ -877,6 +2048,38 @@ function PositionCardImpl({
         </View>
       ) : null}
     </View>
+  );
+}
+
+function PositionQuickAction({
+  icon,
+  label,
+  onPress,
+  disabled = false,
+  tone = Colors.textMuted,
+}: {
+  icon: ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  tone?: string;
+}) {
+  const color = disabled ? Colors.textFaint : tone;
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.quickAction,
+        pressed && !disabled && styles.actionBtnPressed,
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}>
+      <Ionicons name={icon} size={14} color={color} />
+      <AppText variant="caption" color={color}>
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 
@@ -1292,12 +2495,54 @@ const styles = StyleSheet.create({
   equity: { marginTop: 2 },
   pnlRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
 
-  tiles: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg },
-  tile: { flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md },
-  tileValue: { marginTop: 4 },
+  riskCard: {
+    marginHorizontal: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  riskHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  riskTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  maintenanceBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.surfaceAlt,
+  },
+  maintenanceBadgeWarning: { backgroundColor: Colors.warning + '14' },
+  maintenanceBadgeUrgent: { backgroundColor: Colors.down + '16' },
+  riskMetrics: {
+    flexDirection: 'row',
+    gap: StyleSheet.hairlineWidth,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    backgroundColor: Colors.border,
+  },
+  riskMetric: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 58,
+    justifyContent: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surfaceAlt,
+    gap: 2,
+  },
+  riskWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 7,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.warning + '0F',
+  },
+  riskWarningUrgent: { backgroundColor: Colors.down + '12' },
+  riskWarningText: { flex: 1 },
 
   tabBarWrap: {
-    marginTop: Spacing.xl,
+    marginTop: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },
@@ -1355,11 +2600,33 @@ const styles = StyleSheet.create({
   sub: { fontSize: 13, color: Colors.textMuted },
   sideBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: Radius.sm },
   xyzBadge: { backgroundColor: Colors.surfaceAlt, paddingHorizontal: 5, paddingVertical: 1, borderRadius: Radius.sm },
+  noStopBadge: {
+    backgroundColor: Colors.warning + '14',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: Radius.sm,
+  },
   right: { alignItems: 'flex-end', marginLeft: Spacing.sm, gap: 2 },
   pnl: { fontSize: 16, fontWeight: '600' },
   roe: { fontSize: 13, fontWeight: '500' },
   spotValue: { fontSize: 16, fontWeight: '600', color: Colors.text, marginLeft: Spacing.sm },
   chevron: { marginLeft: Spacing.sm },
+  quickActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
+  quickAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surface,
+  },
 
   // Expanded detail
   detail: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, gap: Spacing.md },
@@ -1375,15 +2642,6 @@ const styles = StyleSheet.create({
   cellValue: { marginTop: 1 },
   cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
-  tpslBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceAlt,
-  },
   actionBtn: {
     flex: 1,
     alignItems: 'center',
@@ -1402,5 +2660,6 @@ const styles = StyleSheet.create({
   actionHint: { marginTop: -Spacing.xs },
   chartLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: Spacing.xs },
 
+  portfolioWrap: { paddingHorizontal: Spacing.lg, marginTop: Spacing.xl },
   disclaimer: { textAlign: 'center', marginTop: Spacing.lg },
 });

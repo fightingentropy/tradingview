@@ -57,6 +57,7 @@
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "ios:sim:release": "expo run:ios --configuration Release --no-bundler",
     "web": "expo start --web",
     "news:server": "node scripts/news-feed-server.mjs",
     "news:install": "node scripts/news-service.mjs install",
@@ -64,13 +65,15 @@
     "test:news-push": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/news-notification-sources.test.mjs",
     "test:digg": "node --test scripts/digg-tech.test.mjs",
     "test:news-refresh": "node --test scripts/news-refresh-policy.test.mjs",
+    "test:trading": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/account-risk.test.mjs scripts/execution-estimate.test.mjs && npm run verify:signing && npm run verify:identity",
     "relay:deploy": "node scripts/news-relay-deploy.mjs",
     "relay:dev": "wrangler dev",
     "telegram:login": "node scripts/telegram-login.mjs",
     "lint": "expo lint",
     "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit && npm run typecheck:worker",
     "typecheck:worker": "wrangler types worker/worker-configuration.d.ts && node node_modules/@typescript/native/bin/tsc -p worker/tsconfig.json",
-    "verify:signing": "npx tsx scripts/verify-hl-signing.mts"
+    "verify:signing": "npx tsx scripts/verify-hl-signing.mts",
+    "verify:identity": "npx tsx scripts/verify-trading-identity.mts"
   },
   "private": true
 }

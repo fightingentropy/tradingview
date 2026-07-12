@@ -33,6 +33,15 @@ npx expo start            # Fast Refresh over the dev client
 npm run news:server       # X list feed through the local bird CLI
 ```
 
+Before shipping native changes, smoke-test a bundled Release build with Metro stopped:
+
+```bash
+npm run ios:sim:release -- --device <simulator-udid>
+```
+
+Run the trading-risk math and Hyperliquid signing regression suite with
+`npm run test:trading`.
+
 Install the feed as a per-user background service so it starts automatically at login:
 
 ```bash

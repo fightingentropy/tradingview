@@ -3,6 +3,12 @@
  * Powers the Account tab: margin summary + open perp positions with live marks.
  */
 import { toNum } from '@/lib/format';
+import {
+  deriveModeAwareAccountMetrics,
+  type HlAccountMode,
+  type HlCollateralBalance,
+  type HlDexMarginState,
+} from '@/lib/accountRisk';
 
 export type HlNetwork = 'mainnet' | 'testnet';
 
@@ -88,6 +94,8 @@ export interface HlSpotBalance {
 }
 
 export interface HlAccount {
+  /** Margin/collateral abstraction reported by Hyperliquid. */
+  abstractionMode: HlAccountMode;
   /** Total perp account equity, USD. */
   accountValue: number;
   totalMarginUsed: number;
@@ -95,6 +103,12 @@ export interface HlAccount {
   totalNotional: number;
   withdrawable: number;
   maintenanceMargin: number;
+  /** Mode-correct capital currently available to deploy, USD. */
+  freeCollateral: number;
+  /** Mode-correct equity/collateral base for percentage risk sizing, USD. */
+  riskSizingBase: number;
+  /** Exact maintenance usage fraction (1 = liquidation threshold), or null if unavailable. */
+  maintenanceUsage: number | null;
   /** Summed unrealized PnL across positions. */
   unrealizedPnl: number;
   positions: HlPosition[];
@@ -102,16 +116,14 @@ export interface HlAccount {
   spotBalances: HlSpotBalance[];
   /** Total USD value of the spot wallet (all tokens, incl. USDC reserved as margin). */
   spotValue: number;
-  /** Freely-available USDC in spot (total − hold) — the real "available to trade". */
+  /** Freely-available USDC in the spot wallet (total − hold). */
   availableUsdc: number;
   /** Total USD equity deposited in vaults. */
   vaultValue: number;
   /**
    * Hyperliquid's "Total Equity" — the figure at the top of the web Portfolio page.
-   * = spot value + vaults + perp equity − the overlap where perp collateral is drawn
-   * from the spot USDC (unified margin). Under unified margin the perp accountValue is
-   * already reflected in the spot USDC, so naively adding both double-counts it;
-   * subtracting the overlap (min of perp equity and total spot USDC) matches the web.
+   * Standard adds the separate spot and per-DEX perp balances. Unified/portfolio modes
+   * use spot as the authoritative balance surface and do not add per-DEX accountValue.
    * Staking is tracked separately and not included.
    */
   totalEquity: number;
@@ -124,6 +136,8 @@ export interface HlAssetMeta {
   /** Decimal places allowed for order size. */
   szDecimals: number;
   maxLeverage: number;
+  /** `strictIsolated` markets permit adding margin but never removing it. */
+  marginMode?: 'strictIsolated' | 'noCross';
 }
 
 async function infoRequest<T>(network: HlNetwork, body: object): Promise<T> {
@@ -138,6 +152,7 @@ async function infoRequest<T>(network: HlNetwork, body: object): Promise<T> {
 
 interface RawClearinghouse {
   marginSummary: { accountValue: string; totalNtlPos: string; totalMarginUsed: string };
+  crossMarginSummary: { accountValue: string; totalNtlPos: string; totalMarginUsed: string };
   crossMaintenanceMarginUsed: string;
   withdrawable: string;
   assetPositions: {
@@ -159,6 +174,48 @@ interface RawClearinghouse {
 }
 
 const n = (v: string | null | undefined) => toNum(v ?? null) ?? 0;
+
+type RawUserAbstraction =
+  | 'unifiedAccount'
+  | 'portfolioMargin'
+  | 'disabled'
+  | 'default'
+  | 'dexAbstraction';
+
+function normalizeAccountMode(abstraction: RawUserAbstraction): HlAccountMode {
+  if (abstraction === 'unifiedAccount') return 'unified';
+  if (abstraction === 'portfolioMargin') return 'portfolioMargin';
+  if (abstraction === 'dexAbstraction') return 'dexAbstraction';
+  // The API uses both `disabled` and `default` for the separate-balance Standard mode.
+  return 'standard';
+}
+
+/**
+ * Collateral-token metadata is effectively static. Cache the in-flight/resolved request
+ * by network so the 5-second account query does not download two full perp metas every
+ * poll. A rejected request is evicted so a later refresh can recover.
+ */
+const supportedCollateralTokenCache = new Map<HlNetwork, Promise<readonly [number, number]>>();
+
+function fetchSupportedCollateralTokens(
+  network: HlNetwork,
+): Promise<readonly [number, number]> {
+  const cached = supportedCollateralTokenCache.get(network);
+  if (cached) return cached;
+
+  type RawCollateralMeta = { collateralToken?: number };
+  const pending = Promise.all([
+    infoRequest<RawCollateralMeta>(network, { type: 'meta' }),
+    infoRequest<RawCollateralMeta>(network, { type: 'meta', dex: XYZ_DEX }),
+  ])
+    .then(([core, xyz]) => [core.collateralToken ?? 0, xyz.collateralToken ?? 0] as const)
+    .catch((error) => {
+      supportedCollateralTokenCache.delete(network);
+      throw error;
+    });
+  supportedCollateralTokenCache.set(network, pending);
+  return pending;
+}
 
 /**
  * Resolve a builder dex's order-id offset from its live `perpDexs` index:
@@ -184,7 +241,14 @@ async function fetchPerpDexOffset(network: HlNetwork, dexName: string): Promise<
  * Rarely changes — callers cache it aggressively.
  */
 export async function fetchHlMeta(network: HlNetwork = 'mainnet'): Promise<Record<string, HlAssetMeta>> {
-  type RawUniverse = { universe: { name: string; szDecimals: number; maxLeverage: number }[] };
+  type RawUniverse = {
+    universe: {
+      name: string;
+      szDecimals: number;
+      maxLeverage: number;
+      marginMode?: 'strictIsolated' | 'noCross';
+    }[];
+  };
   const [core, xyz, xyzOffset] = await Promise.all([
     infoRequest<RawUniverse>(network, { type: 'meta' }),
     infoRequest<RawUniverse>(network, { type: 'meta', dex: XYZ_DEX }),
@@ -193,7 +257,13 @@ export async function fetchHlMeta(network: HlNetwork = 'mainnet'): Promise<Recor
 
   const out: Record<string, HlAssetMeta> = {};
   core.universe.forEach((u, i) => {
-    out[u.name] = { name: u.name, assetIndex: i, szDecimals: u.szDecimals, maxLeverage: u.maxLeverage };
+    out[u.name] = {
+      name: u.name,
+      assetIndex: i,
+      szDecimals: u.szDecimals,
+      maxLeverage: u.maxLeverage,
+      marginMode: u.marginMode,
+    };
   });
   // xyz universe names are already `xyz:NAME`; order id = the dex's offset + universe index.
   xyz.universe.forEach((u, i) => {
@@ -202,6 +272,7 @@ export async function fetchHlMeta(network: HlNetwork = 'mainnet'): Promise<Recor
       assetIndex: xyzOffset + i,
       szDecimals: u.szDecimals,
       maxLeverage: u.maxLeverage,
+      marginMode: u.marginMode,
     };
   });
   return out;
@@ -296,7 +367,14 @@ function spotPriceByToken([meta, ctxs]: [SpotMeta, SpotCtx[]]): Record<number, n
 async function fetchSpotBalances(
   address: string,
   network: HlNetwork,
-): Promise<{ balances: HlSpotBalance[]; value: number; usdcTotal: number; usdcAvailable: number }> {
+): Promise<{
+  balances: HlSpotBalance[];
+  collateralBalances: HlCollateralBalance[];
+  value: number;
+  usdcTotal: number;
+  usdcAvailable: number;
+  loaded: boolean;
+}> {
   try {
     const [state, metaCtxs] = await Promise.all([
       infoRequest<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }),
@@ -317,12 +395,26 @@ async function fetchSpotBalances(
     const usdcAvailable = usdcTotal - n(usdc?.hold);
     return {
       balances,
+      collateralBalances: state.balances.map((b) => ({
+        token: b.token,
+        total: n(b.total),
+        hold: n(b.hold),
+        usdPrice: b.coin === 'USDC' ? 1 : (price[b.token] ?? 0),
+      })),
       value: balances.reduce((s, b) => s + b.usdValue, 0),
       usdcTotal,
       usdcAvailable,
+      loaded: true,
     };
   } catch {
-    return { balances: [], value: 0, usdcTotal: 0, usdcAvailable: 0 };
+    return {
+      balances: [],
+      collateralBalances: [],
+      value: 0,
+      usdcTotal: 0,
+      usdcAvailable: 0,
+      loaded: false,
+    };
   }
 }
 
@@ -349,23 +441,22 @@ async function fetchVaultEquity(address: string, network: HlNetwork): Promise<nu
  * (HIP-3) dex, the spot wallet, and vault equity. Positions are merged and tagged by
  * dex; their notional/margin are summed (xyz positions are real exposure).
  *
- * The total equity is the subtle part. Under unified margin a perp position's
- * collateral is drawn from the spot USDC, so the perp `accountValue` is already
- * reflected in the spot balance. Spot value and perp equity therefore overlap by (up
- * to) the whole perp equity; adding them naively double-counts it (e.g. a spot-funded
- * account with margined perps would read far above its real worth). We subtract the
- * overlap — min(perp equity, total spot USDC) — so `totalEquity` matches Hyperliquid's
- * own "Total Equity". Read-only (the address is public, works for any account, no key).
+ * Account abstraction determines which balance surface is authoritative. Standard has
+ * separate spot and per-DEX balances; unified and portfolio modes keep balances/holds
+ * in spot. Read-only (the address is public, works for any account, no key).
  */
 export async function fetchHlAccount(address: string, network: HlNetwork = 'mainnet'): Promise<HlAccount> {
   const dexes: HlPosition['dex'][] = ['default', 'xyz'];
-  const [defState, xyzState, spot, vaultValue] = await Promise.all([
+  const [rawAbstraction, collateralTokens, defState, xyzState, spot, vaultValue] = await Promise.all([
+    infoRequest<RawUserAbstraction>(network, { type: 'userAbstraction', user: address }),
+    fetchSupportedCollateralTokens(network),
     infoRequest<RawClearinghouse>(network, { type: 'clearinghouseState', user: address }),
     infoRequest<RawClearinghouse>(network, { type: 'clearinghouseState', user: address, dex: XYZ_DEX }),
     fetchSpotBalances(address, network),
     fetchVaultEquity(address, network),
   ]);
   const states = [defState, xyzState];
+  const abstractionMode = normalizeAccountMode(rawAbstraction);
 
   // Perp equity + risk span every dex (default crypto perps + the trade.xyz HIP-3 dex).
   let perpValue = 0;
@@ -374,6 +465,7 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
   let withdrawable = 0;
   let maintenanceMargin = 0;
   const positions: HlPosition[] = [];
+  const marginStates: HlDexMarginState[] = [];
 
   states.forEach((state, i) => {
     perpValue += n(state.marginSummary.accountValue);
@@ -381,6 +473,16 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     totalNotional += n(state.marginSummary.totalNtlPos);
     withdrawable += n(state.withdrawable);
     maintenanceMargin += n(state.crossMaintenanceMarginUsed);
+    marginStates.push({
+      collateralToken: collateralTokens[i],
+      accountValue: n(state.marginSummary.accountValue),
+      crossAccountValue: n(state.crossMarginSummary?.accountValue),
+      withdrawable: n(state.withdrawable),
+      crossMaintenanceMarginUsed: n(state.crossMaintenanceMarginUsed),
+      isolatedMarginUsed: state.assetPositions
+        .filter(({ position }) => position.leverage.type === 'isolated')
+        .reduce((sum, { position }) => sum + n(position.marginUsed), 0),
+    });
 
     for (const { position: p } of state.assetPositions) {
       const szi = n(p.szi);
@@ -407,20 +509,34 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     }
   });
 
-  // Under unified margin a perp's collateral is drawn from the spot USDC, so the perp
-  // accountValue is already reflected in spot value — adding both double-counts it. The
-  // overlap is the whole perp equity when the spot USDC covers it; cap at the total spot
-  // USDC so a "classic" account whose cash lives in the perp wallet (spot USDC ≈ 0) keeps
-  // its perp equity additive. Matches Hyperliquid's own "Total Equity" to the cent.
-  const overlap = Math.min(perpValue, spot.usdcTotal);
-  const totalEquity = spot.value + vaultValue + perpValue - overlap;
+  const modeMetrics = deriveModeAwareAccountMetrics({
+    mode: abstractionMode,
+    dexStates: marginStates,
+    spotBalances: spot.collateralBalances,
+    spotLoaded: spot.loaded,
+  });
+
+  // Standard balances are separate and additive. Unified/portfolio perp state values are
+  // not meaningful according to the API docs; spot is authoritative. Legacy DEX
+  // abstraction remains mixed, so preserve the previous capped-overlap approximation for
+  // total display while withholding its maintenance ratio above.
+  const totalEquity =
+    abstractionMode === 'standard'
+      ? spot.value + vaultValue + perpValue
+      : abstractionMode === 'unified' || abstractionMode === 'portfolioMargin'
+        ? spot.value + vaultValue
+        : spot.value + vaultValue + perpValue - Math.min(perpValue, spot.usdcTotal);
 
   return {
+    abstractionMode,
     accountValue: perpValue,
     totalMarginUsed,
     totalNotional,
     withdrawable,
     maintenanceMargin,
+    freeCollateral: modeMetrics.freeCollateral,
+    riskSizingBase: modeMetrics.riskSizingBase,
+    maintenanceUsage: modeMetrics.maintenanceUsage,
     unrealizedPnl: positions.reduce((s, p) => s + p.unrealizedPnl, 0),
     positions,
     spotBalances: spot.balances,
@@ -551,6 +667,58 @@ export async function fetchOpenOrders(address: string, network: HlNetwork = 'mai
   const byOid = new Map<number, HlOpenOrder>();
   for (const o of [...(base ?? []), ...(xyz ?? [])]) byOid.set(o.oid, mapFrontendOrder(o));
   return [...byOid.values()].sort((a, b) => b.timestamp - a.timestamp);
+}
+
+// ---- Order book ------------------------------------------------------------
+
+export interface HlBookLevel {
+  price: number;
+  /** Aggregate size resting at this price, in coin units. */
+  size: number;
+  /** Number of individual orders represented by the level. */
+  orders: number;
+}
+
+export interface HlOrderBook {
+  coin: string;
+  timestamp: number;
+  bids: HlBookLevel[];
+  asks: HlBookLevel[];
+}
+
+interface RawBookLevel {
+  px: string;
+  sz: string;
+  n: number;
+}
+
+interface RawOrderBook {
+  coin: string;
+  time: number;
+  /** Hyperliquid returns bids first, asks second. */
+  levels: [RawBookLevel[], RawBookLevel[]];
+}
+
+/**
+ * Current L2 order-book snapshot (up to 20 levels per side). The trading ticket uses
+ * this to surface spread, executable depth, and an estimated average fill before a
+ * user signs a market order. HIP-3 coins are accepted directly as `dex:COIN`.
+ */
+export async function fetchOrderBook(
+  coin: string,
+  network: HlNetwork = 'mainnet',
+): Promise<HlOrderBook> {
+  const raw = await infoRequest<RawOrderBook>(network, { type: 'l2Book', coin });
+  const map = (levels: RawBookLevel[]): HlBookLevel[] =>
+    levels
+      .map((level) => ({ price: n(level.px), size: n(level.sz), orders: level.n }))
+      .filter((level) => level.price > 0 && level.size > 0);
+  return {
+    coin: raw.coin,
+    timestamp: raw.time,
+    bids: map(raw.levels?.[0] ?? []),
+    asks: map(raw.levels?.[1] ?? []),
+  };
 }
 
 // ---- Trade history (fills) ------------------------------------------------

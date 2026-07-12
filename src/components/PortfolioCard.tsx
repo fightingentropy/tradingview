@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -31,9 +32,11 @@ function maxDrawdownPct(points: HlPortfolioPoint[]): number {
  * period change and max drawdown. Sourced from Hyperliquid's own `portfolio` series, so
  * the latest point lines up with the "Account Value" shown above it.
  */
-export function PortfolioCard({ hidden }: { hidden: boolean }) {
+export function PortfolioCard({ hidden, compact = false }: { hidden: boolean; compact?: boolean }) {
   const { data } = useHlPortfolio();
   const [period, setPeriod] = useState<HlPortfolioPeriodKey>('week');
+  const [compactExpanded, setCompactExpanded] = useState(false);
+  const expanded = compact ? compactExpanded : true;
   const points = useMemo(() => data?.[period]?.accountValue ?? [], [data, period]);
 
   const stats = useMemo(() => {
@@ -56,52 +59,79 @@ export function PortfolioCard({ hidden }: { hidden: boolean }) {
   const mask = (s: string) => (hidden ? '••••' : s);
 
   return (
-    <View style={styles.card}>
-      <View style={styles.head}>
-        <AppText variant="caption" muted>
-          Portfolio
-        </AppText>
-        {stats ? (
-          <AppText variant="label" numeric color={color}>
-            {mask(`${signedUsd(stats.change)} (${formatPercent(stats.pct)})`)}
-          </AppText>
-        ) : null}
-      </View>
-
-      {points.length >= 2 ? (
-        <EquityCurve points={points} color={color} />
-      ) : (
-        <View style={styles.empty}>
+    <View style={[styles.card, compact && !expanded && styles.cardCompact]}>
+      <Pressable
+        style={({ pressed }) => [styles.head, compact && pressed && styles.headPressed]}
+        onPress={() => compact && setCompactExpanded((current) => !current)}
+        disabled={!compact}
+        accessibilityRole={compact ? 'button' : undefined}
+        accessibilityLabel={compact ? `${expanded ? 'Collapse' : 'Expand'} portfolio history` : undefined}
+        accessibilityState={compact ? { expanded } : undefined}>
+        <View style={styles.headTitle}>
           <AppText variant="caption" muted>
-            Not enough history yet
+            Portfolio history
           </AppText>
+          {!expanded ? (
+            <AppText variant="caption" color={Colors.textFaint}>
+              {PERIODS.find((item) => item.key === period)?.label}
+              {stats ? ` · Max DD ${mask(`${stats.mdd.toFixed(1)}%`)}` : ''}
+            </AppText>
+          ) : null}
         </View>
-      )}
+        <View style={styles.headValue}>
+          {stats ? (
+            <AppText variant="label" numeric color={color}>
+              {mask(`${signedUsd(stats.change)} (${formatPercent(stats.pct)})`)}
+            </AppText>
+          ) : null}
+          {compact ? (
+            <Ionicons
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={17}
+              color={Colors.textFaint}
+            />
+          ) : null}
+        </View>
+      </Pressable>
 
-      <View style={styles.foot}>
-        <View style={styles.periods}>
-          {PERIODS.map((p) => {
-            const active = p.key === period;
-            return (
-              <Pressable
-                key={p.key}
-                onPress={() => setPeriod(p.key)}
-                style={[styles.period, active && styles.periodActive]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}>
-                <AppText variant="caption" color={active ? Colors.text : Colors.textMuted}>
-                  {p.label}
-                </AppText>
-              </Pressable>
-            );
-          })}
-        </View>
-        {stats ? (
-          <AppText variant="caption" muted>
-            Max DD {mask(`${stats.mdd.toFixed(1)}%`)}
-          </AppText>
-        ) : null}
-      </View>
+      {expanded ? (
+        <>
+          {points.length >= 2 ? (
+            <EquityCurve points={points} color={color} />
+          ) : (
+            <View style={styles.empty}>
+              <AppText variant="caption" muted>
+                Not enough history yet
+              </AppText>
+            </View>
+          )}
+
+          <View style={styles.foot}>
+            <View style={styles.periods}>
+              {PERIODS.map((p) => {
+                const active = p.key === period;
+                return (
+                  <Pressable
+                    key={p.key}
+                    onPress={() => setPeriod(p.key)}
+                    style={[styles.period, active && styles.periodActive]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}>
+                    <AppText variant="caption" color={active ? Colors.text : Colors.textMuted}>
+                      {p.label}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {stats ? (
+              <AppText variant="caption" muted>
+                Max DD {mask(`${stats.mdd.toFixed(1)}%`)}
+              </AppText>
+            ) : null}
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -114,7 +144,11 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     gap: Spacing.sm,
   },
+  cardCompact: { paddingVertical: Spacing.md },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headPressed: { opacity: 0.72 },
+  headTitle: { flex: 1, gap: 2 },
+  headValue: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   empty: { height: 96, alignItems: 'center', justifyContent: 'center' },
   foot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   periods: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },

@@ -5,50 +5,40 @@ import {
   fetchHlPortfolio,
   fetchOpenOrders,
   fetchUserFills,
-  fetchUserRole,
   type HlAccount,
   type HlFill,
-  type HlNetwork,
   type HlOpenOrder,
   type HlPortfolio,
 } from '@/lib/hyperliquid/info';
-import { getAgentKey } from '@/lib/hyperliquid/keyStore';
-import { addressFromPrivateKey } from '@/lib/hyperliquid/sign';
+import {
+  resolveTradingIdentity,
+  type TradingIdentity,
+} from '@/lib/hyperliquid/tradingIdentity';
 import { queryKeys } from '@/lib/queryKeys';
 import { useHlConnection } from '@/store/hlConnection';
 
-/**
- * Resolve the address whose positions/balances we should read.
- *
- * Hyperliquid orders are signed by an API-wallet ("agent") key but the resulting
- * position lives under the agent's **master account**, not the agent address — so
- * reading the agent (or a mistyped) address returns an empty account. We resolve
- * the authoritative account by asking `userRole`: prefer the master behind the
- * key's own agent address, then fall back to the entered address.
- */
-async function resolveTradingAddress(entered: string | null, network: HlNetwork): Promise<string | null> {
-  const candidates: string[] = [];
-  const key = getAgentKey();
-  if (key) {
-    try {
-      candidates.push(addressFromPrivateKey(key));
-    } catch {
-      /* unreadable key — ignore */
-    }
-  }
-  if (entered) candidates.push(entered);
+function useTradingIdentityInputs() {
+  const address = useHlConnection((s) => s.address);
+  const network = useHlConnection((s) => s.network);
+  const hasKey = useHlConnection((s) => s.hasKey);
+  const keyRevision = useHlConnection((s) => s.keyRevision);
+  const demo = useHlConnection((s) => s.demo);
+  return { address, network, hasKey, keyRevision, demo };
+}
 
-  for (const addr of candidates) {
-    try {
-      const role = await fetchUserRole(addr, network);
-      if (role.role === 'agent' && role.data?.user) return role.data.user; // swap agent → master
-      if (role.role === 'user' || role.role === 'subAccount' || role.role === 'vault') return addr;
-      // 'missing' / unknown → try the next candidate
-    } catch {
-      /* network hiccup — try the next candidate */
-    }
-  }
-  return entered ?? candidates[0] ?? null;
+/**
+ * Authoritative account + signing identity. Resolution never falls back to a
+ * typed address after an error: callers receive an error and trading stays off.
+ */
+export function useTradingIdentity() {
+  const { address, network, hasKey, keyRevision, demo } = useTradingIdentityInputs();
+  return useQuery<TradingIdentity>({
+    queryKey: ['hl-trading-identity', network, address, hasKey, keyRevision, demo],
+    queryFn: () => resolveTradingIdentity(address as string, network, hasKey && !demo),
+    enabled: !!address,
+    staleTime: Infinity,
+    retry: 1,
+  });
 }
 
 /**
@@ -58,15 +48,14 @@ async function resolveTradingAddress(entered: string | null, network: HlNetwork)
  * failed/in-flight resolution rather than silently trusting the entered address.
  */
 export function useTradingAddress() {
-  const address = useHlConnection((s) => s.address);
-  const network = useHlConnection((s) => s.network);
-  const hasKey = useHlConnection((s) => s.hasKey);
-
-  return useQuery<string | null>({
-    queryKey: ['hl-trading-address', network, address, hasKey],
-    queryFn: () => resolveTradingAddress(address, network),
+  const { address, network, hasKey, keyRevision, demo } = useTradingIdentityInputs();
+  return useQuery<TradingIdentity, Error, string>({
+    queryKey: ['hl-trading-identity', network, address, hasKey, keyRevision, demo],
+    queryFn: () => resolveTradingIdentity(address as string, network, hasKey && !demo),
     enabled: !!address,
     staleTime: Infinity,
+    retry: 1,
+    select: (identity) => identity.accountAddress,
   });
 }
 

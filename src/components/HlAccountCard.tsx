@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react
 
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
-import { useTradingAddress } from '@/data/useHlAccount';
+import { useTradingIdentity } from '@/data/useHlAccount';
 import type { HlNetwork } from '@/lib/hyperliquid/info';
 import { isValidPrivateKey, setAgentKey } from '@/lib/hyperliquid/keyStore';
 import { addressFromPrivateKey, toChecksumAddress } from '@/lib/hyperliquid/sign';
@@ -76,8 +76,10 @@ function ConnectedCard({
   // The account we actually read (master behind the agent key), which may differ
   // from what was typed. While resolving we show the entered address; if resolution
   // fails we say so rather than silently presenting a possibly-wrong account.
-  const { data: resolved, isError, isFetching } = useTradingAddress();
+  const { data: identity, error: identityError, isError, isFetching } = useTradingIdentity();
+  const resolved = identity?.accountAddress;
   const resolveFailed = isError && !resolved;
+  const signerVerified = identity?.status === 'verified-signer';
   const shownAddress = resolved ?? address;
   return (
     <>
@@ -112,11 +114,25 @@ function ConnectedCard({
             <AppText variant="caption" muted>
               Read-only
             </AppText>
-          ) : hasKey ? (
+          ) : hasKey && isFetching && !identity ? (
+            <View style={styles.rowLeft}>
+              <ActivityIndicator size="small" color={Colors.textMuted} />
+              <AppText variant="caption" muted>
+                Verifying API wallet…
+              </AppText>
+            </View>
+          ) : hasKey && signerVerified ? (
             <View style={styles.rowLeft}>
               <Ionicons name="checkmark-circle" size={15} color={Colors.up} />
               <AppText variant="caption" color={Colors.up}>
-                Enabled
+                Verified · {short(identity.signerAddress)}
+              </AppText>
+            </View>
+          ) : hasKey ? (
+            <View style={styles.rowLeft}>
+              <Ionicons name="close-circle" size={15} color={Colors.down} />
+              <AppText variant="caption" color={Colors.down}>
+                Blocked · identity mismatch
               </AppText>
             </View>
           ) : (
@@ -125,6 +141,16 @@ function ConnectedCard({
             </AppText>
           )}
         </View>
+        {!demo && hasKey && !signerVerified && !isFetching ? (
+          <>
+            <View style={styles.divider} />
+            <AppText variant="caption" color={Colors.down} style={styles.identityError}>
+              {identityError instanceof Error
+                ? identityError.message
+                : 'Hyperliquid could not verify this API wallet against the connected master account.'}
+            </AppText>
+          </>
+        ) : null}
       </View>
 
       {/* Connected by address only — let them paste an agent key to enable trading. */}
@@ -368,6 +394,11 @@ const styles = StyleSheet.create({
   },
   inlineBtnDisabled: { backgroundColor: Colors.surfaceAlt },
   fieldError: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md },
+  identityError: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    lineHeight: 17,
+  },
 
   segment: { flexDirection: 'row', padding: Spacing.xs, gap: Spacing.xs },
   segmentItem: {

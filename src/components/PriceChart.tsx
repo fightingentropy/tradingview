@@ -61,6 +61,19 @@ export interface ChartPosition {
   roe: number;
 }
 
+export type ChartOrderKind = 'take-profit' | 'stop-loss' | 'limit' | 'trigger';
+
+/** A resting order/trigger level to draw over the price chart. */
+export interface ChartOrderLevel {
+  id: string | number;
+  price: number;
+  kind: ChartOrderKind;
+  /** Compact description such as `TP`, `SL`, or `Buy limit`. */
+  label: string;
+  /** Remaining coin size, shown beside the label unless privacy mode is enabled. */
+  size?: number;
+}
+
 /** Masked stand-in for account values when privacy mode is on. */
 const POS_MASK = '••••';
 
@@ -106,6 +119,8 @@ interface Props {
   axisKind?: AxisTickKind;
   /** Open position to overlay (entry/liq lines + PnL tag). Null = nothing to show. */
   position?: ChartPosition | null;
+  /** Resting TP/SL and limit-order levels to overlay. */
+  orderLevels?: readonly ChartOrderLevel[];
   /** Ticker for the position tag, e.g. `BTC`. */
   symbol?: string;
   /** Privacy mode: mask the position's size + PnL (price levels stay visible). */
@@ -168,6 +183,7 @@ export function PriceChart({
   renderCount,
   axisKind,
   position = null,
+  orderLevels = [],
   symbol,
   hideValues = false,
 }: Props) {
@@ -593,6 +609,18 @@ export function PriceChart({
           />
         ) : null}
 
+        {orderLevels.length > 0 ? (
+          <OrderLevelsOverlay
+            levels={orderLevels}
+            symbol={symbol ?? ''}
+            priceDecimals={priceDecimals}
+            hideValues={hideValues}
+            priceM={priceMSV}
+            priceB={priceBSV}
+            bounds={boundsSV}
+          />
+        ) : null}
+
         <Animated.View style={[styles.pricePill, pillStyle]} pointerEvents="none">
           <AnimatedTextInput
             style={styles.pricePillText}
@@ -881,6 +909,123 @@ function PositionOverlay({
   );
 }
 
+/** Draw all working order levels. Off-screen levels pin their labels to the
+ * nearest chart edge, so protection remains discoverable without flattening the
+ * candle scale to include a distant target. */
+function OrderLevelsOverlay({
+  levels,
+  symbol,
+  priceDecimals,
+  hideValues,
+  priceM,
+  priceB,
+  bounds,
+}: {
+  levels: readonly ChartOrderLevel[];
+  symbol: string;
+  priceDecimals: number;
+  hideValues: boolean;
+  priceM: SharedValue<number>;
+  priceB: SharedValue<number>;
+  bounds: SharedValue<Bounds>;
+}) {
+  return (
+    <>
+      {levels.map((level) => (
+        <OrderLevelOverlay
+          key={String(level.id)}
+          level={level}
+          symbol={symbol}
+          priceDecimals={priceDecimals}
+          hideValues={hideValues}
+          priceM={priceM}
+          priceB={priceB}
+          bounds={bounds}
+        />
+      ))}
+    </>
+  );
+}
+
+function OrderLevelOverlay({
+  level,
+  symbol,
+  priceDecimals,
+  hideValues,
+  priceM,
+  priceB,
+  bounds,
+}: {
+  level: ChartOrderLevel;
+  symbol: string;
+  priceDecimals: number;
+  hideValues: boolean;
+  priceM: SharedValue<number>;
+  priceB: SharedValue<number>;
+  bounds: SharedValue<Bounds>;
+}) {
+  const color =
+    level.kind === 'take-profit'
+      ? Colors.up
+      : level.kind === 'stop-loss'
+        ? Colors.down
+        : level.kind === 'trigger'
+          ? Colors.warning
+          : Colors.accent;
+  const rawY = useDerivedValue(() =>
+    priceM.value ? (level.price - priceB.value) / priceM.value : Number.NaN,
+  );
+  const lineStyle = useAnimatedStyle(() => {
+    const y = rawY.value;
+    const b = bounds.value;
+    const ready = b.bottom > b.top && Number.isFinite(y);
+    const inside = ready && y >= b.top && y <= b.bottom;
+    return { opacity: inside ? 0.78 : 0, transform: [{ translateY: ready ? y : 0 }] };
+  });
+  const tagStyle = useAnimatedStyle(() => {
+    const y = rawY.value;
+    const b = bounds.value;
+    const ready = b.bottom > b.top && Number.isFinite(y);
+    const clamped = ready
+      ? Math.max(b.top + POS_TAG_H / 2, Math.min(b.bottom - POS_TAG_H / 2, y))
+      : POS_TAG_H / 2;
+    return { opacity: ready ? 1 : 0, transform: [{ translateY: clamped - POS_TAG_H / 2 }] };
+  });
+  const sizeText =
+    level.size == null
+      ? ''
+      : hideValues
+        ? ` ${POS_MASK}`
+        : ` ${formatPositionSize(level.size)} ${symbol}`.trimEnd();
+
+  return (
+    <>
+      <Animated.View
+        style={[
+          styles.orderLevelLine,
+          { borderTopColor: color, borderStyle: level.kind === 'limit' ? 'dotted' : 'dashed' },
+          lineStyle,
+        ]}
+        pointerEvents="none"
+      />
+      <Animated.View
+        style={[styles.orderTag, styles.orderTagLeft, { borderColor: color }, tagStyle]}
+        pointerEvents="none">
+        <AppText variant="caption" color={color} numeric numberOfLines={1}>
+          {level.label}{sizeText}
+        </AppText>
+      </Animated.View>
+      <Animated.View
+        style={[styles.orderPriceTag, { backgroundColor: color }, tagStyle]}
+        pointerEvents="none">
+        <AppText variant="caption" color={level.kind === 'take-profit' || level.kind === 'limit' ? '#04150E' : '#FFFFFF'} numeric>
+          {formatPrice(level.price, priceDecimals)}
+        </AppText>
+      </Animated.View>
+    </>
+  );
+}
+
 function OhlcItem({
   label,
   value,
@@ -1004,4 +1149,36 @@ const styles = StyleSheet.create({
     zIndex: 3,
   },
   posLiqTag: { backgroundColor: Colors.warning },
+  orderLevelLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 0,
+    borderTopWidth: 1,
+    zIndex: 2,
+  },
+  orderTag: {
+    position: 'absolute',
+    top: 0,
+    height: POS_TAG_H,
+    maxWidth: '58%',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.surfaceAlt,
+    zIndex: 4,
+  },
+  orderTagLeft: { left: Spacing.sm },
+  orderPriceTag: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    height: POS_TAG_H,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    zIndex: 4,
+  },
 });
