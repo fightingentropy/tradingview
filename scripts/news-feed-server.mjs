@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { load } from 'cheerio';
 
 import { DIGG_TECH_URL, fetchDiggTech } from './digg-tech.mjs';
+import { NewsExecutiveSummaryService } from './news-executive-summary.mjs';
 import { NewsPushService } from './news-push.mjs';
 import {
   NEWS_SCHEDULER_INTERVAL_MS,
@@ -41,6 +42,7 @@ let diggInFlight;
 let pasteCached;
 let pasteInFlight;
 const pushService = new NewsPushService({ xListId: LIST_ID, telegramChannels: TELEGRAM_CHANNELS });
+const executiveSummaryService = new NewsExecutiveSummaryService();
 
 function findBird() {
   const candidates = [
@@ -435,11 +437,30 @@ async function latestCombinedSnapshot(count = MAX_RELAY_SNAPSHOT_COUNT) {
       .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
       .slice(0, count),
     notices: [...telegram.notices, ...digg.notices, ...paste.notices],
+    executiveSummary: executiveSummaryService.getSummary(),
     updatedAt: new Date().toISOString(),
   };
 }
 
 let polling = false;
+function scheduleExecutiveSummary(snapshot) {
+  if (executiveSummaryService.getStatus().running) return;
+  const previousSummaryID = snapshot.executiveSummary?.id;
+  void executiveSummaryService.refresh(snapshot.items).then(async (executiveSummary) => {
+    if (!executiveSummary?.id || executiveSummary.id === previousSummaryID) return;
+    const latestSnapshot = await latestCombinedSnapshot();
+    await publishNewsRelaySnapshot({
+      ...latestSnapshot,
+      executiveSummary,
+      updatedAt: new Date().toISOString(),
+    });
+  }).catch((error) => {
+    console.error(
+      `Executive summary failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
+}
+
 async function pollForPushNotifications() {
   if (polling) return;
   polling = true;
@@ -448,6 +469,7 @@ async function pollForPushNotifications() {
     const snapshot = await latestCombinedSnapshot();
     await pushService.processSnapshot(snapshot.items);
     await publishNewsRelaySnapshot(snapshot);
+    scheduleExecutiveSummary(snapshot);
   } catch (error) {
     console.error(`News push poll failed: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
@@ -504,6 +526,7 @@ const server = http.createServer(async (request, response) => {
         digg: diggCached ? new Date(diggCached.fetchedAt).toISOString() : null,
         paste: pasteCached ? new Date(pasteCached.fetchedAt).toISOString() : null,
       },
+      executiveSummary: executiveSummaryService.getStatus(),
     });
     return;
   }
@@ -538,7 +561,12 @@ const server = http.createServer(async (request, response) => {
       items = snapshot.items;
       notices = snapshot.notices;
     }
-    sendJson(response, 200, { items, notices, updatedAt: new Date().toISOString() });
+    sendJson(response, 200, {
+      items,
+      notices,
+      executiveSummary: source === 'all' ? executiveSummaryService.getSummary() : undefined,
+      updatedAt: new Date().toISOString(),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not load the X timeline';
     sendJson(response, 502, { error: message });

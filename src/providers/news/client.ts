@@ -1,9 +1,12 @@
 import type {
+  NewsExecutiveSummary,
+  NewsExecutiveSummaryBullet,
   NewsFeedNotice,
   NewsFeedPage,
   NewsItem,
   NewsMedia,
   NewsSourceFilter,
+  NewsSummarySourceReference,
 } from '@/domain/news';
 
 const DEV_NEWS_FEED_URL = 'http://127.0.0.1:8430/feed';
@@ -90,6 +93,109 @@ function parseNotice(value: unknown): NewsFeedNotice | null {
   return { id: notice.id, source: notice.source, message: notice.message };
 }
 
+function parseSummarySource(value: unknown): NewsSummarySourceReference | null {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Record<string, unknown>;
+  if (
+    typeof source.itemKey !== 'string' ||
+    (source.source !== 'x' && source.source !== 'telegram' && source.source !== 'digg' && source.source !== 'paste') ||
+    typeof source.title !== 'string' ||
+    typeof source.author !== 'string' ||
+    typeof source.publishedAt !== 'string' ||
+    !Number.isFinite(Date.parse(source.publishedAt)) ||
+    !isHttpsUrl(source.url)
+  ) {
+    return null;
+  }
+  return {
+    itemKey: source.itemKey,
+    source: source.source,
+    title: source.title,
+    author: source.author,
+    publishedAt: source.publishedAt,
+    url: source.url,
+  };
+}
+
+function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const summary = value as Record<string, unknown>;
+  const pulse = summary.pulse as Record<string, unknown> | undefined;
+  const pulseLabels = ['risk-on', 'risk-off', 'mixed', 'calm', 'event-driven'] as const;
+  if (
+    typeof summary.id !== 'string' ||
+    typeof summary.generatedAt !== 'string' ||
+    typeof summary.windowStart !== 'string' ||
+    typeof summary.windowEnd !== 'string' ||
+    !Number.isFinite(Date.parse(summary.generatedAt)) ||
+    !Number.isFinite(Date.parse(summary.windowStart)) ||
+    !Number.isFinite(Date.parse(summary.windowEnd)) ||
+    typeof summary.headline !== 'string' ||
+    typeof summary.overview !== 'string' ||
+    !pulse ||
+    typeof pulse.label !== 'string' ||
+    !pulseLabels.includes(pulse.label as (typeof pulseLabels)[number]) ||
+    typeof pulse.summary !== 'string' ||
+    !Array.isArray(summary.bullets) ||
+    typeof summary.noiseSummary !== 'string'
+  ) {
+    return undefined;
+  }
+
+  const bullets = summary.bullets.flatMap((value): NewsExecutiveSummaryBullet[] => {
+    if (!value || typeof value !== 'object') return [];
+    const bullet = value as Record<string, unknown>;
+    const sources = Array.isArray(bullet.sources)
+      ? bullet.sources.map(parseSummarySource).filter((source): source is NewsSummarySourceReference => source !== null)
+      : [];
+    if (
+      typeof bullet.headline !== 'string' ||
+      typeof bullet.summary !== 'string' ||
+      typeof bullet.whyItMatters !== 'string' ||
+      typeof bullet.details !== 'string' ||
+      sources.length === 0
+    ) {
+      return [];
+    }
+    return [{
+      headline: bullet.headline,
+      summary: bullet.summary,
+      whyItMatters: bullet.whyItMatters,
+      details: bullet.details,
+      sources,
+    }];
+  });
+  if (bullets.length === 0) return undefined;
+
+  const count = (source: 'x' | 'telegram' | 'digg' | 'paste') => {
+    const candidate = (summary.sourceCounts as Record<string, unknown> | undefined)?.[source];
+    return typeof candidate === 'number' && Number.isFinite(candidate) ? Math.max(0, Math.floor(candidate)) : 0;
+  };
+  return {
+    id: summary.id,
+    generatedAt: summary.generatedAt,
+    windowStart: summary.windowStart,
+    windowEnd: summary.windowEnd,
+    headline: summary.headline,
+    overview: summary.overview,
+    pulse: {
+      label: pulse.label as NewsExecutiveSummary['pulse']['label'],
+      summary: pulse.summary,
+    },
+    bullets,
+    watchNext: Array.isArray(summary.watchNext)
+      ? summary.watchNext.filter((item): item is string => typeof item === 'string').slice(0, 5)
+      : [],
+    noiseSummary: summary.noiseSummary,
+    analyzedItems: typeof summary.analyzedItems === 'number' && Number.isFinite(summary.analyzedItems)
+      ? Math.max(0, Math.floor(summary.analyzedItems))
+      : 0,
+    sourceCounts: { x: count('x'), telegram: count('telegram'), digg: count('digg'), paste: count('paste') },
+    model: typeof summary.model === 'string' ? summary.model : 'gpt-5.6-sol',
+    reasoningEffort: typeof summary.reasoningEffort === 'string' ? summary.reasoningEffort : 'xhigh',
+  };
+}
+
 export async function loadNewsFeed(
   source: NewsSourceFilter,
   cursor?: string,
@@ -123,6 +229,7 @@ export async function loadNewsFeed(
   return {
     items,
     notices,
+    executiveSummary: parseExecutiveSummary(raw.executiveSummary),
     nextCursor: typeof raw.nextCursor === 'string' ? raw.nextCursor : undefined,
     updatedAt:
       typeof raw.updatedAt === 'string' && Number.isFinite(Date.parse(raw.updatedAt))

@@ -62,6 +62,34 @@ Authorization: Bearer app-access-token
 
 ```json
 {
+  "executiveSummary": {
+    "generatedAt": "2026-07-12T20:00:00.000Z",
+    "headline": "Markets weigh a concentrated set of catalysts",
+    "overview": "A crisp summary of what changed and what matters.",
+    "pulse": {
+      "label": "mixed",
+      "summary": "Risk appetite is uneven while confirmation remains limited."
+    },
+    "bullets": [
+      {
+        "headline": "The material development",
+        "summary": "The collapsed executive bullet.",
+        "whyItMatters": "The market relevance.",
+        "details": "Expanded context, uncertainty, and corroboration.",
+        "sources": [
+          {
+            "source": "x",
+            "author": "Primary source",
+            "url": "https://x.com/source/status/123"
+          }
+        ]
+      }
+    ],
+    "watchNext": ["The next confirmation to monitor."],
+    "noiseSummary": "Duplicates and unsupported reactions were excluded.",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "xhigh"
+  },
   "items": [
     {
       "id": "b9d9b03b-3021-4391-9ba6-0342072f8e96",
@@ -101,6 +129,13 @@ The included bridge:
   Upstream pulls are cached independently: X refreshes hourly, Telegram every five minutes,
   Digg hourly, and Paste hourly. Each scheduler tick detects newly published items and publishes an
   HMAC-authenticated snapshot to the relay without re-fetching sources that are still fresh.
+- Builds a new executive pulse once per hour from up to six hours of recent source context. It
+  invokes the Mac mini's authenticated Codex CLI in an ephemeral, read-only session with
+  `gpt-5.6-sol`, `xhigh` reasoning, web search disabled, and a strict JSON output schema.
+- Persists the last valid pulse under `~/Library/Application Support/TradingView News/` and keeps
+  serving it if a later Codex run fails. Failed runs retry after 15 minutes without interrupting
+  the raw feed or relay publication. Summary runs have a 55-minute guard and never block the
+  one-minute source scheduler while Codex is reasoning.
 - Persists push tokens and the seen-item watermark in the user's Application
   Support directory with user-only permissions.
 

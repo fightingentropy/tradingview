@@ -12,7 +12,9 @@ const PUSH_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getReceipts';
 const TOKEN_PATTERN = /^(?:Exponent|Expo)PushToken\[[A-Za-z0-9_-]+\]$/;
 const MAX_FEED_ITEMS = 200;
 const MAX_PUSH_TOKENS = 25;
+const MAX_INGEST_BODY_BYTES = 2_000_000;
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 type NewsSource = 'x' | 'telegram' | 'digg' | 'paste';
 
@@ -32,9 +34,45 @@ interface NewsNotice {
   message: string;
 }
 
+interface NewsSummarySourceReference {
+  itemKey: string;
+  source: NewsSource;
+  title: string;
+  author: string;
+  publishedAt: string;
+  url: string;
+}
+
+interface NewsExecutiveSummary {
+  id: string;
+  generatedAt: string;
+  windowStart: string;
+  windowEnd: string;
+  headline: string;
+  overview: string;
+  pulse: {
+    label: 'risk-on' | 'risk-off' | 'mixed' | 'calm' | 'event-driven';
+    summary: string;
+  };
+  bullets: Array<{
+    headline: string;
+    summary: string;
+    whyItMatters: string;
+    details: string;
+    sources: NewsSummarySourceReference[];
+  }>;
+  watchNext: string[];
+  noiseSummary: string;
+  analyzedItems: number;
+  sourceCounts: Record<NewsSource, number>;
+  model: string;
+  reasoningEffort: string;
+}
+
 interface FeedSnapshot {
   items: NewsItem[];
   notices: NewsNotice[];
+  executiveSummary?: NewsExecutiveSummary;
   updatedAt: string;
 }
 
@@ -83,6 +121,33 @@ function asHttpsUrl(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+async function readBoundedText(request: Request, maxBytes: number): Promise<string | undefined> {
+  const declaredLength = Number(request.headers.get('Content-Length') ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return undefined;
+  if (!request.body) return '';
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel('Request body is too large');
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return decoder.decode(body);
 }
 
 function normalizeItem(value: unknown): NewsItem | undefined {
@@ -151,6 +216,112 @@ function normalizeNotice(value: unknown): NewsNotice | undefined {
   return { id, source: notice.source, message };
 }
 
+function isNewsSource(value: unknown): value is NewsSource {
+  return value === 'x' || value === 'telegram' || value === 'digg' || value === 'paste';
+}
+
+function normalizeSummarySource(value: unknown): NewsSummarySourceReference | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const source = value as Record<string, unknown>;
+  const itemKey = asString(source.itemKey, 300);
+  const title = asString(source.title, 180);
+  const author = asString(source.author, 180);
+  const publishedAt = asString(source.publishedAt, 64);
+  const url = asHttpsUrl(source.url);
+  if (
+    !itemKey || !isNewsSource(source.source) || !title || !author || !publishedAt || !url ||
+    !Number.isFinite(Date.parse(publishedAt))
+  ) {
+    return undefined;
+  }
+  return {
+    itemKey,
+    source: source.source,
+    title,
+    author,
+    publishedAt: new Date(publishedAt).toISOString(),
+    url,
+  };
+}
+
+function normalizeExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const summary = value as Record<string, unknown>;
+  const pulse = summary.pulse as Record<string, unknown> | undefined;
+  const id = asString(summary.id, 160);
+  const generatedAt = asString(summary.generatedAt, 64);
+  const windowStart = asString(summary.windowStart, 64);
+  const windowEnd = asString(summary.windowEnd, 64);
+  const headline = asString(summary.headline, 120);
+  const overview = asString(summary.overview, 700);
+  const pulseLabel = asString(pulse?.label, 32);
+  const pulseSummary = asString(pulse?.summary, 400);
+  const validPulseLabels = ['risk-on', 'risk-off', 'mixed', 'calm', 'event-driven'] as const;
+  if (
+    !id || !generatedAt || !windowStart || !windowEnd || !headline || !overview ||
+    !pulseLabel || !validPulseLabels.includes(pulseLabel as (typeof validPulseLabels)[number]) ||
+    !pulseSummary || !Number.isFinite(Date.parse(generatedAt)) ||
+    !Number.isFinite(Date.parse(windowStart)) || !Number.isFinite(Date.parse(windowEnd)) ||
+    !Array.isArray(summary.bullets)
+  ) {
+    return undefined;
+  }
+
+  const bullets = summary.bullets.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const bullet = entry as Record<string, unknown>;
+    const bulletHeadline = asString(bullet.headline, 110);
+    const bulletSummary = asString(bullet.summary, 360);
+    const whyItMatters = asString(bullet.whyItMatters, 420);
+    const details = asString(bullet.details, 900);
+    const sources = Array.isArray(bullet.sources)
+      ? bullet.sources.map(normalizeSummarySource).filter((source): source is NewsSummarySourceReference => Boolean(source)).slice(0, 6)
+      : [];
+    if (!bulletHeadline || !bulletSummary || !whyItMatters || !details || sources.length === 0) {
+      return [];
+    }
+    return [{ headline: bulletHeadline, summary: bulletSummary, whyItMatters, details, sources }];
+  }).slice(0, 7);
+  if (bullets.length === 0) return undefined;
+
+  const watchNext = Array.isArray(summary.watchNext)
+    ? summary.watchNext.flatMap((entry) => asString(entry, 240) ?? []).slice(0, 5)
+    : [];
+  const noiseSummary = asString(summary.noiseSummary, 400);
+  if (!noiseSummary) return undefined;
+  const sourceCountsValue = summary.sourceCounts as Record<string, unknown> | undefined;
+  const sourceCounts = Object.fromEntries(
+    (['x', 'telegram', 'digg', 'paste'] as const).map((source) => [
+      source,
+      typeof sourceCountsValue?.[source] === 'number' && Number.isFinite(sourceCountsValue[source])
+        ? Math.max(0, Math.floor(sourceCountsValue[source]))
+        : 0,
+    ]),
+  ) as Record<NewsSource, number>;
+  return {
+    id,
+    generatedAt: new Date(generatedAt).toISOString(),
+    windowStart: new Date(windowStart).toISOString(),
+    windowEnd: new Date(windowEnd).toISOString(),
+    headline,
+    overview,
+    pulse: {
+      label: pulseLabel as NewsExecutiveSummary['pulse']['label'],
+      summary: pulseSummary,
+    },
+    bullets,
+    watchNext,
+    noiseSummary,
+    analyzedItems:
+      typeof summary.analyzedItems === 'number' && Number.isFinite(summary.analyzedItems)
+        ? Math.max(0, Math.floor(summary.analyzedItems))
+        : 0,
+    sourceCounts,
+    model: asString(summary.model, 80) ?? 'gpt-5.6-sol',
+    reasoningEffort: asString(summary.reasoningEffort, 32) ?? 'xhigh',
+  };
+}
+
 function normalizeSnapshot(value: unknown): FeedSnapshot | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const payload = value as Record<string, unknown>;
@@ -166,7 +337,12 @@ function normalizeSnapshot(value: unknown): FeedSnapshot | undefined {
         .filter((notice): notice is NewsNotice => notice !== undefined)
         .slice(0, 20)
     : [];
-  return { items, notices, updatedAt: new Date().toISOString() };
+  return {
+    items,
+    notices,
+    executiveSummary: normalizeExecutiveSummary(payload.executiveSummary),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function itemKey(item: NewsItem): string {
@@ -367,7 +543,12 @@ async function handleFeed(request: Request, env: Env): Promise<Response> {
     .filter((item) => source === 'all' || item.source === source)
     .slice(0, limit);
   const notices = snapshot.notices.filter((notice) => source === 'all' || notice.source === source);
-  return json({ items, notices, updatedAt: snapshot.updatedAt }, 200, true);
+  return json({
+    items,
+    notices,
+    executiveSummary: source === 'all' ? snapshot.executiveSummary : undefined,
+    updatedAt: snapshot.updatedAt,
+  }, 200, true);
 }
 
 async function handleRegistration(request: Request, env: Env): Promise<Response> {
@@ -399,14 +580,16 @@ async function handleRegistration(request: Request, env: Env): Promise<Response>
 }
 
 async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const contentLength = Number(request.headers.get('Content-Length') ?? 0);
-  if (contentLength > 2_000_000) return json({ error: 'Request body is too large' }, 413);
-  const body = await request.text();
+  const body = await readBoundedText(request, MAX_INGEST_BODY_BYTES);
+  if (body === undefined) return json({ error: 'Request body is too large' }, 413);
   if (!(await verifyIngest(request, env, body))) return json({ error: 'Unauthorized' }, 401);
   const snapshot = normalizeSnapshot(JSON.parse(body) as unknown);
   if (!snapshot) return json({ error: 'Invalid snapshot' }, 400);
 
   const previous = await env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json');
+  if (!snapshot.executiveSummary && previous?.executiveSummary) {
+    snapshot.executiveSummary = previous.executiveSummary;
+  }
   await env.NEWS_RELAY_KV.put(FEED_KEY, JSON.stringify(snapshot));
   const seen = new Set(previous?.items.map(itemKey) ?? snapshot.items.map(itemKey));
   const fresh = snapshot.items.filter((item) => !seen.has(itemKey(item)));

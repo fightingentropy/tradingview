@@ -1,8 +1,9 @@
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
+import { NewsExecutiveSummaryView } from '@/components/NewsExecutiveSummary';
 import { NewsItemRow } from '@/components/NewsItemRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
@@ -14,9 +15,9 @@ import { isNewsFeedConfigured, usesLocalNewsFeed } from '@/providers/news/client
 const FILTERS: {
   key: NewsSourceFilter;
   label: string;
-  icon?: 'logo-twitter' | 'paper-plane' | 'newspaper' | 'clipboard-outline';
+  icon?: 'pulse' | 'logo-twitter' | 'paper-plane' | 'newspaper' | 'clipboard-outline';
 }[] = [
-  { key: 'all', label: 'All' },
+  { key: 'all', label: 'Pulse', icon: 'pulse' },
   { key: 'x', label: 'X', icon: 'logo-twitter' },
   { key: 'telegram', label: 'Telegram', icon: 'paper-plane' },
   { key: 'paste', label: 'Paste', icon: 'clipboard-outline' },
@@ -59,6 +60,7 @@ export default function NewsScreen() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    executiveSummary,
   } = useNewsFeed(source);
 
   const renderItem = useCallback(({ item }: { item: NewsItem }) => <NewsItemRow item={item} />, []);
@@ -68,30 +70,33 @@ export default function NewsScreen() {
 
   return (
     <Screen edges={[]}>
-      <View style={styles.filters}>
-        {FILTERS.map((filter) => {
-          const active = source === filter.key;
-          return (
-            <Pressable
-              key={filter.key}
-              onPress={() => setSource(filter.key)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              style={[styles.chip, active && styles.chipActive]}>
-              {filter.icon ? (
-                <Ionicons
-                  name={filter.icon}
-                  size={13}
-                  color={active ? Colors.text : Colors.textMuted}
-                />
-              ) : null}
-              <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
-                {filter.label}
-              </AppText>
-            </Pressable>
-          );
-        })}
-      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filters}>
+          {FILTERS.map((filter) => {
+            const active = source === filter.key;
+            return (
+              <Pressable
+                key={filter.key}
+                onPress={() => setSource(filter.key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                style={[styles.chip, active && styles.chipActive]}>
+                {filter.icon ? (
+                  <Ionicons
+                    name={filter.icon}
+                    size={13}
+                    color={active ? Colors.text : Colors.textMuted}
+                  />
+                ) : null}
+                <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
+                  {filter.label}
+                </AppText>
+              </Pressable>
+            );
+          })}
+      </ScrollView>
 
       {!isNewsFeedConfigured ? (
         <SetupState />
@@ -112,6 +117,25 @@ export default function NewsScreen() {
           </AppText>
           <Pressable onPress={() => refetch()} style={styles.retry}>
             <AppText style={styles.retryText}>Try again</AppText>
+          </Pressable>
+        </View>
+      ) : source === 'all' && executiveSummary ? (
+        <NewsExecutiveSummaryView
+          summary={executiveSummary}
+          refreshing={isRefetching}
+          onRefresh={() => void refetch()}
+        />
+      ) : source === 'all' ? (
+        <View style={styles.stateWrap}>
+          <View style={styles.stateIcon}>
+            <Ionicons name="sparkles" size={28} color={Colors.accent} />
+          </View>
+          <AppText variant="heading" style={styles.stateTitle}>Building the first pulse</AppText>
+          <AppText muted style={styles.stateBody}>
+            The Mac mini is filtering the latest sources into a concise executive summary. Raw feeds remain available above.
+          </AppText>
+          <Pressable onPress={() => refetch()} style={styles.retry}>
+            <AppText style={styles.retryText}>Check again</AppText>
           </Pressable>
         </View>
       ) : items.length === 0 ? (
@@ -153,6 +177,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: 10,
+    minWidth: '100%',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },

@@ -11,7 +11,8 @@ where they trade, tap a symbol for a live candlestick chart.
   *same* Hyperliquid endpoints. Also keyless; the live `xyz` universe drives the catalog directly.
 - **Cboe** — the real CBOE Volatility Index (**VIX**) via Cboe's free public delayed-quotes CDN
   (`cdn.cboe.com`). Keyless; fetched directly (quote + daily/intraday OHLC history).
-- **News feed service** — normalized X, Telegram, Paste Trade, and Digg feed. In development,
+- **News feed service** — an hourly Codex executive pulse plus normalized X, Telegram, Paste Trade,
+  and Digg feeds. In development,
   `npm run news:server` reuses YinYang's local `bird` browser-cookie auth and X list, then
   merges configured Telegram channels plus the public Paste and Digg sources. The installed
   bridge publishes signed snapshots to a protected
@@ -48,6 +49,10 @@ Install the feed as a per-user background service so it starts automatically at 
 ```bash
 npm run news:install
 ```
+
+The service uses the installed Codex CLI once per hour with `gpt-5.6-sol` and `xhigh`
+reasoning to filter duplicates and noise into the News tab's expandable **Pulse** homepage.
+The source-specific tabs stay raw and every pulse point links back to its source.
 
 Deploy the authenticated HTTPS relay with `npm run relay:deploy`. Relay credentials
 stay in macOS Keychain and Cloudflare encrypted secrets. In the app, enable remote

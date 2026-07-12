@@ -40,5 +40,7 @@ export function useNewsFeed(source: NewsSourceFilter) {
     );
   }, [query.data?.pages]);
 
-  return { ...query, items, notices };
+  const executiveSummary = query.data?.pages[0]?.executiveSummary;
+
+  return { ...query, items, notices, executiveSummary };
 }
