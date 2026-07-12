@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTradingIdentity } from '@/data/useHlAccount';
@@ -83,10 +84,10 @@ function ConnectedCard({
   const shownAddress = resolved ?? address;
   return (
     <>
-      <View style={styles.card}>
+      <GlassSurface style={styles.card}>
         <View style={styles.row}>
           <View style={styles.rowLeft}>
-            <View style={[styles.dot, { backgroundColor: demo ? Colors.warning : Colors.up }]} />
+            <View style={[styles.dot, { backgroundColor: demo ? Colors.textMuted : Colors.text }]} />
             <AppText variant="body">{demo ? 'Demo account' : 'Connected'}</AppText>
           </View>
           {resolveFailed ? (
@@ -151,18 +152,22 @@ function ConnectedCard({
             </AppText>
           </>
         ) : null}
-      </View>
+      </GlassSurface>
 
       {/* Connected by address only — let them paste an agent key to enable trading. */}
       {!demo && !hasKey ? <AddKeyCard onSaved={onAddKey} /> : null}
 
-      <Pressable style={styles.card} onPress={onDisconnect}>
-        <View style={styles.row}>
-          <AppText variant="body" color={Colors.down}>
-            {demo ? 'Exit demo' : 'Disconnect'}
-          </AppText>
-        </View>
-      </Pressable>
+      <GlassSurface style={styles.card} interactive>
+        <Pressable
+          style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]}
+          onPress={onDisconnect}>
+          <View style={styles.rowLeft}>
+            <Ionicons name="log-out-outline" size={18} color={Colors.text} />
+            <AppText variant="body">{demo ? 'Exit demo' : 'Disconnect'}</AppText>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
+        </Pressable>
+      </GlassSurface>
     </>
   );
 }
@@ -183,14 +188,14 @@ function AddKeyCard({ onSaved }: { onSaved: () => void }) {
   };
 
   return (
-    <View style={styles.card}>
+    <GlassSurface style={styles.card}>
       <View style={styles.fieldRow}>
         <SecretInput value={key} onChangeText={setKey} placeholder="API wallet key (0x…)" />
         <Pressable
           style={[styles.inlineBtn, !key && styles.inlineBtnDisabled]}
           onPress={save}
           disabled={!key}>
-          <AppText variant="label" color={key ? Colors.accent : Colors.textFaint}>
+          <AppText variant="label" color={key ? Colors.text : Colors.textFaint}>
             Save
           </AppText>
         </Pressable>
@@ -200,7 +205,7 @@ function AddKeyCard({ onSaved }: { onSaved: () => void }) {
           {error}
         </AppText>
       ) : null}
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -248,7 +253,7 @@ function ConnectForm({
 
   return (
     <>
-      <View style={styles.card}>
+      <GlassSurface style={styles.card}>
         <View style={styles.segment}>
           {(['mainnet', 'testnet'] as HlNetwork[]).map((n) => (
             <Pressable
@@ -284,7 +289,7 @@ function ConnectForm({
           </AppText>
           <SecretInput value={key} onChangeText={setKey} placeholder="0x… (enables trading)" />
         </View>
-      </View>
+      </GlassSurface>
 
       <AppText variant="caption" muted style={styles.note}>
         {net === 'mainnet' ? 'Mainnet uses real funds. ' : 'Testnet uses test funds. '}
@@ -345,10 +350,9 @@ function SecretInput({
 
 function NetworkBadge({ network }: { network: HlNetwork }) {
   const main = network === 'mainnet';
-  const color = main ? Colors.warning : Colors.accent;
   return (
-    <View style={[styles.badge, { backgroundColor: color + '22' }]}>
-      <AppText variant="caption" color={color}>
+    <View style={styles.badge}>
+      <AppText variant="caption" color={Colors.text}>
         {main ? 'Mainnet' : 'Testnet'}
       </AppText>
     </View>
@@ -356,18 +360,31 @@ function NetworkBadge({ network }: { network: HlNetwork }) {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: Colors.surface, borderRadius: Radius.md, overflow: 'hidden' },
+  card: { borderRadius: 18 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 58,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingVertical: 13,
   },
+  actionRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+  },
+  rowPressed: { backgroundColor: 'rgba(255,255,255,0.065)' },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   dot: { width: 8, height: 8, borderRadius: 4 },
   addr: { fontFamily: Fonts.mono },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.border, marginLeft: Spacing.lg },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: Spacing.lg,
+    backgroundColor: 'rgba(255,255,255,0.075)',
+  },
 
   field: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: 6 },
   input: {
@@ -389,10 +406,12 @@ const styles = StyleSheet.create({
   inlineBtn: {
     paddingHorizontal: Spacing.md,
     paddingVertical: 6,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.accentSoft,
+    borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.09)',
   },
-  inlineBtnDisabled: { backgroundColor: Colors.surfaceAlt },
+  inlineBtnDisabled: { backgroundColor: 'rgba(255,255,255,0.035)' },
   fieldError: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md },
   identityError: {
     paddingHorizontal: Spacing.lg,
@@ -407,20 +426,29 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: Radius.sm,
   },
-  segmentItemActive: { backgroundColor: Colors.surfaceAlt },
+  segmentItemActive: { backgroundColor: 'rgba(255,255,255,0.10)' },
 
   note: { marginTop: Spacing.sm, marginHorizontal: Spacing.xs, lineHeight: 16 },
 
-  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.sm },
+  badge: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
   primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
-    backgroundColor: Colors.accent,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.20)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
+    borderRadius: Radius.pill,
     marginTop: Spacing.sm,
   },
-  primaryBtnDisabled: { backgroundColor: Colors.surfaceAlt },
+  primaryBtnDisabled: { backgroundColor: 'rgba(255,255,255,0.035)' },
 });
