@@ -73,6 +73,7 @@ export default function NewsScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.filterScroller}
         contentContainerStyle={styles.filters}>
           {FILTERS.map((filter) => {
             const active = source === filter.key;
@@ -172,14 +173,17 @@ export default function NewsScreen() {
 }
 
 const styles = StyleSheet.create({
+  filterScroller: {
+    flexGrow: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
   filters: {
     flexDirection: 'row',
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: 10,
     minWidth: '100%',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
   },
   chip: {
     minHeight: 32,
