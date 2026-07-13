@@ -12,7 +12,6 @@ import {
   type TpSlExistingOrder,
   type TpSlLegInput,
 } from '@/components/TpSlSheet';
-import { TradeTicket } from '@/components/TradeTicket';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
@@ -164,12 +163,6 @@ function moneyExact(v: number): string {
 const usdExact = (v: number) => '$' + moneyExact(v);
 const signMoneyExact = (v: number) => (v >= 0 ? '+' : '-') + '$' + moneyExact(v);
 
-/** A pending close ticket. Live size, side, and mark are re-resolved by coin. */
-interface CloseTicket {
-  coin: string;
-  type: 'limit';
-}
-
 interface PositionMarketActionRequest {
   readonly action: 'close' | 'reverse';
   readonly position: HlPosition;
@@ -238,7 +231,6 @@ export default function AccountScreen() {
   const tradable = hasKey && !demo && !!executionIdentity;
   const [tab, setTab] = useState<'positions' | 'orders' | 'balances' | 'history'>('positions');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const [closeTicket, setCloseTicket] = useState<CloseTicket | null>(null);
   // Long-lived sheets store identifiers only. Account state refreshes every 5s;
   // retaining a position snapshot here could close or protect a stale size/mark.
   const [marginTargetCoin, setMarginTargetCoin] = useState<string | null>(null);
@@ -256,9 +248,6 @@ export default function AccountScreen() {
     [markets],
   );
 
-  const closePosition = closeTicket
-    ? account?.positions.find((position) => position.coin === closeTicket.coin) ?? null
-    : null;
   const marginTarget = marginTargetCoin
     ? account?.positions.find((position) => position.coin === marginTargetCoin) ?? null
     : null;
@@ -755,9 +744,23 @@ export default function AccountScreen() {
     },
   });
 
+  const showTradingUnavailable = useCallback(() => {
+    Alert.alert(
+      'Position is read-only',
+      demo
+        ? 'This public demo portfolio can be inspected, including its chart and TP/SL protection, but it cannot be changed.'
+        : hasKey
+          ? 'The stored API wallet is not verified for this account. No action can be sent until the signer identity is valid.'
+          : 'Viewing this portfolio does not require a key. Closing, reversing, or changing TP/SL requires an authorized API-wallet signer for this account.',
+    );
+  }, [demo, hasKey]);
+
   const confirmMarketClose = useCallback(
     (p: HlPosition) => {
-      if (!tradable || !executionIdentity) return;
+      if (!tradable || !executionIdentity) {
+        showTradingUnavailable();
+        return;
+      }
       const identity = executionIdentity;
       const symbol = instrumentForCoin(p.coin)?.symbol ?? cleanCoin(p.coin);
       Alert.alert(
@@ -777,12 +780,15 @@ export default function AccountScreen() {
         ],
       );
     },
-    [executionIdentity, instrumentForCoin, positionActionMutation, tradable],
+    [executionIdentity, instrumentForCoin, positionActionMutation, showTradingUnavailable, tradable],
   );
 
   const confirmReverse = useCallback(
     (p: HlPosition) => {
-      if (!tradable || !executionIdentity) return;
+      if (!tradable || !executionIdentity) {
+        showTradingUnavailable();
+        return;
+      }
       const identity = executionIdentity;
       const symbol = instrumentForCoin(p.coin)?.symbol ?? cleanCoin(p.coin);
       const targetSide = p.side === 'long' ? 'short' : 'long';
@@ -805,7 +811,7 @@ export default function AccountScreen() {
         ],
       );
     },
-    [executionIdentity, instrumentForCoin, positionActionMutation, tradable],
+    [executionIdentity, instrumentForCoin, positionActionMutation, showTradingUnavailable, tradable],
   );
 
   const confirmCancel = useCallback(
@@ -895,14 +901,6 @@ export default function AccountScreen() {
       );
     },
     [executionIdentity, instrumentForCoin, network, tpSlMutation, tradable],
-  );
-
-  const openCloseTicket = useCallback(
-    (p: HlPosition, type: CloseTicket['type']) => {
-      if (!tradable) return;
-      setCloseTicket({ coin: p.coin, type });
-    },
-    [tradable],
   );
 
   const openChart = useCallback(
@@ -1121,7 +1119,6 @@ export default function AccountScreen() {
                   p={p}
                   instrument={instrumentForCoin(p.coin)}
                   expanded={expanded.has(p.coin)}
-                  tradable={tradable}
                   busy={
                     positionActionMutation.isPending &&
                     positionActionMutation.variables?.position.coin === p.coin
@@ -1129,7 +1126,6 @@ export default function AccountScreen() {
                   hidden={privacyMode}
                   onToggle={() => toggleExpand(p.coin)}
                   onChart={() => openChart(p.coin)}
-                  onLimitClose={() => openCloseTicket(p, 'limit')}
                   onMarketClose={() => confirmMarketClose(p)}
                   onReverse={() => confirmReverse(p)}
                   onAdjustMargin={() => setMarginTargetCoin(p.coin)}
@@ -1209,38 +1205,6 @@ export default function AccountScreen() {
           </AppText>
         ) : null}
       </ScrollView>
-
-      {/* Reviewed close sheet (reduce-only, live size prefilled). */}
-      <TradeTicket
-        key={
-          closePosition && closeTicket
-            ? `${closePosition.coin}-${closePosition.side}-${closePosition.size}-${closeTicket.type}-close`
-            : 'closed'
-        }
-        visible={closeTicket !== null && closePosition !== null}
-        onClose={() => setCloseTicket(null)}
-        coin={closePosition?.coin ?? ''}
-        symbol={
-          closePosition
-            ? instrumentForCoin(closePosition.coin)?.symbol ?? cleanCoin(closePosition.coin)
-            : undefined
-        }
-        markPx={closePosition?.markPx ?? 0}
-        priceDecimals={
-          closePosition
-            ? priceDecimalsFor(
-                instrumentForCoin(closePosition.coin)?.priceDecimals ?? 6,
-                closePosition.markPx,
-              )
-            : 2
-        }
-        initialSide={
-          closePosition ? (closePosition.side === 'long' ? 'sell' : 'buy') : undefined
-        }
-        initialType={closeTicket?.type ?? 'market'}
-        initialSizeCoin={closePosition?.size}
-        closing
-      />
 
       {/* Set take-profit / stop-loss on an open position (reduce-only market triggers).
           Keyed per coin so each open mounts fresh — no price carries across positions. */}
@@ -1515,7 +1479,6 @@ const PositionCard = memo(PositionCardImpl, (prev, next) =>
   prev.p === next.p &&
   prev.instrument?.id === next.instrument?.id &&
   prev.expanded === next.expanded &&
-  prev.tradable === next.tradable &&
   prev.busy === next.busy &&
   prev.hidden === next.hidden,
 );
@@ -1524,12 +1487,10 @@ function PositionCardImpl({
   p,
   instrument,
   expanded,
-  tradable,
   busy,
   hidden,
   onToggle,
   onChart,
-  onLimitClose,
   onMarketClose,
   onReverse,
   onAdjustMargin,
@@ -1538,12 +1499,10 @@ function PositionCardImpl({
   p: HlPosition;
   instrument: Instrument | undefined;
   expanded: boolean;
-  tradable: boolean;
   busy: boolean;
   hidden: boolean;
   onToggle: () => void;
   onChart: () => void;
-  onLimitClose: () => void;
   onMarketClose: () => void;
   onReverse: () => void;
   onAdjustMargin: () => void;
@@ -1617,21 +1576,21 @@ function PositionCardImpl({
           icon="shield-half-outline"
           label="TP / SL"
           onPress={onSetTpSl}
-          disabled={!tradable || busy}
+          disabled={busy}
           tone={Colors.accent}
         />
         <PositionQuickAction
           icon="swap-horizontal-outline"
           label="Reverse"
           onPress={onReverse}
-          disabled={!tradable || busy}
+          disabled={busy}
           tone={Colors.warning}
         />
         <PositionQuickAction
           icon="remove-circle-outline"
           label="Close"
           onPress={onMarketClose}
-          disabled={!tradable || busy}
+          disabled={busy}
           tone={Colors.down}
         />
       </View>
@@ -1661,29 +1620,6 @@ function PositionCardImpl({
               color={p.funding > 0 ? Colors.up : p.funding < 0 ? Colors.down : undefined}
             />
           </View>
-
-          <View style={styles.actions}>
-            <ActionBtn
-              label="Market Close"
-              onPress={onMarketClose}
-              disabled={!tradable || busy}
-              tone={Colors.down}
-            />
-            <ActionBtn label="Reverse" onPress={onReverse} disabled={!tradable || busy} />
-          </View>
-
-          {!tradable ? (
-            <AppText variant="caption" color={Colors.warning} style={styles.actionHint}>
-              Add an API wallet key in Settings to close or reverse positions.
-            </AppText>
-          ) : null}
-
-          <Pressable style={styles.chartLink} onPress={onChart} hitSlop={6}>
-            <AppText variant="caption" color={Colors.accent}>
-              View chart
-            </AppText>
-            <Ionicons name="chevron-forward" size={13} color={Colors.accent} />
-          </Pressable>
         </View>
       ) : null}
     </View>
@@ -1762,29 +1698,6 @@ function Cell({
         </AppText>
       ) : null}
     </View>
-  );
-}
-
-function ActionBtn({
-  label,
-  onPress,
-  disabled,
-  tone = Colors.accent,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  tone?: string;
-}) {
-  return (
-    <Pressable
-      style={({ pressed }) => [styles.actionBtn, pressed && !disabled && styles.actionBtnPressed]}
-      onPress={onPress}
-      disabled={disabled}>
-      <AppText variant="label" color={disabled ? Colors.textFaint : tone}>
-        {label}
-      </AppText>
-    </Pressable>
   );
 }
 
@@ -2274,14 +2187,6 @@ const styles = StyleSheet.create({
   },
   cellValue: { marginTop: 1 },
   cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
-  actionBtn: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceAlt,
-  },
   actionBtnPressed: { backgroundColor: Colors.surfacePress },
   cancelBtn: {
     paddingHorizontal: Spacing.md,
@@ -2290,7 +2195,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceAlt,
     marginLeft: Spacing.sm,
   },
-  actionHint: { marginTop: -Spacing.xs },
   chartLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: Spacing.xs },
 
   portfolioWrap: { paddingHorizontal: Spacing.lg },
