@@ -931,7 +931,7 @@ export default function SymbolScreen() {
         </View>
       </View>
 
-      {isHlTradable && !position ? (
+      {isHlTradable ? (
         <FlatTradeBar
           onSell={() => setTicketMode('sell')}
           onBuy={() => setTicketMode('buy')}

@@ -31,12 +31,13 @@ import {
 } from '@/lib/accountRisk';
 import {
   cancelOrder,
+  marketClose,
   placePositionTpSl,
   reversePosition,
   updateIsolatedMargin,
   type OrderResult,
 } from '@/lib/hyperliquid/exchange';
-import { fetchHlAccount, fetchOpenOrders, fetchOrderBook } from '@/lib/hyperliquid/info';
+import { fetchHlAccount, fetchOpenOrders } from '@/lib/hyperliquid/info';
 import type { HlFill, HlOpenOrder, HlPosition, HlSpotBalance } from '@/lib/hyperliquid/info';
 import {
   assertTradingIdentityCurrent,
@@ -62,9 +63,7 @@ function qty(size: number): string {
 
 const ISOLATED_MARGIN_BUFFER_USD = 0.01;
 const LIQUIDATION_REVIEW_DRIFT_PCT = 0.1;
-const REVERSE_SLIPPAGE = 0.05;
-/** A 10bp midpoint/adverse-touch move requires a fresh reverse confirmation. */
-const REVERSE_RECONFIRM_DRIFT_PCT = 0.1;
+const MARKET_ACTION_SLIPPAGE = 0.05;
 
 /**
  * Hyperliquid retains at least the larger of initial margin and 10% of current
@@ -121,11 +120,9 @@ class ProtectionPreflightError extends Error {}
 
 class AccountPreflightError extends Error {}
 
-class ReverseReconfirmationRequiredError extends AccountPreflightError {}
-
 class AccountMutationStatusUnknownError extends Error {
   constructor(
-    readonly action: 'reverse' | 'margin' | 'cancel',
+    readonly action: 'close' | 'reverse' | 'margin' | 'cancel',
     cause: unknown,
   ) {
     super(cause instanceof Error ? cause.message : 'Unknown exchange error');
@@ -170,151 +167,54 @@ const signMoneyExact = (v: number) => (v >= 0 ? '+' : '-') + '$' + moneyExact(v)
 /** A pending close ticket. Live size, side, and mark are re-resolved by coin. */
 interface CloseTicket {
   coin: string;
-  type: 'market' | 'limit';
+  type: 'limit';
 }
 
-/** Immutable values the user explicitly reviews before a reverse can be signed. */
-interface ReverseDraft {
-  readonly coin: string;
-  readonly symbol: string;
-  readonly priceDecimals: number;
-  readonly expectedSide: HlPosition['side'];
-  readonly expectedSize: number;
-  readonly expectedLeverage: number;
-  readonly expectedLeverageType: HlPosition['leverageType'];
-  readonly targetSide: HlPosition['side'];
-  readonly orderIsBuy: boolean;
-  readonly requestedOrderSize: number;
-  readonly reviewedBid: number;
-  readonly reviewedAsk: number;
-  readonly reviewedMidPx: number;
-  readonly reviewedIocCapPx: number;
-  readonly reviewedIocCapWire: string;
-  readonly assetIndex: number;
-  readonly szDecimals: number;
+interface PositionMarketActionRequest {
+  readonly action: 'close' | 'reverse';
+  readonly position: HlPosition;
   readonly identity: SignedTradingIdentityBinding;
 }
 
-interface ReverseExecutionResult {
-  readonly draft: ReverseDraft;
+interface PositionMarketActionResult extends PositionMarketActionRequest {
   readonly acknowledgement: OrderResult;
-  /** `null` means flat; `undefined` means the post-trade refresh failed. */
-  readonly actualPosition: HlPosition | null | undefined;
-  readonly refreshError?: string;
 }
 
-function lotSize(size: number, szDecimals: number): number {
-  return Number(sizeToWire(size, szDecimals));
-}
-
-function lotSizeLabel(size: number, szDecimals: number): string {
-  return sizeToWire(size, szDecimals);
-}
-
-/** Re-run every reviewed reverse invariant after identity proof, at the signing boundary. */
-async function validateReverseDraftImmediately(
-  draft: ReverseDraft,
+/** Re-check the exact position the user confirmed after identity proof and immediately before signing. */
+async function validatePositionActionImmediately(
+  request: PositionMarketActionRequest,
   currentMeta: { assetIndex: number; szDecimals: number } | undefined,
 ): Promise<void> {
+  const { position, identity } = request;
   if (
     !currentMeta ||
-    currentMeta.assetIndex !== draft.assetIndex ||
-    currentMeta.szDecimals !== draft.szDecimals
+    !Number.isInteger(currentMeta.assetIndex) ||
+    !Number.isInteger(currentMeta.szDecimals)
   ) {
-    throw new ReverseReconfirmationRequiredError(
-      'Market metadata changed after review. Prepare the reverse again; no order was sent.',
+    throw new AccountPreflightError(
+      'Market metadata is unavailable. Refresh the position and try again; no order was sent.',
     );
   }
 
-  let book: Awaited<ReturnType<typeof fetchOrderBook>>;
+  let latestAccount;
   try {
-    book = await fetchOrderBook(draft.coin, draft.identity.network);
+    latestAccount = await fetchHlAccount(identity.accountAddress, identity.network);
   } catch (error) {
     throw new AccountPreflightError(
-      `Could not refresh the order book; no reverse order was sent: ${
+      `Could not recheck the live position; no ${request.action} order was sent: ${
         error instanceof Error ? error.message : 'network error'
       }`,
     );
   }
-  const bestBid = book.bids[0]?.price;
-  const bestAsk = book.asks[0]?.price;
-  if (
-    !(bestBid && bestAsk) ||
-    !Number.isFinite(bestBid) ||
-    !Number.isFinite(bestAsk) ||
-    bestAsk < bestBid
-  ) {
-    throw new AccountPreflightError(
-      'A fresh two-sided order book is unavailable. No reverse order was sent.',
-    );
-  }
-
-  const liveMid = (bestBid + bestAsk) / 2;
-  const reviewedTouch = draft.orderIsBuy ? draft.reviewedAsk : draft.reviewedBid;
-  const liveTouch = draft.orderIsBuy ? bestAsk : bestBid;
-  const midpointDriftPct =
-    (Math.abs(liveMid - draft.reviewedMidPx) / draft.reviewedMidPx) * 100;
-  const adverseTouchDriftPct = draft.orderIsBuy
-    ? (Math.max(0, liveTouch - reviewedTouch) / reviewedTouch) * 100
-    : (Math.max(0, reviewedTouch - liveTouch) / reviewedTouch) * 100;
-  const reviewedCapStillMatches =
-    priceToWire(
-      draft.reviewedMidPx *
-        (draft.orderIsBuy ? 1 + REVERSE_SLIPPAGE : 1 - REVERSE_SLIPPAGE),
-      draft.szDecimals,
-    ) === draft.reviewedIocCapWire;
-  const liveTouchOutsideReviewedCap = draft.orderIsBuy
-    ? liveTouch > draft.reviewedIocCapPx
-    : liveTouch < draft.reviewedIocCapPx;
-  if (
-    !reviewedCapStillMatches ||
-    liveTouchOutsideReviewedCap ||
-    midpointDriftPct >= REVERSE_RECONFIRM_DRIFT_PCT ||
-    adverseTouchDriftPct >= REVERSE_RECONFIRM_DRIFT_PCT
-  ) {
-    throw new ReverseReconfirmationRequiredError(
-      `The executable market moved after review (midpoint ${midpointDriftPct.toFixed(
-        2,
-      )}%, adverse touch ${adverseTouchDriftPct.toFixed(
-        2,
-      )}%). Prepare the reverse again to review a new IOC cap; no order was sent.`,
-    );
-  }
-
-  // Account/position is authoritative and deliberately fetched last. Bound how
-  // long the already-validated book may age while that final read is in flight.
-  const bookValidatedAt = Date.now();
-  let liveAccount;
-  try {
-    liveAccount = await fetchHlAccount(draft.identity.accountAddress, draft.identity.network);
-  } catch (error) {
-    throw new AccountPreflightError(
-      `Could not recheck the live position; no reverse order was sent: ${
-        error instanceof Error ? error.message : 'network error'
-      }`,
-    );
-  }
-  if (Date.now() - bookValidatedAt > 1_500) {
-    throw new ReverseReconfirmationRequiredError(
-      'The final account check took too long and the reviewed book may be stale. Prepare the reverse again; no order was sent.',
-    );
-  }
-  const live = liveAccount.positions.find((position) => position.coin === draft.coin);
+  const live = latestAccount.positions.find((candidate) => candidate.coin === position.coin);
   if (
     !live ||
-    live.side !== draft.expectedSide ||
-    lotSize(live.size, draft.szDecimals) !== draft.expectedSize ||
-    live.leverage !== draft.expectedLeverage ||
-    live.leverageType !== draft.expectedLeverageType
+    live.side !== position.side ||
+    sizeToWire(live.size, currentMeta.szDecimals) !==
+      sizeToWire(position.size, currentMeta.szDecimals)
   ) {
-    throw new ReverseReconfirmationRequiredError(
-      'The live position side, size, leverage, or margin mode changed after review. Prepare the reverse again; no order was sent.',
-    );
-  }
-
-  if (lotSize(live.size * 2, draft.szDecimals) !== draft.requestedOrderSize) {
-    throw new ReverseReconfirmationRequiredError(
-      'The exact 2× order size changed after review. Prepare the reverse again; no order was sent.',
+    throw new AccountPreflightError(
+      `The live position changed after review. Refresh it and confirm ${request.action} again; no order was sent.`,
     );
   }
 }
@@ -339,7 +239,6 @@ export default function AccountScreen() {
   const [tab, setTab] = useState<'positions' | 'orders' | 'balances' | 'history'>('positions');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [closeTicket, setCloseTicket] = useState<CloseTicket | null>(null);
-  const [reversePreparingCoin, setReversePreparingCoin] = useState<string | null>(null);
   // Long-lived sheets store identifiers only. Account state refreshes every 5s;
   // retaining a position snapshot here could close or protect a stale size/mark.
   const [marginTargetCoin, setMarginTargetCoin] = useState<string | null>(null);
@@ -367,9 +266,11 @@ export default function AccountScreen() {
     ? account?.positions.find((position) => position.coin === tpSlTargetCoin) ?? null
     : null;
 
-  const reverseMutation = useMutation({
-    mutationFn: async (draft: ReverseDraft): Promise<ReverseExecutionResult> => {
-      const identity = draft.identity;
+  const positionActionMutation = useMutation({
+    mutationFn: async (
+      request: PositionMarketActionRequest,
+    ): Promise<PositionMarketActionResult> => {
+      const { action, identity, position } = request;
       const assertIdentityCurrent = () =>
         assertTradingIdentityCurrent(identity, useHlConnection.getState());
       try {
@@ -378,216 +279,88 @@ export default function AccountScreen() {
         throw new AccountPreflightError(error instanceof Error ? error.message : 'Trading identity changed.');
       }
 
-      const m = meta?.[draft.coin];
-      if (
-        !m ||
-        m.assetIndex !== draft.assetIndex ||
-        m.szDecimals !== draft.szDecimals
-      ) {
-        throw new ReverseReconfirmationRequiredError(
-          'Market metadata changed after review. Prepare the reverse again; no order was sent.',
-        );
-      }
-
-      let liveAccount;
-      try {
-        liveAccount = await fetchHlAccount(identity.accountAddress, identity.network);
-      } catch (error) {
+      const asset = meta?.[position.coin];
+      if (!asset) {
         throw new AccountPreflightError(
-          `Could not recheck the live position; no reverse order was sent: ${
-            error instanceof Error ? error.message : 'network error'
-          }`,
+          `No market metadata for ${position.coin}. No order was sent.`,
         );
       }
-      const live = liveAccount.positions.find((position) => position.coin === draft.coin);
-      if (
-        !live ||
-        live.side !== draft.expectedSide ||
-        lotSize(live.size, draft.szDecimals) !== draft.expectedSize ||
-        live.leverage !== draft.expectedLeverage ||
-        live.leverageType !== draft.expectedLeverageType
-      ) {
-        throw new ReverseReconfirmationRequiredError(
-          'The live position side, size, leverage, or margin mode changed after review. Prepare the reverse again; no order was sent.',
-        );
-      }
-
-      let book: Awaited<ReturnType<typeof fetchOrderBook>>;
-      try {
-        book = await fetchOrderBook(draft.coin, identity.network);
-      } catch (error) {
+      if (!(position.markPx > 0) || !Number.isFinite(position.markPx)) {
         throw new AccountPreflightError(
-          `Could not refresh the order book; no reverse order was sent: ${
-            error instanceof Error ? error.message : 'network error'
-          }`,
-        );
-      }
-      const bestBid = book.bids[0]?.price;
-      const bestAsk = book.asks[0]?.price;
-      if (
-        !(bestBid && bestAsk) ||
-        !Number.isFinite(bestBid) ||
-        !Number.isFinite(bestAsk) ||
-        bestAsk < bestBid
-      ) {
-        throw new AccountPreflightError('A fresh two-sided order book is unavailable. No reverse order was sent.');
-      }
-
-      const liveMid = (bestBid + bestAsk) / 2;
-      const reviewedTouch = draft.orderIsBuy ? draft.reviewedAsk : draft.reviewedBid;
-      const liveTouch = draft.orderIsBuy ? bestAsk : bestBid;
-      const midpointDriftPct =
-        (Math.abs(liveMid - draft.reviewedMidPx) / draft.reviewedMidPx) * 100;
-      const adverseTouchDriftPct = draft.orderIsBuy
-        ? (Math.max(0, liveTouch - reviewedTouch) / reviewedTouch) * 100
-        : (Math.max(0, reviewedTouch - liveTouch) / reviewedTouch) * 100;
-      const reviewedCapStillMatches =
-        priceToWire(
-          draft.reviewedMidPx *
-            (draft.orderIsBuy ? 1 + REVERSE_SLIPPAGE : 1 - REVERSE_SLIPPAGE),
-          draft.szDecimals,
-        ) === draft.reviewedIocCapWire;
-      const liveTouchOutsideReviewedCap = draft.orderIsBuy
-        ? liveTouch > draft.reviewedIocCapPx
-        : liveTouch < draft.reviewedIocCapPx;
-      if (
-        !reviewedCapStillMatches ||
-        liveTouchOutsideReviewedCap ||
-        midpointDriftPct >= REVERSE_RECONFIRM_DRIFT_PCT ||
-        adverseTouchDriftPct >= REVERSE_RECONFIRM_DRIFT_PCT
-      ) {
-        throw new ReverseReconfirmationRequiredError(
-          `The executable market moved after review (midpoint ${midpointDriftPct.toFixed(
-            2,
-          )}%, adverse touch ${adverseTouchDriftPct.toFixed(
-            2,
-          )}%). Prepare the reverse again to review a new IOC cap; no order was sent.`,
-        );
-      }
-
-      const liveRequestedSize = lotSize(live.size * 2, draft.szDecimals);
-      if (liveRequestedSize !== draft.requestedOrderSize) {
-        throw new ReverseReconfirmationRequiredError(
-          'The exact 2× order size changed after review. Prepare the reverse again; no order was sent.',
+          `No valid mark price for ${position.coin}. Refresh the position and try again; no order was sent.`,
         );
       }
 
       let postAttempted = false;
       let acknowledgement: OrderResult;
       try {
-        acknowledgement = await reversePosition({
+        const submit = action === 'close' ? marketClose : reversePosition;
+        acknowledgement = await submit({
           network: identity.network,
           identity,
           validateImmediatelyBeforeSigning: () =>
-            validateReverseDraftImmediately(draft, meta?.[draft.coin]),
+            validatePositionActionImmediately(request, meta?.[position.coin]),
           assertIdentityCurrent,
-          assetIndex: draft.assetIndex,
-          szDecimals: draft.szDecimals,
-          positionIsLong: draft.expectedSide === 'long',
-          size: draft.expectedSize,
-          // The midpoint is the immutable value shown in the confirmation. The
-          // exchange derives the exact reviewed 5% IOC bound from this same value.
-          markPx: draft.reviewedMidPx,
-          slippage: REVERSE_SLIPPAGE,
+          assetIndex: asset.assetIndex,
+          szDecimals: asset.szDecimals,
+          positionIsLong: position.side === 'long',
+          size: position.size,
+          markPx: position.markPx,
+          slippage: MARKET_ACTION_SLIPPAGE,
           onPostAttempt: () => {
             postAttempted = true;
           },
         });
       } catch (error) {
         if (!postAttempted) {
-          if (error instanceof ReverseReconfirmationRequiredError) throw error;
           throw new AccountPreflightError(
             error instanceof Error ? error.message : 'Trading identity could not be verified. No order was sent.',
           );
         }
         // Once the exchange POST begins, a timeout/lost response cannot prove the
         // order was rejected. Treat every such error as ambiguous to prevent retries.
-        throw new AccountMutationStatusUnknownError('reverse', error);
+        throw new AccountMutationStatusUnknownError(action, error);
       }
-
-      let actualPosition: HlPosition | null | undefined;
-      let refreshError: string | undefined;
-      try {
-        const after = await fetchHlAccount(identity.accountAddress, identity.network);
-        actualPosition = after.positions.find((position) => position.coin === draft.coin) ?? null;
-      } catch (error) {
-        actualPosition = undefined;
-        refreshError = error instanceof Error ? error.message : 'network error';
-      }
-      return { draft, acknowledgement, actualPosition, refreshError };
+      return { ...request, acknowledgement };
     },
-    onSuccess: ({ draft, acknowledgement, actualPosition, refreshError }) => {
+    onSuccess: ({ action, position, acknowledgement }) => {
       qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
       qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
       qc.invalidateQueries({ queryKey: queryKeys.hlFillsPrefix() });
       qc.invalidateQueries({ queryKey: ['hl', 'activeAsset'] });
 
-      const requestedLabel = lotSizeLabel(draft.requestedOrderSize, draft.szDecimals);
-      const filledSize =
-        acknowledgement.status === 'filled' &&
-        acknowledgement.totalSz != null &&
-        Number.isFinite(acknowledgement.totalSz)
-          ? lotSize(acknowledgement.totalSz, draft.szDecimals)
-          : null;
-      const fullFillAcknowledged =
-        acknowledgement.status === 'filled' && filledSize === draft.requestedOrderSize;
-      const actualMatchesTarget =
-        actualPosition != null &&
-        actualPosition.side === draft.targetSide &&
-        lotSize(actualPosition.size, draft.szDecimals) === draft.expectedSize;
-      const completed = fullFillAcknowledged && actualMatchesTarget;
-      const partiallyFilled =
-        acknowledgement.status === 'filled' &&
-        filledSize != null &&
-        filledSize > 0 &&
-        filledSize < draft.requestedOrderSize;
-
-      const acknowledgementLine =
-        acknowledgement.status === 'filled'
-          ? `Exchange acknowledgement: filled ${
-              filledSize == null ? 'unknown' : lotSizeLabel(filledSize, draft.szDecimals)
-            } of ${requestedLabel} ${draft.symbol}.`
+      const symbol = instrumentForCoin(position.coin)?.symbol ?? cleanCoin(position.coin);
+      const filled = acknowledgement.status === 'filled';
+      const title = filled
+        ? action === 'close'
+          ? 'Position closed'
+          : 'Reverse filled'
+        : action === 'close'
+          ? 'Close not completed'
+          : 'Reverse not completed';
+      const requestedSize = action === 'reverse' ? position.size * 2 : position.size;
+      const fillLine =
+        filled && acknowledgement.totalSz != null
+          ? `Filled ${qty(acknowledgement.totalSz)} of ${qty(requestedSize)} ${symbol}.`
           : `Exchange acknowledgement: ${acknowledgement.status}.`;
-      const actualLine =
-        actualPosition === undefined
-          ? `Actual position: unavailable — refresh failed${refreshError ? ` (${refreshError})` : ''}.`
-          : actualPosition === null
-            ? 'Actual position: Flat.'
-            : `Actual position: ${actualPosition.side === 'long' ? 'Long' : 'Short'} ${lotSizeLabel(
-                actualPosition.size,
-                draft.szDecimals,
-              )} ${draft.symbol}.`;
-      const title = completed
-        ? 'Reverse completed'
-        : partiallyFilled
-          ? 'Reverse partially filled'
-          : fullFillAcknowledged
-            ? 'Reverse fill not verified'
-            : 'Reverse not completed';
-      const outcome = completed
-        ? `The reviewed 2× order filled and the live position matches the expected ${draft.targetSide} ${lotSizeLabel(
-            draft.expectedSize,
-            draft.szDecimals,
-          )} ${draft.symbol}.`
-        : 'This is not a verified completed reverse. Review the live position and fills before taking another action; do not submit another reverse until verified.';
-      Alert.alert(title, `${acknowledgementLine}\n${actualLine}\n\n${outcome}`);
+      const followUp = filled
+        ? 'The account is refreshing now. Verify the live position before taking another action.'
+        : `The ${action} was not confirmed as filled. Review the live position and fills before retrying.`;
+      Alert.alert(title, `${fillLine}\n\n${followUp}`);
     },
-    onError: (e: unknown) => {
+    onError: (e: unknown, request) => {
       qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
       qc.invalidateQueries({ queryKey: queryKeys.hlOpenOrdersPrefix() });
       qc.invalidateQueries({ queryKey: queryKeys.hlFillsPrefix() });
       qc.invalidateQueries({ queryKey: ['hl', 'activeAsset'] });
-      if (e instanceof ReverseReconfirmationRequiredError) {
-        Alert.alert('Reverse needs a new review', e.message);
-        return;
-      }
+      const label = request.action === 'close' ? 'Close' : 'Reverse';
       if (e instanceof AccountPreflightError) {
-        Alert.alert('Reverse not sent', e.message);
+        Alert.alert(`${label} not sent`, e.message);
         return;
       }
       Alert.alert(
-        'Reverse status unknown',
-        `${e instanceof Error ? e.message : 'The exchange response was not confirmed.'}\n\nReview the live position, Open Orders, and fills before taking another action. Do not retry the reverse until verified.`,
+        `${label} status unknown`,
+        `${e instanceof Error ? e.message : 'The exchange response was not confirmed.'}\n\nReview the live position and fills before retrying.`,
       );
     },
   });
@@ -856,32 +629,9 @@ export default function AccountScreen() {
       ) {
         throw new ProtectionPreflightError('TP and SL must protect the same non-zero size. No orders were sent.');
       }
-      const latestQuery = await refetch();
-      if (latestQuery.isError || !latestQuery.data) {
-        throw new ProtectionPreflightError('Could not recheck the live position. No TP/SL order was sent.');
-      }
-      const live = latestQuery.data.positions.find((position) => position.coin === p.coin);
-      const sizeTolerance = 1 / 10 ** mInfo.szDecimals;
-      if (
-        !live ||
-        live.side !== p.side ||
-        Math.abs(live.size - p.size) >= sizeTolerance ||
-        firstLeg.size > live.size + 1e-12
-      ) {
-        throw new ProtectionPreflightError('The live position side or size changed. Review TP/SL again; no orders were sent.');
-      }
-      const triggerStillValid = legs.every((leg) =>
-        live.side === 'long'
-          ? leg.tpsl === 'tp'
-            ? leg.triggerPx > live.markPx
-            : leg.triggerPx < live.markPx
-          : leg.tpsl === 'tp'
-            ? leg.triggerPx < live.markPx
-            : leg.triggerPx > live.markPx,
-      );
-      if (!triggerStillValid) {
-        throw new ProtectionPreflightError('The mark price moved past a trigger. Review the TP/SL levels again; no orders were sent.');
-      }
+      // The account screen already refreshes the position every five seconds. Do
+      // the authoritative network check once, at the signing boundary, so a slow
+      // duplicate preflight cannot make an otherwise valid TP/SL action time out.
       const validateImmediatelyBeforeSigning = async () => {
         let latestAccount;
         try {
@@ -940,7 +690,7 @@ export default function AccountScreen() {
           assertIdentityCurrent,
           assetIndex: mInfo.assetIndex,
           szDecimals: mInfo.szDecimals,
-          positionIsLong: live.side === 'long',
+          positionIsLong: p.side === 'long',
           size: firstLeg.size,
           legs: legs.map(({ tpsl, triggerPx, isMarket, limitPx }) => ({
             tpsl,
@@ -1005,121 +755,57 @@ export default function AccountScreen() {
     },
   });
 
-  const confirmReverse = useCallback(
-    async (p: HlPosition) => {
+  const confirmMarketClose = useCallback(
+    (p: HlPosition) => {
       if (!tradable || !executionIdentity) return;
       const identity = executionIdentity;
-      setReversePreparingCoin(p.coin);
-      try {
-        assertTradingIdentityCurrent(identity, useHlConnection.getState());
-        const m = meta?.[p.coin];
-        if (!m) throw new Error(`No market metadata for ${p.coin}.`);
-
-        const freshAccount = await fetchHlAccount(identity.accountAddress, identity.network);
-        const live = freshAccount.positions.find((position) => position.coin === p.coin);
-        const reviewedSize = lotSize(p.size, m.szDecimals);
-        if (
-          !live ||
-          live.side !== p.side ||
-          lotSize(live.size, m.szDecimals) !== reviewedSize
-        ) {
-          qc.invalidateQueries({ queryKey: queryKeys.hlAccountPrefix() });
-          throw new Error('The position changed before review. Refresh the position and prepare the reverse again.');
-        }
-
-        const book = await fetchOrderBook(p.coin, identity.network);
-        const bestBid = book.bids[0]?.price;
-        const bestAsk = book.asks[0]?.price;
-        if (
-          !(bestBid && bestAsk) ||
-          !Number.isFinite(bestBid) ||
-          !Number.isFinite(bestAsk) ||
-          bestAsk < bestBid
-        ) {
-          throw new Error('A fresh two-sided order book is unavailable.');
-        }
-
-        const symbol = instrumentForCoin(p.coin)?.symbol ?? cleanCoin(p.coin);
-        const orderIsBuy = live.side === 'short';
-        const targetSide: HlPosition['side'] = live.side === 'long' ? 'short' : 'long';
-        const midpoint = (bestBid + bestAsk) / 2;
-        const rawCap = midpoint *
-          (orderIsBuy ? 1 + REVERSE_SLIPPAGE : 1 - REVERSE_SLIPPAGE);
-        const capWire = priceToWire(rawCap, m.szDecimals);
-        const requestedOrderSize = lotSize(live.size * 2, m.szDecimals);
-        if (!(requestedOrderSize > 0)) throw new Error('The exact 2× order size is invalid.');
-        const priceDecimals = priceDecimalsFor(
-          instrumentForCoin(p.coin)?.priceDecimals ?? 6,
-          midpoint,
-        );
-        const draft: ReverseDraft = Object.freeze({
-          coin: p.coin,
-          symbol,
-          priceDecimals,
-          expectedSide: live.side,
-          expectedSize: lotSize(live.size, m.szDecimals),
-          expectedLeverage: live.leverage,
-          expectedLeverageType: live.leverageType,
-          targetSide,
-          orderIsBuy,
-          requestedOrderSize,
-          reviewedBid: bestBid,
-          reviewedAsk: bestAsk,
-          reviewedMidPx: midpoint,
-          reviewedIocCapPx: Number(capWire),
-          reviewedIocCapWire: capWire,
-          assetIndex: m.assetIndex,
-          szDecimals: m.szDecimals,
-          identity,
-        });
-
-        Alert.alert(
-          `Review reverse ${symbol}`,
-          `Current position: ${draft.expectedSide === 'long' ? 'Long' : 'Short'} ${lotSizeLabel(
-            draft.expectedSize,
-            draft.szDecimals,
-          )} ${symbol}\n` +
-            `Order: ${draft.orderIsBuy ? 'Buy' : 'Sell'} ${lotSizeLabel(
-              draft.requestedOrderSize,
-              draft.szDecimals,
-            )} ${symbol} (2× current size)\n` +
-            `Reviewed bid / ask: $${formatPrice(
-              draft.reviewedBid,
-              draft.priceDecimals,
-            )} / $${formatPrice(draft.reviewedAsk, draft.priceDecimals)}\n` +
-            `Reviewed midpoint: $${formatPrice(
-              draft.reviewedMidPx,
-              draft.priceDecimals,
-            )}\n` +
-            `Exact 5% IOC ${draft.orderIsBuy ? 'buy ceiling' : 'sell floor'}: $${
-              draft.reviewedIocCapWire
-            }\n\n` +
-            `Only a complete fill would produce the expected ${draft.targetSide} ${lotSizeLabel(
-              draft.expectedSize,
-              draft.szDecimals,
-            )} ${symbol}. A partial fill can leave you ${draft.expectedSide}, flat, or with a smaller ${draft.targetSide}.` +
-            (identity.network === 'mainnet'
-              ? '\n\nThis uses real funds on mainnet.'
-              : '\n\nTestnet order.'),
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Submit reviewed reverse',
-              style: 'destructive',
-              onPress: () => reverseMutation.mutate(draft),
-            },
-          ],
-        );
-      } catch (error) {
-        Alert.alert(
-          'Reverse review unavailable',
-          `${error instanceof Error ? error.message : 'Could not prepare a fresh reverse review'}\n\nNo order was sent.`,
-        );
-      } finally {
-        setReversePreparingCoin(null);
-      }
+      const symbol = instrumentForCoin(p.coin)?.symbol ?? cleanCoin(p.coin);
+      Alert.alert(
+        `Market close ${symbol}?`,
+        `Close your ${p.side} ${qty(p.size)} ${symbol} with a reduce-only market IOC.` +
+          (identity.network === 'mainnet'
+            ? '\n\nThis uses real funds on mainnet.'
+            : '\n\nTestnet order.'),
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Close position',
+            style: 'destructive',
+            onPress: () =>
+              positionActionMutation.mutate({ action: 'close', position: p, identity }),
+          },
+        ],
+      );
     },
-    [executionIdentity, instrumentForCoin, meta, qc, reverseMutation, tradable],
+    [executionIdentity, instrumentForCoin, positionActionMutation, tradable],
+  );
+
+  const confirmReverse = useCallback(
+    (p: HlPosition) => {
+      if (!tradable || !executionIdentity) return;
+      const identity = executionIdentity;
+      const symbol = instrumentForCoin(p.coin)?.symbol ?? cleanCoin(p.coin);
+      const targetSide = p.side === 'long' ? 'short' : 'long';
+      Alert.alert(
+        `Reverse ${symbol}?`,
+        `Close your ${p.side} ${qty(p.size)} ${symbol} and open an equal ${targetSide} with one market order for ${qty(
+          p.size * 2,
+        )} ${symbol}. A partial fill can leave you smaller, flat, or only partly reversed.` +
+          (identity.network === 'mainnet'
+            ? '\n\nThis uses real funds on mainnet.'
+            : '\n\nTestnet order.'),
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Reverse position',
+            style: 'destructive',
+            onPress: () =>
+              positionActionMutation.mutate({ action: 'reverse', position: p, identity }),
+          },
+        ],
+      );
+    },
+    [executionIdentity, instrumentForCoin, positionActionMutation, tradable],
   );
 
   const confirmCancel = useCallback(
@@ -1437,14 +1123,14 @@ export default function AccountScreen() {
                   expanded={expanded.has(p.coin)}
                   tradable={tradable}
                   busy={
-                    reversePreparingCoin === p.coin ||
-                    (reverseMutation.isPending && reverseMutation.variables?.coin === p.coin)
+                    positionActionMutation.isPending &&
+                    positionActionMutation.variables?.position.coin === p.coin
                   }
                   hidden={privacyMode}
                   onToggle={() => toggleExpand(p.coin)}
                   onChart={() => openChart(p.coin)}
                   onLimitClose={() => openCloseTicket(p, 'limit')}
-                  onMarketClose={() => openCloseTicket(p, 'market')}
+                  onMarketClose={() => confirmMarketClose(p)}
                   onReverse={() => confirmReverse(p)}
                   onAdjustMargin={() => setMarginTargetCoin(p.coin)}
                   onSetTpSl={() => setTpSlTargetCoin(p.coin)}
@@ -1933,6 +1619,13 @@ function PositionCardImpl({
           onPress={onSetTpSl}
           disabled={!tradable || busy}
           tone={Colors.accent}
+        />
+        <PositionQuickAction
+          icon="swap-horizontal-outline"
+          label="Reverse"
+          onPress={onReverse}
+          disabled={!tradable || busy}
+          tone={Colors.warning}
         />
         <PositionQuickAction
           icon="remove-circle-outline"
