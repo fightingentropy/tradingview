@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { memo, type ComponentProps, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MarginSheet } from '@/components/MarginSheet';
 import { PortfolioCard } from '@/components/PortfolioCard';
 import { SymbolLogo } from '@/components/SymbolLogo';
+import { TradeTicket } from '@/components/TradeTicket';
 import {
   TpSlSheet,
   type TpSlExistingOrder,
@@ -131,6 +132,39 @@ class AccountMutationStatusUnknownError extends Error {
 /** Clean ticker for a position coin ("xyz:SNDK" → "SNDK"). */
 const cleanCoin = (coin: string) => coin.replace(/^xyz:/, '');
 
+interface PositionProtectionLevels {
+  readonly takeProfitPx: number | null;
+  readonly stopLossPx: number | null;
+}
+
+/** Nearest live reduce-only TP and SL levels for the position card. */
+function protectionLevelsForPosition(
+  position: HlPosition,
+  orders: readonly HlOpenOrder[],
+): PositionProtectionLevels {
+  const closingSide = position.side === 'long' ? 'sell' : 'buy';
+  const live = orders
+    .filter(
+      (order) =>
+        order.coin === position.coin &&
+        order.side === closingSide &&
+        order.reduceOnly &&
+        order.isTrigger &&
+        (order.triggerPx ?? order.limitPx) > 0,
+    )
+    .sort(
+      (a, b) =>
+        Math.abs((a.triggerPx ?? a.limitPx) - position.markPx) -
+        Math.abs((b.triggerPx ?? b.limitPx) - position.markPx),
+    );
+  const takeProfit = live.find((order) => !isProtectiveStop(order, position));
+  const stopLoss = live.find((order) => isProtectiveStop(order, position));
+  return {
+    takeProfitPx: takeProfit?.triggerPx ?? takeProfit?.limitPx ?? null,
+    stopLossPx: stopLoss?.triggerPx ?? stopLoss?.limitPx ?? null,
+  };
+}
+
 const pad2 = (n: number) => (n < 10 ? '0' + n : String(n));
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** Compact timestamp: "HH:MM" for today, else "Mon D" (Intl-free for Hermes). */
@@ -235,6 +269,7 @@ export default function AccountScreen() {
   // retaining a position snapshot here could close or protect a stale size/mark.
   const [marginTargetCoin, setMarginTargetCoin] = useState<string | null>(null);
   const [tpSlTargetCoin, setTpSlTargetCoin] = useState<string | null>(null);
+  const [limitCloseTargetCoin, setLimitCloseTargetCoin] = useState<string | null>(null);
   const hideSmallBalances = usePreferences((s) => s.hideSmallBalances);
   const privacyMode = usePreferences((s) => s.privacyMode);
   const setPrivacyMode = usePreferences((s) => s.setPrivacyMode);
@@ -253,6 +288,9 @@ export default function AccountScreen() {
     : null;
   const tpSlTarget = tpSlTargetCoin
     ? account?.positions.find((position) => position.coin === tpSlTargetCoin) ?? null
+    : null;
+  const limitCloseTarget = limitCloseTargetCoin
+    ? account?.positions.find((position) => position.coin === limitCloseTargetCoin) ?? null
     : null;
 
   const positionActionMutation = useMutation({
@@ -938,6 +976,13 @@ export default function AccountScreen() {
     () => (account ? buildAccountRiskSummary(account, openOrders ?? []) : null),
     [account, openOrders],
   );
+  const positionProtectionByCoin = useMemo(() => {
+    const levels = new Map<string, PositionProtectionLevels>();
+    for (const position of account?.positions ?? []) {
+      levels.set(position.coin, protectionLevelsForPosition(position, openOrders ?? []));
+    }
+    return levels;
+  }, [account?.positions, openOrders]);
   const existingTpSlOrders: TpSlExistingOrder[] = (() => {
     if (!tpSlTarget) return [];
     const closingSide = tpSlTarget.side === 'long' ? 'sell' : 'buy';
@@ -1118,14 +1163,16 @@ export default function AccountScreen() {
                   key={p.coin}
                   p={p}
                   instrument={instrumentForCoin(p.coin)}
-                  expanded={expanded.has(p.coin)}
+                  protection={positionProtectionByCoin.get(p.coin)}
+                  expanded={!expanded.has(`position-collapsed:${p.coin}`)}
                   busy={
                     positionActionMutation.isPending &&
                     positionActionMutation.variables?.position.coin === p.coin
                   }
                   hidden={privacyMode}
-                  onToggle={() => toggleExpand(p.coin)}
+                  onToggle={() => toggleExpand(`position-collapsed:${p.coin}`)}
                   onChart={() => openChart(p.coin)}
+                  onLimitClose={() => setLimitCloseTargetCoin(p.coin)}
                   onMarketClose={() => confirmMarketClose(p)}
                   onReverse={() => confirmReverse(p)}
                   onAdjustMargin={() => setMarginTargetCoin(p.coin)}
@@ -1205,6 +1252,34 @@ export default function AccountScreen() {
           </AppText>
         ) : null}
       </ScrollView>
+
+      {/* A reduce-only limit close uses the same fully validated ticket as chart trading. */}
+      {limitCloseTarget ? (
+        <TradeTicket
+          key={`${limitCloseTarget.coin}-${limitCloseTarget.side}-${limitCloseTarget.size}-limit-close`}
+          visible
+          onClose={() => setLimitCloseTargetCoin(null)}
+          coin={limitCloseTarget.coin}
+          symbol={
+            instrumentForCoin(limitCloseTarget.coin)?.symbol ?? cleanCoin(limitCloseTarget.coin)
+          }
+          markPx={limitCloseTarget.markPx}
+          executionMidPx={limitCloseTarget.markPx}
+          priceDecimals={priceDecimalsFor(
+            instrumentForCoin(limitCloseTarget.coin)?.priceDecimals ?? 6,
+            limitCloseTarget.markPx,
+          )}
+          initialSide={limitCloseTarget.side === 'short' ? 'buy' : 'sell'}
+          initialType="limit"
+          initialSizeCoin={limitCloseTarget.size}
+          closing
+          lockSide
+          title={`Limit close ${limitCloseTarget.side} ${
+            instrumentForCoin(limitCloseTarget.coin)?.symbol ?? cleanCoin(limitCloseTarget.coin)
+          }`}
+          actionLabel="Close"
+        />
+      ) : null}
 
       {/* Set take-profit / stop-loss on an open position (reduce-only market triggers).
           Keyed per coin so each open mounts fresh — no price carries across positions. */}
@@ -1478,6 +1553,7 @@ function TabButton({
 const PositionCard = memo(PositionCardImpl, (prev, next) =>
   prev.p === next.p &&
   prev.instrument?.id === next.instrument?.id &&
+  prev.protection === next.protection &&
   prev.expanded === next.expanded &&
   prev.busy === next.busy &&
   prev.hidden === next.hidden,
@@ -1486,11 +1562,13 @@ const PositionCard = memo(PositionCardImpl, (prev, next) =>
 function PositionCardImpl({
   p,
   instrument,
+  protection,
   expanded,
   busy,
   hidden,
   onToggle,
   onChart,
+  onLimitClose,
   onMarketClose,
   onReverse,
   onAdjustMargin,
@@ -1498,11 +1576,13 @@ function PositionCardImpl({
 }: {
   p: HlPosition;
   instrument: Instrument | undefined;
+  protection: PositionProtectionLevels | undefined;
   expanded: boolean;
   busy: boolean;
   hidden: boolean;
   onToggle: () => void;
   onChart: () => void;
+  onLimitClose: () => void;
   onMarketClose: () => void;
   onReverse: () => void;
   onAdjustMargin: () => void;
@@ -1513,90 +1593,73 @@ function PositionCardImpl({
   const symbol = instrument?.symbol ?? cleanCoin(p.coin);
   const decimals = priceDecimalsFor(instrument?.priceDecimals ?? 6, p.markPx);
   const m = (s: string) => (hidden ? MASK : s);
+  const tp = protection?.takeProfitPx;
+  const sl = protection?.stopLossPx;
+  const protectionLabel = hidden
+    ? MASK
+    : `${tp != null ? formatPrice(tp, decimals) : '—'} / ${
+        sl != null ? formatPrice(sl, decimals) : '—'
+      }`;
 
   return (
-    <View style={styles.card}>
-      <Pressable
-        style={({ pressed }) => [styles.cardHead, pressed && styles.pressed]}
-        onPress={onToggle}>
-        {instrument ? (
-          <SymbolLogo instrument={instrument} size={40} />
-        ) : (
-          <View style={styles.coinFallback}>
-            <AppText variant="label">{symbol.slice(0, 3)}</AppText>
-          </View>
-        )}
-
-        <View style={styles.mid}>
-          <View style={styles.titleRow}>
-            <AppText style={styles.symbol} numberOfLines={1}>
-              {symbol}
+    <View style={styles.positionCard}>
+      <View style={styles.positionBody}>
+        <View style={styles.gridRow}>
+          <View style={styles.cell}>
+            <AppText variant="caption" muted>
+              Market
             </AppText>
-            <View style={[styles.sideBadge, { backgroundColor: sideColor + '22' }]}>
-              <AppText variant="caption" color={sideColor}>
-                {p.side === 'long' ? 'Long' : 'Short'} {p.leverage}x
+            <View style={styles.marketValueRow}>
+              <AppText style={[styles.positionSymbol, { color: sideColor }]} numberOfLines={1}>
+                {symbol}
               </AppText>
+              <AppText variant="label" color={sideColor} numeric>
+                {p.leverage}x
+              </AppText>
+              {p.dex === 'xyz' ? (
+                <View style={[styles.xyzBadge, { backgroundColor: sideColor + '18' }]}>
+                  <AppText variant="caption" color={sideColor}>
+                    xyz
+                  </AppText>
+                </View>
+              ) : null}
             </View>
-            {p.dex === 'xyz' ? (
-              <View style={styles.xyzBadge}>
-                <AppText variant="caption" muted>
-                  xyz
-                </AppText>
-              </View>
-            ) : null}
           </View>
-          <AppText style={styles.sub} numeric numberOfLines={1}>
-            {hidden ? `${symbol} · ${MASK}` : `${qty(p.size)} ${symbol} · ${usd(p.positionValue)}`}
-          </AppText>
+          <Cell label="Size" value={m(`${qty(p.size)} ${symbol}`)} color={sideColor} />
+          <View style={styles.cell}>
+            <AppText variant="caption" muted>
+              PNL (ROE %)
+            </AppText>
+            <View style={styles.pnlValueRow}>
+              {busy ? (
+                <ActivityIndicator size="small" color={Colors.textMuted} />
+              ) : (
+                <AppText
+                  variant="label"
+                  numeric
+                  color={pnlColor}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.65}
+                  style={styles.positionPnlText}>
+                  {hidden
+                    ? MASK
+                    : `${signedUsd(p.unrealizedPnl)} (${formatPercent(p.roe * 100)})`}
+                </AppText>
+              )}
+              <Pressable
+                onPress={onChart}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${symbol} chart`}>
+                <Ionicons name="open-outline" size={16} color={Colors.accent} />
+              </Pressable>
+            </View>
+          </View>
         </View>
 
-        {busy ? (
-          <ActivityIndicator color={Colors.textMuted} />
-        ) : (
-          <View style={styles.right}>
-            <AppText style={[styles.pnl, { color: pnlColor }]} numeric numberOfLines={1}>
-              {m(signedUsd(p.unrealizedPnl))}
-            </AppText>
-            <AppText style={[styles.roe, { color: pnlColor }]} numeric numberOfLines={1}>
-              {m(formatPercent(p.roe * 100))}
-            </AppText>
-          </View>
-        )}
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={18}
-          color={Colors.textFaint}
-          style={styles.chevron}
-        />
-      </Pressable>
-
-      <View style={styles.quickActions}>
-        <PositionQuickAction icon="stats-chart-outline" label="Chart" onPress={onChart} />
-        <PositionQuickAction
-          icon="shield-half-outline"
-          label="TP / SL"
-          onPress={onSetTpSl}
-          disabled={busy}
-          tone={Colors.accent}
-        />
-        <PositionQuickAction
-          icon="swap-horizontal-outline"
-          label="Reverse"
-          onPress={onReverse}
-          disabled={busy}
-          tone={Colors.warning}
-        />
-        <PositionQuickAction
-          icon="remove-circle-outline"
-          label="Close"
-          onPress={onMarketClose}
-          disabled={busy}
-          tone={Colors.down}
-        />
-      </View>
-
-      {expanded ? (
-        <View style={styles.detail}>
+        {expanded ? (
+          <View style={styles.positionDetails}>
           <View style={styles.gridRow}>
             <Cell label="Entry Price" value={formatPrice(p.entryPx, decimals)} />
             <Cell label="Mark Price" value={formatPrice(p.markPx, decimals)} />
@@ -1607,39 +1670,60 @@ function PositionCardImpl({
             />
           </View>
           <View style={styles.gridRow}>
-            <Cell label="Size" value={m(`${qty(p.size)} ${symbol}`)} />
+            <Cell label="Position Value" value={m(`${formatPrice(p.positionValue, 2)} USDC`)} />
             <Cell
               label="Margin"
-              value={m(usd(p.marginUsed))}
-              sub={p.leverageType === 'isolated' ? 'Isolated' : 'Cross'}
+              value={m(`${usd(p.marginUsed)} (${p.leverageType === 'isolated' ? 'Isolated' : 'Cross'})`)}
               onEdit={p.leverageType === 'isolated' ? onAdjustMargin : undefined}
             />
+            <Cell label="TP / SL" value={protectionLabel} onEdit={onSetTpSl} />
+          </View>
+          <View style={styles.gridRow}>
             <Cell
               label="Funding"
               value={m(signedUsd(p.funding))}
               color={p.funding > 0 ? Colors.up : p.funding < 0 ? Colors.down : undefined}
             />
+            <View style={styles.cell} />
+            <View style={styles.cell} />
           </View>
         </View>
       ) : null}
+
+      </View>
+
+      <View style={styles.positionDivider} />
+      <View style={styles.positionActions}>
+        <PositionQuickAction label="Limit Close" onPress={onLimitClose} disabled={busy} />
+        <PositionQuickAction label="Market Close" onPress={onMarketClose} disabled={busy} />
+        <PositionQuickAction label="Reverse" onPress={onReverse} disabled={busy} />
+        <Pressable
+          style={({ pressed }) => [styles.collapseAction, pressed && styles.actionBtnPressed]}
+          onPress={onToggle}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? 'Collapse position' : 'Expand position'}>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={Colors.text}
+          />
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 function PositionQuickAction({
-  icon,
   label,
   onPress,
   disabled = false,
-  tone = Colors.textMuted,
 }: {
-  icon: ComponentProps<typeof Ionicons>['name'];
   label: string;
   onPress: () => void;
   disabled?: boolean;
-  tone?: string;
 }) {
-  const color = disabled ? Colors.textFaint : tone;
+  const color = disabled ? Colors.textFaint : Colors.accent;
   return (
     <Pressable
       style={({ pressed }) => [
@@ -1650,8 +1734,7 @@ function PositionQuickAction({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}>
-      <Ionicons name={icon} size={14} color={color} />
-      <AppText variant="caption" color={color}>
+      <AppText variant="label" color={color} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
         {label}
       </AppText>
     </Pressable>
@@ -1674,7 +1757,14 @@ function Cell({
 }) {
   const valueRow = (
     <View style={styles.cellValueRow}>
-      <AppText variant="label" numeric color={color} numberOfLines={1} style={styles.cellValue}>
+      <AppText
+        variant="label"
+        numeric
+        color={color}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.62}
+        style={styles.cellValue}>
         {value}
       </AppText>
       {onEdit ? <Ionicons name="pencil" size={13} color={Colors.accent} /> : null}
@@ -2127,6 +2217,39 @@ const styles = StyleSheet.create({
   // Rows mirror the main watchlist (SymbolRow): full-width hairline, logo 40,
   // 16/700 symbol, 16/600 value, 13px muted sub.
   list: {},
+  positionCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    overflow: 'hidden',
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  positionBody: { padding: Spacing.md, gap: Spacing.lg },
+  positionDetails: { gap: Spacing.lg },
+  marketValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 23 },
+  positionSymbol: { fontSize: 17, fontWeight: '700' },
+  pnlValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 23 },
+  positionPnlText: { flex: 1, minWidth: 0 },
+  positionDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: Spacing.md,
+    backgroundColor: Colors.border,
+  },
+  positionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    minHeight: 50,
+  },
+  collapseAction: {
+    width: 34,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.sm,
+  },
   card: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
@@ -2165,19 +2288,19 @@ const styles = StyleSheet.create({
   },
   quickAction: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 7,
+    minWidth: 0,
+    minHeight: 38,
+    paddingHorizontal: 3,
+    paddingVertical: Spacing.sm,
     borderRadius: Radius.sm,
-    backgroundColor: Colors.surface,
   },
 
   // Expanded detail
   detail: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, gap: Spacing.md },
-  gridRow: { flexDirection: 'row' },
-  cell: { flex: 1, gap: 2 },
+  gridRow: { flexDirection: 'row', gap: Spacing.sm },
+  cell: { flex: 1, minWidth: 0, gap: 3 },
   spotDetail: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.xs, paddingBottom: Spacing.md },
   detailRow: {
     flexDirection: 'row',
@@ -2186,7 +2309,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   cellValue: { marginTop: 1 },
-  cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 23 },
   actionBtnPressed: { backgroundColor: Colors.surfacePress },
   cancelBtn: {
     paddingHorizontal: Spacing.md,

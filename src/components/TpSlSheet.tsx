@@ -18,7 +18,7 @@ import {
 
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { formatPercent, formatPrice, signedUsd } from '@/lib/format';
+import { formatPrice, signedUsd } from '@/lib/format';
 
 const LIQUID_GLASS = isLiquidGlassAvailable();
 const ACCESSORY_ID = 'tpsl-sheet-kb';
@@ -28,9 +28,6 @@ const GLASS_FILL_STRONG = 'rgba(255,255,255,0.13)';
 const GLASS_INSET = 'rgba(0,0,0,0.28)';
 const GLASS_HAIRLINE = 'rgba(255,255,255,0.10)';
 
-/** Quick targets are return-on-equity percentages, not raw price moves. */
-const TP_ROE_PRESETS = [2, 5, 10, 20];
-const SL_ROE_PRESETS = [2, 5, 10, 20];
 const CLOSE_PRESETS = [25, 50, 75, 100];
 
 type TriggerFill = 'market' | 'limit';
@@ -144,6 +141,7 @@ export function TpSlSheet({
   const [tp, setTp] = useState('');
   const [sl, setSl] = useState('');
   const [closePct, setClosePct] = useState(100);
+  const [configureAmount, setConfigureAmount] = useState(false);
   const [triggerFill, setTriggerFill] = useState<TriggerFill>('market');
 
   const isLong = side === 'long';
@@ -153,6 +151,7 @@ export function TpSlSheet({
     setTp('');
     setSl('');
     setClosePct(100);
+    setConfigureAmount(false);
     setTriggerFill('market');
     Keyboard.dismiss();
     onClose();
@@ -197,23 +196,8 @@ export function TpSlSheet({
   const canSubmit =
     tradable && markReady && selectedSize > 0 && legs.length > 0 && sidesOk && !busy;
 
-  // ROE target → raw price move. At 10×, a 5% ROE preset is a 0.5% price move.
-  const round = (px: number) => Number(px.toFixed(priceDecimals));
-  const applyTpRoe = (roePct: number) =>
-    setTp(String(round(entryPx * (1 + (roePct / Math.max(1, leverage) / 100) * dir))));
-  const applySlRoe = (roePct: number) =>
-    setSl(String(round(entryPx * (1 - (roePct / Math.max(1, leverage) / 100) * dir))));
-
   const tpEst = tpPx > 0 ? estimate(tpPx) : null;
   const slEst = slPx > 0 ? estimate(slPx) : null;
-  const submittingLabel =
-    legs.length === 2
-      ? `Set TP & SL · ${closePct}%`
-      : legs.some((l) => l.tpsl === 'tp')
-        ? `Set take profit · ${closePct}%`
-        : legs.length
-          ? `Set stop loss · ${closePct}%`
-          : 'Set TP/SL';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
@@ -224,12 +208,7 @@ export function TpSlSheet({
         <SheetSurface style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.headerRow}>
-            <View style={styles.headerCopy}>
-              <AppText variant="heading">Manage protection</AppText>
-              <AppText variant="caption" muted numberOfLines={1}>
-                {symbol} · {isLong ? 'Long' : 'Short'} {leverage}× · {qtyLabel(size, szDecimals)} {symbol}
-              </AppText>
-            </View>
+            <AppText variant="heading">TP/SL for Position</AppText>
             <Pressable onPress={close} hitSlop={10} accessibilityLabel="Close protection sheet">
               <Ionicons name="close" size={22} color={Colors.textMuted} />
             </Pressable>
@@ -241,14 +220,120 @@ export function TpSlSheet({
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}>
+            <View style={styles.positionSummary}>
+              <InfoRow label="Market" value={symbol} />
+              <InfoRow
+                label="Position"
+                value={`${isLong ? 'Long' : 'Short'} ${qtyLabel(size, szDecimals)} ${symbol}`}
+                valueColor={isLong ? Colors.up : Colors.down}
+              />
+              <InfoRow label="Entry Price" value={formatPrice(entryPx, priceDecimals)} />
+              <InfoRow
+                label="Mark Price"
+                value={markReady ? formatPrice(markPx, priceDecimals) : 'Loading…'}
+              />
+            </View>
+
+            <TriggerField
+              kind="tp"
+              value={tp}
+              onChange={setTp}
+              markPx={markPx}
+              priceDecimals={priceDecimals}
+              isLong={isLong}
+              estimate={tpEst}
+              validSide={tpValidSide}
+            />
+
+            <TriggerField
+              kind="sl"
+              value={sl}
+              onChange={setSl}
+              markPx={markPx}
+              priceDecimals={priceDecimals}
+              isLong={isLong}
+              estimate={slEst}
+              validSide={slValidSide}
+            />
+
+            {allowPartial ? (
+              <>
+                <CheckRow
+                  label="Configure Amount"
+                  checked={configureAmount}
+                  onPress={() => setConfigureAmount((value) => !value)}
+                />
+                {configureAmount ? (
+                  <View style={styles.amountOptions}>
+                    <View style={styles.sectionHead}>
+                      <AppText variant="caption" muted>
+                        Position to close
+                      </AppText>
+                      <AppText variant="caption" numeric>
+                        {qtyLabel(selectedSize, szDecimals)} {symbol}
+                      </AppText>
+                    </View>
+                    <View style={styles.chipRow}>
+                      {CLOSE_PRESETS.map((pct) => {
+                        const presetSize = floorSizeToDecimals(size * (pct / 100), szDecimals);
+                        const unavailable = presetSize <= 0;
+                        return (
+                          <Pressable
+                            key={pct}
+                            style={[
+                              styles.choiceChip,
+                              closePct === pct && !unavailable && styles.choiceChipOn,
+                              unavailable && styles.disabled,
+                            ]}
+                            onPress={() => setClosePct(pct)}
+                            disabled={unavailable}
+                            accessibilityState={{ disabled: unavailable, selected: closePct === pct }}>
+                            <AppText
+                              variant="caption"
+                              color={
+                                unavailable
+                                  ? Colors.textFaint
+                                  : closePct === pct
+                                    ? Colors.text
+                                    : Colors.textMuted
+                              }>
+                              {pct}%
+                            </AppText>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+
+            <CheckRow
+              label="Limit Price"
+              checked={triggerFill === 'limit'}
+              onPress={() => setTriggerFill((value) => (value === 'market' ? 'limit' : 'market'))}
+            />
+
+            {triggerFill === 'limit' ? (
+              <AppText variant="caption" color={Colors.warning} style={styles.modeHint}>
+                Limit triggers protect the price, but they can remain unfilled. Market triggers prioritise the exit.
+              </AppText>
+            ) : null}
+
+            {!markReady ? (
+              <AppText variant="caption" color={Colors.warning}>
+                Waiting for Hyperliquid’s mark price before validating triggers.
+              </AppText>
+            ) : null}
+
             {existingOrders.length > 0 ? (
               <View style={styles.existingCard}>
                 <View style={styles.sectionHead}>
                   <AppText variant="caption" color={Colors.text}>
-                    Active protection
+                    Active TP/SL
                   </AppText>
                   <AppText variant="caption" muted>
-                    {existingOrders.length} order{existingOrders.length === 1 ? '' : 's'}
+                    New values add orders
                   </AppText>
                 </View>
                 {existingOrders.map((order) => (
@@ -260,14 +345,9 @@ export function TpSlSheet({
                           { backgroundColor: order.tpsl === 'tp' ? Colors.up : Colors.down },
                         ]}
                       />
-                      <View style={styles.existingCopy}>
-                        <AppText variant="caption" numeric>
-                          {order.tpsl === 'tp' ? 'TP' : 'SL'} ${formatPrice(order.triggerPx, priceDecimals)}
-                        </AppText>
-                        <AppText variant="caption" muted numeric>
-                          {qtyLabel(order.size, szDecimals)} {symbol} · {order.isMarket ? 'market' : 'limit'}
-                        </AppText>
-                      </View>
+                      <AppText variant="caption" numeric>
+                        {order.tpsl === 'tp' ? 'TP' : 'SL'} {formatPrice(order.triggerPx, priceDecimals)}
+                      </AppText>
                     </View>
                     {onCancelExisting ? (
                       <Pressable
@@ -281,134 +361,8 @@ export function TpSlSheet({
                     ) : null}
                   </View>
                 ))}
-                <AppText variant="caption" color={Colors.warning}>
-                  Submitting adds another order; cancel a leg first when you mean to replace it.
-                </AppText>
-              </View>
-            ) : (
-              <View style={styles.unprotectedCard}>
-                <Ionicons name="shield-outline" size={16} color={Colors.warning} />
-                <AppText variant="caption" color={Colors.warning}>
-                  No active TP/SL protection found for this position.
-                </AppText>
-              </View>
-            )}
-
-            {allowPartial ? (
-              <View style={styles.optionCard}>
-                <View style={styles.sectionHead}>
-                  <AppText variant="caption" muted>
-                    Close size
-                  </AppText>
-                  <AppText variant="caption" numeric>
-                    {qtyLabel(selectedSize, szDecimals)} {symbol}
-                  </AppText>
-                </View>
-                <View style={styles.chipRow}>
-                  {CLOSE_PRESETS.map((pct) => {
-                    const presetSize = floorSizeToDecimals(size * (pct / 100), szDecimals);
-                    const unavailable = presetSize <= 0;
-                    return (
-                      <Pressable
-                        key={pct}
-                        style={[
-                          styles.choiceChip,
-                          closePct === pct && !unavailable && styles.choiceChipOn,
-                          unavailable && styles.disabled,
-                        ]}
-                        onPress={() => setClosePct(pct)}
-                        disabled={unavailable}
-                        accessibilityState={{ disabled: unavailable, selected: closePct === pct }}>
-                        <AppText
-                          variant="caption"
-                          color={
-                            unavailable
-                              ? Colors.textFaint
-                              : closePct === pct
-                                ? Colors.text
-                                : Colors.textMuted
-                          }>
-                          {pct}%
-                        </AppText>
-                      </Pressable>
-                    );
-                  })}
-                </View>
               </View>
             ) : null}
-
-            <View style={styles.optionCard}>
-              <View style={styles.sectionHead}>
-                <AppText variant="caption" muted>
-                  When mark price triggers
-                </AppText>
-                <AppText variant="caption" color={triggerFill === 'market' ? Colors.accent : Colors.warning}>
-                  {triggerFill === 'market' ? 'Prioritise exit' : 'Prioritise price'}
-                </AppText>
-              </View>
-              <View style={styles.segment}>
-                {(['market', 'limit'] as TriggerFill[]).map((mode) => (
-                  <Pressable
-                    key={mode}
-                    style={[styles.segmentItem, triggerFill === mode && styles.segmentItemOn]}
-                    onPress={() => setTriggerFill(mode)}>
-                    <AppText
-                      variant="caption"
-                      color={triggerFill === mode ? Colors.text : Colors.textMuted}>
-                      {mode === 'market' ? 'Market exit' : 'Limit at trigger'}
-                    </AppText>
-                  </Pressable>
-                ))}
-              </View>
-              <AppText variant="caption" muted>
-                {triggerFill === 'market'
-                  ? 'Uses a reduce-only IOC with a 5% adverse price bound. The fill can slip in a fast or thin market.'
-                  : 'Rests a reduce-only limit at the trigger price. Price is capped, but the position may not close.'}
-              </AppText>
-              {!markReady ? (
-                <AppText variant="caption" color={Colors.warning}>
-                  Waiting for Hyperliquid’s mark price before validating triggers.
-                </AppText>
-              ) : null}
-            </View>
-
-            <TriggerField
-              kind="tp"
-              value={tp}
-              onChange={setTp}
-              markPx={markPx}
-              priceDecimals={priceDecimals}
-              isLong={isLong}
-              estimate={tpEst}
-              validSide={tpValidSide}
-              presets={TP_ROE_PRESETS}
-              onPreset={applyTpRoe}
-            />
-
-            <TriggerField
-              kind="sl"
-              value={sl}
-              onChange={setSl}
-              markPx={markPx}
-              priceDecimals={priceDecimals}
-              isLong={isLong}
-              estimate={slEst}
-              validSide={slValidSide}
-              presets={SL_ROE_PRESETS}
-              onPreset={applySlRoe}
-            />
-
-            <View style={styles.infoCard}>
-              <InfoRow label="Entry" value={`$${formatPrice(entryPx, priceDecimals)}`} />
-              <InfoRow
-                label="Mark trigger"
-                value={markReady ? `$${formatPrice(markPx, priceDecimals)}` : 'Loading…'}
-              />
-              <InfoRow
-                label="Protected size"
-                value={`${qtyLabel(selectedSize, szDecimals)} ${symbol} · ${closePct}%`}
-              />
-            </View>
 
             {!tradable ? (
               <AppText variant="caption" color={Colors.warning}>
@@ -422,7 +376,7 @@ export function TpSlSheet({
             onPress={() => onSubmit(legs)}
             disabled={!canSubmit}>
             <AppText variant="label" color={canSubmit ? '#04150E' : Colors.textFaint}>
-              {busy ? 'Setting protection…' : submittingLabel}
+              {busy ? 'Confirming…' : 'Confirm'}
             </AppText>
           </Pressable>
         </SheetSurface>
@@ -454,8 +408,6 @@ function TriggerField({
   isLong,
   estimate,
   validSide,
-  presets,
-  onPreset,
 }: {
   kind: 'tp' | 'sl';
   value: string;
@@ -465,59 +417,46 @@ function TriggerField({
   isLong: boolean;
   estimate: { pnl: number; roe: number } | null;
   validSide: boolean;
-  presets: number[];
-  onPreset: (roePct: number) => void;
 }) {
   const isTp = kind === 'tp';
   const color = isTp ? Colors.up : Colors.down;
   const comparator = isTp === isLong ? 'above' : 'below';
-  const glyph = comparator === 'above' ? '≥' : '≤';
 
   return (
     <View style={styles.field}>
-      <View style={styles.fieldHead}>
-        <AppText variant="caption" color={color}>
-          {isTp ? 'Take profit' : 'Stop loss'}
-        </AppText>
-        {estimate ? (
-          <AppText variant="caption" numeric color={estimate.pnl >= 0 ? Colors.up : Colors.down}>
-            {signedUsd(estimate.pnl)} · {formatPercent(estimate.roe)} ROE
-          </AppText>
-        ) : (
+      <View style={styles.triggerRow}>
+        <View style={[styles.triggerInputBox, !validSide && styles.triggerInputInvalid]}>
           <AppText variant="caption" muted>
-            optional
+            {isTp ? 'TP Price' : 'SL Price'}
           </AppText>
-        )}
+          <TextInput
+            value={value}
+            onChangeText={onChange}
+            placeholder="—"
+            placeholderTextColor={Colors.textFaint}
+            keyboardType="decimal-pad"
+            keyboardAppearance="dark"
+            inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
+            style={styles.triggerInput}
+          />
+        </View>
+        <View style={styles.roeBox}>
+          <AppText variant="caption" muted>
+            ROE
+          </AppText>
+          <AppText variant="body" numeric color={estimate ? color : Colors.textFaint}>
+            {estimate ? `${Math.abs(estimate.roe).toFixed(2)}%` : '— %'}
+          </AppText>
+        </View>
       </View>
-      <View style={styles.inputRow}>
-        <TextInput
-          value={value}
-          onChangeText={onChange}
-          placeholder={
-            markPx > 0 ? `${glyph} ${formatPrice(markPx, priceDecimals)}` : 'Waiting for mark'
-          }
-          placeholderTextColor={Colors.textFaint}
-          keyboardType="decimal-pad"
-          keyboardAppearance="dark"
-          inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
-          style={styles.input}
-        />
-        <AppText variant="caption" muted>
-          USD
+      {estimate ? (
+        <AppText variant="caption" numeric color={estimate.pnl >= 0 ? Colors.up : Colors.down} style={styles.estimate}>
+          Expected {isTp ? 'profit' : 'loss'}: {signedUsd(estimate.pnl)}
         </AppText>
-      </View>
-      <View style={styles.chipRow}>
-        {presets.map((roe) => (
-          <Pressable key={roe} style={styles.presetChip} onPress={() => onPreset(roe)}>
-            <AppText variant="caption" color={color}>
-              {isTp ? '+' : '−'}{roe}% ROE
-            </AppText>
-          </Pressable>
-        ))}
-      </View>
+      ) : null}
       {!validSide ? (
         <AppText variant="caption" color={Colors.warning}>
-          {isTp ? 'Take profit' : 'Stop loss'} must be {comparator} the mark ($
+          {isTp ? 'Take profit' : 'Stop loss'} must be {comparator} the mark (
           {formatPrice(markPx, priceDecimals)}).
         </AppText>
       ) : null}
@@ -531,13 +470,44 @@ function qtyLabel(size: number, precision?: number): string {
   return String(Number(size.toFixed(d)));
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function CheckRow({
+  label,
+  checked,
+  onPress,
+}: {
+  label: string;
+  checked: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.checkRow, pressed && styles.checkRowPressed]}
+      onPress={onPress}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}>
+      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+        {checked ? <Ionicons name="checkmark" size={15} color="#04150E" /> : null}
+      </View>
+      <AppText variant="body">{label}</AppText>
+    </Pressable>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
   return (
     <View style={styles.infoRow}>
-      <AppText variant="caption" muted>
+      <AppText variant="body" muted>
         {label}
       </AppText>
-      <AppText variant="caption" numeric color={Colors.text}>
+      <AppText variant="body" numeric color={valueColor ?? Colors.text}>
         {value}
       </AppText>
     </View>
@@ -576,10 +546,10 @@ const styles = StyleSheet.create({
     backgroundColor: GLASS_FILL_STRONG,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
-  headerCopy: { flex: 1, gap: 2 },
   body: { flexShrink: 1 },
   bodyContent: { gap: Spacing.md, paddingBottom: Spacing.xs },
 
+  positionSummary: { gap: Spacing.sm, paddingVertical: Spacing.xs },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   existingCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
   existingRow: {
@@ -590,22 +560,17 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   existingMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  existingCopy: { flex: 1, minWidth: 0 },
   typeDot: { width: 7, height: 7, borderRadius: 4 },
   cancelOrder: { paddingHorizontal: Spacing.sm, paddingVertical: 6 },
   disabled: { opacity: 0.45 },
-  unprotectedCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.warning + '12',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.warning + '55',
-  },
 
-  optionCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
+  amountOptions: {
+    marginLeft: 34,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
+    backgroundColor: GLASS_FILL,
+  },
   chipRow: { flexDirection: 'row', gap: Spacing.xs },
   choiceChip: {
     flex: 1,
@@ -617,30 +582,63 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   choiceChipOn: { backgroundColor: Colors.accentSoft, borderColor: Colors.accent + '88' },
-  segment: { flexDirection: 'row', padding: 3, borderRadius: Radius.sm, backgroundColor: GLASS_INSET },
-  segmentItem: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: Radius.sm },
-  segmentItemOn: { backgroundColor: GLASS_FILL_STRONG },
 
-  field: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
-  fieldHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  inputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  input: {
-    flex: 1,
+  field: { gap: 7 },
+  triggerRow: { flexDirection: 'row', gap: Spacing.sm },
+  triggerInputBox: {
+    flex: 1.1,
+    minHeight: 64,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: GLASS_HAIRLINE,
+    backgroundColor: GLASS_FILL,
+  },
+  triggerInputInvalid: { borderColor: Colors.warning },
+  triggerInput: {
     color: Colors.text,
-    fontSize: 23,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '600',
     fontVariant: ['tabular-nums'],
-    paddingVertical: 2,
+    paddingVertical: 0,
   },
-  presetChip: {
+  roeBox: {
     flex: 1,
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderRadius: Radius.sm,
-    backgroundColor: GLASS_INSET,
+    minHeight: 64,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: GLASS_HAIRLINE,
+    backgroundColor: GLASS_FILL,
   },
+  estimate: { textAlign: 'right', paddingHorizontal: Spacing.xs },
 
-  infoCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    minHeight: 38,
+    borderRadius: Radius.sm,
+  },
+  checkRowPressed: { opacity: 0.72 },
+  checkbox: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: GLASS_FILL,
+  },
+  checkboxChecked: { borderColor: Colors.accent, backgroundColor: Colors.accent },
+  modeHint: { marginLeft: 34, marginTop: -Spacing.sm },
+
   infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   submit: {
     alignItems: 'center',

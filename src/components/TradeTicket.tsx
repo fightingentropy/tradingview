@@ -41,6 +41,7 @@ import {
 } from '@/lib/hyperliquid/tradingIdentity';
 import { formatPrice, signedUsd, usd } from '@/lib/format';
 import { queryKeys } from '@/lib/queryKeys';
+import { materiallyDifferentMid } from '@/lib/tradePreflight';
 import { useHlConnection } from '@/store/hlConnection';
 
 type Side = 'buy' | 'sell';
@@ -200,17 +201,6 @@ const lotQuantized = (size: number, decimals: number) => {
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : 'Unknown trading error';
-
-const materiallyDifferentMid = (reviewed: number, fresh: number, slippage: number) => {
-  if (!(reviewed > 0) || !(fresh > 0)) return true;
-  // Reconfirm at 1/4 of the reviewed slippage, bounded to 1–10 bps so tiny market
-  // noise does not make confirmation impossible while meaningful movement does.
-  const allowedFraction = Math.min(0.001, Math.max(0.0001, slippage / 4));
-  return Math.abs(fresh - reviewed) / reviewed > allowedFraction;
-};
-
-/** Maximum age of the safety-critical account/mark refresh when signing begins. */
-const FINAL_SAFETY_REFRESH_BUDGET_MS = 1_500;
 
 function triggerLegIsValid(
   leg: Readonly<TriggerLeg>,
@@ -724,18 +714,12 @@ export function TradeTicket({
           draft.orderType === 'market' ? await refetchOrderBook() : null;
 
         // Position and trigger-mark state can independently change while a slow
-        // request is in flight. Fetch them as the final network phase and fail
-        // closed if that phase stalls, so old safety state cannot reach signing.
-        const safetyRefreshStartedAt = Date.now();
+        // request is in flight. Always use the completed fresh reads below;
+        // elapsed network time alone does not make an unchanged price unsafe.
         const [latestAccountQuery, latestActiveQuery] = await Promise.all([
           refetchAccount(),
           draft.reduceOnly ? Promise.resolve(null) : refetchActive(),
         ]);
-        if (Date.now() - safetyRefreshStartedAt > FINAL_SAFETY_REFRESH_BUDGET_MS) {
-          throw new TradePreflightError(
-            'The final account and risk refresh took too long. Review and confirm again.',
-          );
-        }
 
         // Every order, including Add/Reduce, is bound to the exact position snapshot
         // shown in review. Compare exchange-lot-quantized sizes to avoid float noise.
