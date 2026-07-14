@@ -14,6 +14,7 @@ import {
   type TpSlLegInput,
 } from '@/components/TpSlSheet';
 import { AppText } from '@/components/ui/AppText';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useMarkets } from '@/data/useMarkets';
@@ -1117,7 +1118,9 @@ export default function AccountScreen() {
         <RiskStrip summary={riskSummary!} hidden={privacyMode} />
 
         {/* Positions / Orders / Balances / History tabs */}
-        <View style={styles.tabBarWrap}>
+        <GlassSurface
+          style={styles.tabBarWrap}
+          tintColor="rgba(8,13,21,0.52)">
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -1147,7 +1150,7 @@ export default function AccountScreen() {
               onPress={() => setTab('history')}
             />
           </ScrollView>
-        </View>
+        </GlassSurface>
 
         {tab === 'positions' ? (
           sortedPositions.length === 0 ? (
@@ -1396,7 +1399,7 @@ function RiskStrip({
   const mask = (value: string) => (hidden ? MASK : value);
 
   return (
-    <View style={styles.riskCard}>
+    <GlassSurface style={styles.riskCard} tintColor="rgba(8,15,23,0.54)">
       <View style={styles.riskHead}>
         <View style={styles.riskTitleRow}>
           <Ionicons
@@ -1469,7 +1472,7 @@ function RiskStrip({
           }
         />
       ) : null}
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -1490,12 +1493,12 @@ function RiskMetric({
         {label}
       </AppText>
       <AppText
-        variant="label"
         numeric
         color={color}
         numberOfLines={1}
         adjustsFontSizeToFit
-        minimumFontScale={0.7}>
+        minimumFontScale={0.78}
+        style={styles.riskMetricValue}>
         {value}
       </AppText>
       {sub ? (
@@ -1602,20 +1605,24 @@ function PositionCardImpl({
       }`;
 
   return (
-    <View style={styles.positionCard}>
+    <GlassSurface style={styles.positionCard} tintColor="rgba(7,13,21,0.56)">
       <View style={styles.positionBody}>
-        <View style={styles.gridRow}>
-          <View style={styles.cell}>
-            <AppText variant="caption" muted>
-              Market
-            </AppText>
+        <View style={styles.positionSummary}>
+          <View style={[styles.positionSummaryCell, styles.positionMarketCell]}>
+            <AppText style={styles.positionColumnLabel}>Market</AppText>
             <View style={styles.marketValueRow}>
-              <AppText style={[styles.positionSymbol, { color: sideColor }]} numberOfLines={1}>
+              <AppText
+                style={[styles.positionSymbol, { color: sideColor }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}>
                 {symbol}
               </AppText>
-              <AppText variant="label" color={sideColor} numeric>
-                {p.leverage}x
-              </AppText>
+              <View style={[styles.positionLeverageBadge, { backgroundColor: sideColor + '16' }]}>
+                <AppText style={[styles.positionLeverageText, { color: sideColor }]} numeric>
+                  {p.leverage}×
+                </AppText>
+              </View>
               {p.dex === 'xyz' ? (
                 <View style={[styles.xyzBadge, { backgroundColor: sideColor + '18' }]}>
                   <AppText variant="caption" color={sideColor}>
@@ -1625,34 +1632,46 @@ function PositionCardImpl({
               ) : null}
             </View>
           </View>
-          <Cell label="Size" value={m(`${qty(p.size)} ${symbol}`)} color={sideColor} />
-          <View style={styles.cell}>
-            <AppText variant="caption" muted>
-              PNL (ROE %)
-            </AppText>
+          <PositionMetric
+            label="Size"
+            value={m(`${qty(p.size)} ${symbol}`)}
+            color={sideColor}
+          />
+          <View style={[styles.positionSummaryCell, styles.positionPnlCell]}>
+            <AppText style={styles.positionColumnLabel}>PNL (ROE %)</AppText>
             <View style={styles.pnlValueRow}>
               {busy ? (
                 <ActivityIndicator size="small" color={Colors.textMuted} />
               ) : (
-                <AppText
-                  variant="label"
-                  numeric
-                  color={pnlColor}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.65}
-                  style={styles.positionPnlText}>
-                  {hidden
-                    ? MASK
-                    : `${signedUsd(p.unrealizedPnl)} (${formatPercent(p.roe * 100)})`}
-                </AppText>
+                <View style={styles.positionPnlText}>
+                  <AppText
+                    numeric
+                    color={pnlColor}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.78}
+                    style={styles.positionPnlAmount}>
+                    {m(signedUsd(p.unrealizedPnl))}
+                  </AppText>
+                  <AppText
+                    numeric
+                    color={pnlColor}
+                    numberOfLines={1}
+                    style={styles.positionRoeText}>
+                    {m(formatPercent(p.roe * 100))}
+                  </AppText>
+                </View>
               )}
               <Pressable
                 onPress={onChart}
                 hitSlop={8}
+                style={({ pressed }) => [
+                  styles.positionChartButton,
+                  pressed && styles.actionBtnPressed,
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${symbol} chart`}>
-                <Ionicons name="open-outline" size={16} color={Colors.accent} />
+                <Ionicons name="open-outline" size={15} color={Colors.accent} />
               </Pressable>
             </View>
           </View>
@@ -1710,6 +1729,31 @@ function PositionCardImpl({
           />
         </Pressable>
       </View>
+    </GlassSurface>
+  );
+}
+
+function PositionMetric({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <View style={styles.positionSummaryCell}>
+      <AppText style={styles.positionColumnLabel}>{label}</AppText>
+      <AppText
+        numeric
+        color={color}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.76}
+        style={styles.positionPrimaryValue}>
+        {value}
+      </AppText>
     </View>
   );
 }
@@ -1734,7 +1778,12 @@ function PositionQuickAction({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}>
-      <AppText variant="label" color={color} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+      <AppText
+        color={color}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.82}
+        style={styles.quickActionText}>
         {label}
       </AppText>
     </Pressable>
@@ -1763,7 +1812,7 @@ function Cell({
         color={color}
         numberOfLines={1}
         adjustsFontSizeToFit
-        minimumFontScale={0.62}
+        minimumFontScale={0.72}
         style={styles.cellValue}>
         {value}
       </AppText>
@@ -2139,38 +2188,40 @@ const styles = StyleSheet.create({
 
   riskCard: {
     marginHorizontal: Spacing.lg,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    gap: Spacing.sm,
+    borderRadius: 20,
+    padding: 14,
+    gap: 10,
   },
   riskHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   riskTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   maintenanceBadge: {
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.surfaceAlt,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.055)',
   },
   maintenanceBadgeWarning: { backgroundColor: Colors.warning + '14' },
   maintenanceBadgeUrgent: { backgroundColor: Colors.down + '16' },
   riskMetrics: {
     flexDirection: 'row',
-    gap: StyleSheet.hairlineWidth,
-    borderRadius: Radius.md,
+    gap: 2,
+    borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.025)',
   },
   riskMetric: {
     flex: 1,
     minWidth: 0,
-    minHeight: 58,
+    minHeight: 68,
     justifyContent: 'center',
-    paddingHorizontal: 7,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.surfaceAlt,
-    gap: 2,
+    paddingHorizontal: 9,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.052)',
+    gap: 3,
   },
+  riskMetricValue: { fontSize: 16, lineHeight: 20, fontWeight: '700' },
   riskWarning: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2185,33 +2236,32 @@ const styles = StyleSheet.create({
 
   tabBarWrap: {
     marginTop: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    marginHorizontal: Spacing.sm,
+    borderRadius: 18,
   },
   tabBar: {
     flexDirection: 'row',
-    gap: Spacing.lg,
-    paddingHorizontal: Spacing.lg,
+    gap: 0,
+    padding: 4,
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-    marginBottom: -StyleSheet.hairlineWidth,
+    paddingHorizontal: 7,
+    paddingVertical: 9,
+    borderRadius: 14,
   },
-  tabActive: { borderBottomColor: Colors.accent },
+  tabActive: { backgroundColor: 'rgba(41,98,255,0.16)' },
   tabCount: {
     minWidth: 20,
     paddingHorizontal: 6,
     paddingVertical: 1,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center',
   },
-  tabCountActive: { backgroundColor: Colors.accentSoft },
+  tabCountActive: { backgroundColor: 'rgba(41,98,255,0.28)' },
   noPositions: { padding: Spacing.xl, alignItems: 'center' },
 
   // Rows mirror the main watchlist (SymbolRow): full-width hairline, logo 40,
@@ -2220,18 +2270,49 @@ const styles = StyleSheet.create({
   positionCard: {
     marginHorizontal: Spacing.lg,
     marginTop: Spacing.md,
-    overflow: 'hidden',
-    borderRadius: Radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderRadius: 20,
   },
-  positionBody: { padding: Spacing.md, gap: Spacing.lg },
+  positionBody: { padding: 15, gap: 20 },
   positionDetails: { gap: Spacing.lg },
-  marketValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 23 },
-  positionSymbol: { fontSize: 17, fontWeight: '700' },
-  pnlValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 23 },
-  positionPnlText: { flex: 1, minWidth: 0 },
+  positionSummary: { flexDirection: 'row', gap: 10, minHeight: 58 },
+  positionSummaryCell: { flex: 1, minWidth: 0, justifyContent: 'flex-start', gap: 7 },
+  positionMarketCell: { flex: 0.95 },
+  positionPnlCell: { flex: 1.25 },
+  positionColumnLabel: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '600',
+    letterSpacing: 0.65,
+    textTransform: 'uppercase',
+  },
+  marketValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32 },
+  positionSymbol: { flexShrink: 1, fontSize: 19, lineHeight: 24, fontWeight: '700' },
+  positionLeverageBadge: {
+    flexShrink: 0,
+    minWidth: 25,
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+  },
+  positionLeverageText: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
+  positionPrimaryValue: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  pnlValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32 },
+  positionPnlText: { flex: 1, minWidth: 0, gap: 1 },
+  positionPnlAmount: { fontSize: 18, lineHeight: 21, fontWeight: '700' },
+  positionRoeText: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  positionChartButton: {
+    width: 28,
+    height: 28,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(41,98,255,0.35)',
+    backgroundColor: 'rgba(41,98,255,0.10)',
+  },
   positionDivider: {
     height: StyleSheet.hairlineWidth,
     marginHorizontal: Spacing.md,
@@ -2240,15 +2321,20 @@ const styles = StyleSheet.create({
   positionActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
-    minHeight: 50,
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    minHeight: 54,
   },
   collapseAction: {
     width: 34,
     height: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Radius.sm,
+    borderRadius: 11,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
   },
   card: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -2292,10 +2378,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 0,
     minHeight: 38,
-    paddingHorizontal: 3,
+    paddingHorizontal: 5,
     paddingVertical: Spacing.sm,
-    borderRadius: Radius.sm,
+    borderRadius: 11,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.075)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
+  quickActionText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
 
   // Expanded detail
   detail: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, gap: Spacing.md },
@@ -2308,8 +2398,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 6,
   },
-  cellValue: { marginTop: 1 },
-  cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 23 },
+  cellValue: { marginTop: 1, fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  cellValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 27 },
   actionBtnPressed: { backgroundColor: Colors.surfacePress },
   cancelBtn: {
     paddingHorizontal: Spacing.md,

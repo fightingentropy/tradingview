@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { EquityCurve } from '@/components/EquityCurve';
 import { AppText } from '@/components/ui/AppText';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useHlPortfolio } from '@/data/useHlAccount';
 import { formatPercent, signedUsd } from '@/lib/format';
@@ -59,7 +60,9 @@ export function PortfolioCard({ hidden, compact = false }: { hidden: boolean; co
   const mask = (s: string) => (hidden ? '••••' : s);
 
   return (
-    <View style={[styles.card, compact && !expanded && styles.cardCompact]}>
+    <GlassSurface
+      style={[styles.card, compact && !expanded && styles.cardCompact]}
+      tintColor="rgba(8,15,23,0.52)">
       <Pressable
         style={({ pressed }) => [styles.head, compact && pressed && styles.headPressed]}
         onPress={() => compact && setCompactExpanded((current) => !current)}
@@ -132,14 +135,13 @@ export function PortfolioCard({ hidden, compact = false }: { hidden: boolean; co
           </View>
         </>
       ) : null}
-    </View>
+    </GlassSurface>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: 20,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
     gap: Spacing.sm,
@@ -156,6 +158,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: 5,
     borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
   },
-  periodActive: { backgroundColor: Colors.surfaceAlt },
+  periodActive: {
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.075)',
+  },
 });
