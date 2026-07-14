@@ -1779,12 +1779,7 @@ function PositionQuickAction({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}>
-      <AppText
-        color={color}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.82}
-        style={styles.quickActionText}>
+      <AppText color={color} numberOfLines={1} style={styles.quickActionText}>
         {label}
       </AppText>
     </Pressable>
@@ -2393,7 +2388,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.075)',
     backgroundColor: 'rgba(255,255,255,0.04)',
   },
-  quickActionText: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  quickActionText: { fontSize: 13, lineHeight: 17, fontWeight: '600', textAlign: 'center' },
 
   // Expanded detail
   detail: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, gap: Spacing.md },
