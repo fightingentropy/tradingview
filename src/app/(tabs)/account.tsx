@@ -1608,73 +1608,83 @@ function PositionCardImpl({
     <GlassSurface style={styles.positionCard} tintColor="rgba(7,13,21,0.56)">
       <View style={styles.positionBody}>
         <View style={styles.positionSummary}>
-          <View style={[styles.positionSummaryCell, styles.positionMarketCell]}>
-            <AppText style={styles.positionColumnLabel}>Market</AppText>
-            <View style={styles.marketValueRow}>
-              <AppText
-                style={[styles.positionSymbol, { color: sideColor }]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.8}>
-                {symbol}
-              </AppText>
-              <View style={[styles.positionLeverageBadge, { backgroundColor: sideColor + '16' }]}>
-                <AppText style={[styles.positionLeverageText, { color: sideColor }]} numeric>
-                  {p.leverage}×
+          <Pressable
+            style={({ pressed }) => [
+              styles.positionSummaryTapTarget,
+              pressed && styles.positionSummaryPressed,
+            ]}
+            onPress={onToggle}
+            accessibilityRole="button"
+            accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${symbol} position`}
+            accessibilityState={{ expanded }}>
+            <View style={[styles.positionSummaryCell, styles.positionMarketCell]}>
+              <AppText style={styles.positionColumnLabel}>Market</AppText>
+              <View style={styles.marketValueRow}>
+                <AppText
+                  style={[styles.positionSymbol, { color: sideColor }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}>
+                  {symbol}
                 </AppText>
+                <View style={[styles.positionLeverageBadge, { backgroundColor: sideColor + '16' }]}>
+                  <AppText style={[styles.positionLeverageText, { color: sideColor }]} numeric>
+                    {p.leverage}×
+                  </AppText>
+                </View>
+                {p.dex === 'xyz' ? (
+                  <View style={[styles.xyzBadge, { backgroundColor: sideColor + '18' }]}>
+                    <AppText variant="caption" color={sideColor}>
+                      xyz
+                    </AppText>
+                  </View>
+                ) : null}
               </View>
-              {p.dex === 'xyz' ? (
-                <View style={[styles.xyzBadge, { backgroundColor: sideColor + '18' }]}>
-                  <AppText variant="caption" color={sideColor}>
-                    xyz
-                  </AppText>
-                </View>
-              ) : null}
             </View>
-          </View>
-          <PositionMetric
-            label="Size"
-            value={m(`${qty(p.size)} ${symbol}`)}
-            color={sideColor}
-          />
-          <View style={[styles.positionSummaryCell, styles.positionPnlCell]}>
-            <AppText style={styles.positionColumnLabel}>PNL (ROE %)</AppText>
-            <View style={styles.pnlValueRow}>
-              {busy ? (
-                <ActivityIndicator size="small" color={Colors.textMuted} />
-              ) : (
-                <View style={styles.positionPnlText}>
-                  <AppText
-                    numeric
-                    color={pnlColor}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.78}
-                    style={styles.positionPnlAmount}>
-                    {m(signedUsd(p.unrealizedPnl))}
-                  </AppText>
-                  <AppText
-                    numeric
-                    color={pnlColor}
-                    numberOfLines={1}
-                    style={styles.positionRoeText}>
-                    {m(formatPercent(p.roe * 100))}
-                  </AppText>
-                </View>
-              )}
-              <Pressable
-                onPress={onChart}
-                hitSlop={8}
-                style={({ pressed }) => [
-                  styles.positionChartButton,
-                  pressed && styles.actionBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${symbol} chart`}>
-                <Ionicons name="open-outline" size={15} color={Colors.accent} />
-              </Pressable>
+            <PositionMetric
+              label="Size"
+              value={m(`${qty(p.size)} ${symbol}`)}
+              color={sideColor}
+            />
+            <View style={[styles.positionSummaryCell, styles.positionPnlCell]}>
+              <AppText style={styles.positionColumnLabel}>PNL (ROE %)</AppText>
+              <View style={styles.pnlValueRow}>
+                {busy ? (
+                  <ActivityIndicator size="small" color={Colors.textMuted} />
+                ) : (
+                  <View style={styles.positionPnlText}>
+                    <AppText
+                      numeric
+                      color={pnlColor}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.78}
+                      style={styles.positionPnlAmount}>
+                      {m(signedUsd(p.unrealizedPnl))}
+                    </AppText>
+                    <AppText
+                      numeric
+                      color={pnlColor}
+                      numberOfLines={1}
+                      style={styles.positionRoeText}>
+                      {m(formatPercent(p.roe * 100))}
+                    </AppText>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
+          </Pressable>
+          <Pressable
+            onPress={onChart}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.positionChartButton,
+              pressed && styles.actionBtnPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${symbol} chart`}>
+            <Ionicons name="open-outline" size={15} color={Colors.accent} />
+          </Pressable>
         </View>
 
         {expanded ? (
@@ -2274,10 +2284,14 @@ const styles = StyleSheet.create({
   },
   positionBody: { padding: 15, gap: 20 },
   positionDetails: { gap: Spacing.lg },
-  positionSummary: { flexDirection: 'row', gap: 10, minHeight: 58 },
+  positionSummary: { minHeight: 58 },
+  positionSummaryTapTarget: { flexDirection: 'row', gap: 10, minHeight: 58 },
+  positionSummaryPressed: {
+    opacity: 0.78,
+  },
   positionSummaryCell: { flex: 1, minWidth: 0, justifyContent: 'flex-start', gap: 7 },
   positionMarketCell: { flex: 0.95 },
-  positionPnlCell: { flex: 1.25 },
+  positionPnlCell: { flex: 1.25, paddingRight: 34 },
   positionColumnLabel: {
     color: Colors.textMuted,
     fontSize: 10,
@@ -2303,6 +2317,9 @@ const styles = StyleSheet.create({
   positionPnlAmount: { fontSize: 18, lineHeight: 21, fontWeight: '700' },
   positionRoeText: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
   positionChartButton: {
+    position: 'absolute',
+    top: 22,
+    right: 0,
     width: 28,
     height: 28,
     flexShrink: 0,
