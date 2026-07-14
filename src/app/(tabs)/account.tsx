@@ -1167,13 +1167,13 @@ export default function AccountScreen() {
                   p={p}
                   instrument={instrumentForCoin(p.coin)}
                   protection={positionProtectionByCoin.get(p.coin)}
-                  expanded={!expanded.has(`position-collapsed:${p.coin}`)}
+                  expanded={expanded.has(`position:${p.coin}`)}
                   busy={
                     positionActionMutation.isPending &&
                     positionActionMutation.variables?.position.coin === p.coin
                   }
                   hidden={privacyMode}
-                  onToggle={() => toggleExpand(`position-collapsed:${p.coin}`)}
+                  onToggle={() => toggleExpand(`position:${p.coin}`)}
                   onChart={() => openChart(p.coin)}
                   onLimitClose={() => setLimitCloseTargetCoin(p.coin)}
                   onMarketClose={() => confirmMarketClose(p)}
