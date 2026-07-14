@@ -1,4 +1,5 @@
 import {
+  Canvas,
   DashPathEffect,
   Group,
   Line as SkiaLine,
@@ -805,8 +806,67 @@ function Crosshair({
   );
 }
 
+function PositionGuideLines({
+  entryY,
+  liquidationY,
+  hasLiquidation,
+  entryColor,
+  bounds,
+}: {
+  entryY: SharedValue<number>;
+  liquidationY: SharedValue<number>;
+  hasLiquidation: boolean;
+  entryColor: string;
+  bounds: SharedValue<Bounds>;
+}) {
+  const entryStart = useDerivedValue(() => vec(bounds.value.left, entryY.value));
+  const entryEnd = useDerivedValue(() => vec(bounds.value.right, entryY.value));
+  const entryOpacity = useDerivedValue(() => {
+    const y = entryY.value;
+    const b = bounds.value;
+    return Number.isFinite(y) && y >= b.top && y <= b.bottom ? 0.88 : 0;
+  });
+  const liquidationStart = useDerivedValue(() =>
+    vec(bounds.value.left, liquidationY.value),
+  );
+  const liquidationEnd = useDerivedValue(() =>
+    vec(bounds.value.right, liquidationY.value),
+  );
+  const liquidationOpacity = useDerivedValue(() => {
+    const y = liquidationY.value;
+    const b = bounds.value;
+    return Number.isFinite(y) && y >= b.top && y <= b.bottom ? 0.7 : 0;
+  });
+
+  return (
+    <Canvas style={styles.positionGuideCanvas} pointerEvents="none">
+      <Group opacity={entryOpacity}>
+        <SkiaLine
+          p1={entryStart}
+          p2={entryEnd}
+          color={entryColor}
+          strokeWidth={1.5}
+          strokeCap="round">
+          <DashPathEffect intervals={[1, 5]} />
+        </SkiaLine>
+      </Group>
+      {hasLiquidation ? (
+        <Group opacity={liquidationOpacity}>
+          <SkiaLine
+            p1={liquidationStart}
+            p2={liquidationEnd}
+            color={Colors.warning}
+            strokeWidth={1}>
+            <DashPathEffect intervals={[5, 4]} />
+          </SkiaLine>
+        </Group>
+      ) : null}
+    </Canvas>
+  );
+}
+
 /**
- * Overlays an open position on the price area: a dashed horizontal entry line
+ * Overlays an open position on the price area: a dotted horizontal entry line
  * spanning the full width, an optional liquidation line, a compact PnL/size tag,
  * and right-edge price tags. Everything rides the
  * existing pixel↔price coefficients (`price = m·y + b`, inverted to `y = (price − b)/m`),
@@ -847,12 +907,6 @@ function PositionOverlay({
   // Lines are visible only while their price sits inside the plot band. The entry
   // tag stays visible and pins to the closest edge, so a distant winning position
   // never crushes the candle scale or loses its management control.
-  const entryLineStyle = useAnimatedStyle(() => {
-    const v = entryY.value;
-    const b = bounds.value;
-    const on = Number.isFinite(v) && v >= b.top && v <= b.bottom;
-    return { opacity: on ? 1 : 0, transform: [{ translateY: Number.isFinite(v) ? v : 0 }] };
-  });
   const entryTagStyle = useAnimatedStyle(() => {
     const v = entryY.value;
     const b = bounds.value;
@@ -861,12 +915,6 @@ function PositionOverlay({
       ? Math.max(b.top + POS_TAG_H / 2, Math.min(b.bottom - POS_TAG_H / 2, v))
       : POS_TAG_H / 2;
     return { opacity: ready ? 1 : 0, transform: [{ translateY: clamped - POS_TAG_H / 2 }] };
-  });
-  const liqLineStyle = useAnimatedStyle(() => {
-    const v = liqY.value;
-    const b = bounds.value;
-    const on = Number.isFinite(v) && v >= b.top && v <= b.bottom;
-    return { opacity: on ? 1 : 0, transform: [{ translateY: Number.isFinite(v) ? v : 0 }] };
   });
   const liqTagStyle = useAnimatedStyle(() => {
     const v = liqY.value;
@@ -880,15 +928,12 @@ function PositionOverlay({
 
   return (
     <>
-      {hasLiq ? (
-        <Animated.View
-          style={[styles.posLine, styles.posLiqLine, liqLineStyle]}
-          pointerEvents="none"
-        />
-      ) : null}
-      <Animated.View
-        style={[styles.posLine, { borderTopColor: pnlColor }, entryLineStyle]}
-        pointerEvents="none"
+      <PositionGuideLines
+        entryY={entryY}
+        liquidationY={liqY}
+        hasLiquidation={hasLiq}
+        entryColor={pnlColor}
+        bounds={bounds}
       />
 
       {/* Hyperliquid-style inline tag: only PnL and size at the actual entry price. */}
@@ -1146,19 +1191,16 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontVariant: ['tabular-nums'],
   },
-  // Position overlay: a full-width horizontal line riding a price level, plus tags.
-  posLine: {
+  // Native-drawn position/liquidation guides; kept below their endpoint tags.
+  positionGuideCanvas: {
     position: 'absolute',
-    left: 0,
-    right: 0,
     top: 0,
-    height: 0,
-    borderTopWidth: 1,
-    borderStyle: 'dashed',
+    right: 0,
+    bottom: 0,
+    left: 0,
     zIndex: 2,
   },
-  posLiqLine: { borderTopColor: Colors.warning, opacity: 0.7 },
-  // Compact Hyperliquid-style position chip riding the dashed entry line.
+  // Compact Hyperliquid-style position chip riding the dotted entry line.
   posTag: {
     position: 'absolute',
     top: 0,
