@@ -1622,9 +1622,7 @@ function PositionCardImpl({
               <View style={styles.marketValueRow}>
                 <AppText
                   style={[styles.positionSymbol, { color: sideColor }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}>
+                  numberOfLines={1}>
                   {symbol}
                 </AppText>
                 <View style={[styles.positionLeverageBadge, { backgroundColor: sideColor + '16' }]}>
@@ -1632,13 +1630,6 @@ function PositionCardImpl({
                     {p.leverage}×
                   </AppText>
                 </View>
-                {p.dex === 'xyz' ? (
-                  <View style={[styles.xyzBadge, { backgroundColor: sideColor + '18' }]}>
-                    <AppText variant="caption" color={sideColor}>
-                      xyz
-                    </AppText>
-                  </View>
-                ) : null}
               </View>
             </View>
             <PositionMetric
@@ -2290,7 +2281,7 @@ const styles = StyleSheet.create({
     opacity: 0.78,
   },
   positionSummaryCell: { flex: 1, minWidth: 0, justifyContent: 'flex-start', gap: 7 },
-  positionMarketCell: { flex: 0.95 },
+  positionMarketCell: { flex: 1.05 },
   positionPnlCell: { flex: 1.25, paddingRight: 34 },
   positionColumnLabel: {
     color: Colors.textMuted,
@@ -2301,7 +2292,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   marketValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32 },
-  positionSymbol: { flexShrink: 1, fontSize: 19, lineHeight: 24, fontWeight: '700' },
+  positionSymbol: { flexShrink: 0, fontSize: 20, lineHeight: 25, fontWeight: '700' },
   positionLeverageBadge: {
     flexShrink: 0,
     minWidth: 25,
