@@ -116,8 +116,16 @@ export default function NewsScreen() {
                 ? error.message
                 : 'Could not load the latest messages.'}
           </AppText>
-          <Pressable onPress={() => refetch()} style={styles.retry}>
-            <AppText style={styles.retryText}>Try again</AppText>
+          <Pressable
+            onPress={() => refetch()}
+            style={styles.retry}
+            disabled={isRefetching}
+            accessibilityState={{ disabled: isRefetching, busy: isRefetching }}>
+            {isRefetching ? (
+              <ActivityIndicator size="small" color={Colors.accent} />
+            ) : (
+              <AppText style={styles.retryText}>Try again</AppText>
+            )}
           </Pressable>
         </View>
       ) : source === 'all' && executiveSummary ? (
@@ -135,8 +143,16 @@ export default function NewsScreen() {
           <AppText muted style={styles.stateBody}>
             The Mac mini is filtering the latest sources into a concise executive summary. Raw feeds remain available above.
           </AppText>
-          <Pressable onPress={() => refetch()} style={styles.retry}>
-            <AppText style={styles.retryText}>Check again</AppText>
+          <Pressable
+            onPress={() => refetch()}
+            style={styles.retry}
+            disabled={isRefetching}
+            accessibilityState={{ disabled: isRefetching, busy: isRefetching }}>
+            {isRefetching ? (
+              <ActivityIndicator size="small" color={Colors.accent} />
+            ) : (
+              <AppText style={styles.retryText}>Check again</AppText>
+            )}
           </Pressable>
         </View>
       ) : items.length === 0 ? (

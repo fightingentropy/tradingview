@@ -1004,7 +1004,9 @@ export default function SymbolScreen() {
         allowPartial
         existingOrders={existingProtection}
         onCancelExisting={confirmCancelProtection}
-        cancelBusy={cancelMutation.isPending}
+        cancelBusyId={
+          cancelMutation.isPending ? cancelMutation.variables?.order.oid : null
+        }
         onSubmit={confirmProtection}
       />
     </Screen>

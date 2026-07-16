@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useMemo, useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
@@ -111,7 +112,8 @@ export interface TpSlSheetProps {
   existingOrders?: readonly TpSlExistingOrder[];
   /** Cancel one existing order. The caller remains responsible for confirmation. */
   onCancelExisting?: (id: string | number) => void;
-  cancelBusy?: boolean;
+  /** Identifies the exact existing order currently being cancelled. */
+  cancelBusyId?: string | number | null;
 }
 
 /**
@@ -136,18 +138,21 @@ export function TpSlSheet({
   allowPartial = false,
   existingOrders = [],
   onCancelExisting,
-  cancelBusy = false,
+  cancelBusyId = null,
 }: TpSlSheetProps) {
   const [tp, setTp] = useState('');
   const [sl, setSl] = useState('');
   const [closePct, setClosePct] = useState(100);
   const [configureAmount, setConfigureAmount] = useState(false);
   const [triggerFill, setTriggerFill] = useState<TriggerFill>('market');
+  const cancelBusy = cancelBusyId !== null;
+  const actionBusy = busy || cancelBusy;
 
   const isLong = side === 'long';
   const dir = isLong ? 1 : -1;
 
   const close = () => {
+    if (actionBusy) return;
     setTp('');
     setSl('');
     setClosePct(100);
@@ -201,7 +206,7 @@ export function TpSlSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <Pressable style={styles.backdrop} onPress={close} />
+      <Pressable style={styles.backdrop} onPress={close} disabled={actionBusy} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.sheetWrap}>
@@ -209,7 +214,11 @@ export function TpSlSheet({
           <View style={styles.handle} />
           <View style={styles.headerRow}>
             <AppText variant="heading">TP/SL for Position</AppText>
-            <Pressable onPress={close} hitSlop={10} accessibilityLabel="Close protection sheet">
+            <Pressable
+              onPress={close}
+              disabled={actionBusy}
+              hitSlop={10}
+              accessibilityLabel="Close protection sheet">
               <Ionicons name="close" size={22} color={Colors.textMuted} />
             </Pressable>
           </View>
@@ -336,31 +345,41 @@ export function TpSlSheet({
                     New values add orders
                   </AppText>
                 </View>
-                {existingOrders.map((order) => (
-                  <View key={String(order.id)} style={styles.existingRow}>
-                    <View style={styles.existingMain}>
-                      <View
-                        style={[
-                          styles.typeDot,
-                          { backgroundColor: order.tpsl === 'tp' ? Colors.up : Colors.down },
-                        ]}
-                      />
-                      <AppText variant="caption" numeric>
-                        {order.tpsl === 'tp' ? 'TP' : 'SL'} {formatPrice(order.triggerPx, priceDecimals)}
-                      </AppText>
-                    </View>
-                    {onCancelExisting ? (
-                      <Pressable
-                        style={[styles.cancelOrder, cancelBusy && styles.disabled]}
-                        onPress={() => onCancelExisting(order.id)}
-                        disabled={cancelBusy}>
-                        <AppText variant="caption" color={Colors.down}>
-                          Cancel
+                {existingOrders.map((order) => {
+                  const cancelling =
+                    cancelBusyId !== null && String(cancelBusyId) === String(order.id);
+                  return (
+                    <View key={String(order.id)} style={styles.existingRow}>
+                      <View style={styles.existingMain}>
+                        <View
+                          style={[
+                            styles.typeDot,
+                            { backgroundColor: order.tpsl === 'tp' ? Colors.up : Colors.down },
+                          ]}
+                        />
+                        <AppText variant="caption" numeric>
+                          {order.tpsl === 'tp' ? 'TP' : 'SL'}{' '}
+                          {formatPrice(order.triggerPx, priceDecimals)}
                         </AppText>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ))}
+                      </View>
+                      {onCancelExisting ? (
+                        <Pressable
+                          style={[styles.cancelOrder, actionBusy && styles.disabled]}
+                          onPress={() => onCancelExisting(order.id)}
+                          disabled={actionBusy}
+                          accessibilityState={{ disabled: actionBusy, busy: cancelling }}>
+                          {cancelling ? (
+                            <ActivityIndicator size="small" color={Colors.down} />
+                          ) : (
+                            <AppText variant="caption" color={Colors.down}>
+                              Cancel
+                            </AppText>
+                          )}
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
             ) : null}
 
@@ -372,12 +391,25 @@ export function TpSlSheet({
           </ScrollView>
 
           <Pressable
-            style={[styles.submit, { backgroundColor: canSubmit ? Colors.accent : GLASS_FILL_STRONG }]}
+            style={[
+              styles.submit,
+              { backgroundColor: canSubmit || busy ? Colors.accent : GLASS_FILL_STRONG },
+            ]}
             onPress={() => onSubmit(legs)}
-            disabled={!canSubmit}>
-            <AppText variant="label" color={canSubmit ? '#04150E' : Colors.textFaint}>
-              {busy ? 'Confirming…' : 'Confirm'}
-            </AppText>
+            disabled={!canSubmit || actionBusy}
+            accessibilityState={{ disabled: !canSubmit || actionBusy, busy }}>
+            {busy ? (
+              <View style={styles.submitBusy}>
+                <ActivityIndicator size="small" color="#04150E" />
+                <AppText variant="label" color="#04150E">
+                  Setting protection…
+                </AppText>
+              </View>
+            ) : (
+              <AppText variant="label" color={canSubmit ? '#04150E' : Colors.textFaint}>
+                Confirm
+              </AppText>
+            )}
           </Pressable>
         </SheetSurface>
 
@@ -647,6 +679,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     minHeight: 48,
   },
+  submitBusy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
 
   accessory: {
     flexDirection: 'row',

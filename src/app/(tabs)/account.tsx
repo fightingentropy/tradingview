@@ -255,7 +255,7 @@ export default function AccountScreen() {
   const network = useHlConnection((s) => s.network);
   const hasKey = useHlConnection((s) => s.hasKey);
   const connectDemo = useHlConnection((s) => s.connectDemo);
-  const { data: account, isLoading, isError, refetch } = useHlAccount();
+  const { data: account, isLoading, isError, isFetching, refetch } = useHlAccount();
   const { data: tradingIdentity } = useTradingIdentity();
   const executionIdentity = signedIdentityBinding(tradingIdentity);
   const { data: openOrders } = useHlOpenOrders();
@@ -1048,10 +1048,18 @@ export default function AccountScreen() {
       <Screen>
         <View style={styles.center}>
           <AppText muted>Couldn’t load account</AppText>
-          <Pressable style={styles.retryBtn} onPress={() => refetch()}>
-            <AppText variant="label" color={Colors.accent}>
-              Retry
-            </AppText>
+          <Pressable
+            style={styles.retryBtn}
+            onPress={() => refetch()}
+            disabled={isFetching}
+            accessibilityState={{ disabled: isFetching, busy: isFetching }}>
+            {isFetching ? (
+              <ActivityIndicator size="small" color={Colors.accent} />
+            ) : (
+              <AppText variant="label" color={Colors.accent}>
+                Retry
+              </AppText>
+            )}
           </Pressable>
         </View>
       </Screen>
@@ -1316,7 +1324,7 @@ export default function AccountScreen() {
           const order = openOrders?.find((item) => item.oid === Number(id));
           if (order) confirmCancel(order);
         }}
-        cancelBusy={cancelMutation.isPending}
+        cancelBusyId={cancelMutation.isPending ? cancelMutation.variables?.o.oid : null}
         onSubmit={(legs) => {
           if (tpSlTarget) confirmTpSl(tpSlTarget, legs);
         }}

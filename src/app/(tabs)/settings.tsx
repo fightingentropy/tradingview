@@ -43,7 +43,7 @@ function StatusRow({ label, detail }: { label: string; detail: string }) {
 }
 
 export default function SettingsScreen() {
-  const [newsAlertsUpdating, setNewsAlertsUpdating] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const resetDefaults = useWatchlists((s) => s.resetDefaults);
   const alerts = useAlerts((s) => s.alerts);
   const removeAlert = useAlerts((s) => s.remove);
@@ -69,26 +69,38 @@ export default function SettingsScreen() {
     ]);
 
   const onToggleNotifications = async (value: boolean) => {
-    if (!value) {
-      setAlertNotifications(false);
-      unregisterAlertTask();
-      return;
-    }
-    const granted = await ensureNotificationPermission();
-    if (!granted) {
+    if (pendingAction) return;
+    setPendingAction('price-alerts');
+    try {
+      if (!value) {
+        setAlertNotifications(false);
+        await unregisterAlertTask();
+        return;
+      }
+      const granted = await ensureNotificationPermission();
+      if (!granted) {
+        Alert.alert(
+          'Notifications are off',
+          'Enable notifications for TradingView in iOS Settings to receive price alerts.',
+        );
+        return;
+      }
+      await registerAlertTask();
+      setAlertNotifications(true);
+    } catch (error) {
+      if (value) setAlertNotifications(false);
       Alert.alert(
-        'Notifications are off',
-        'Enable notifications for TradingView in iOS Settings to receive price alerts.',
+        'Price alerts unavailable',
+        error instanceof Error ? error.message : 'Could not update price alert notifications.',
       );
-      return;
+    } finally {
+      setPendingAction(null);
     }
-    setAlertNotifications(true);
-    registerAlertTask();
   };
 
   const onToggleNewsNotifications = async (value: boolean) => {
-    if (newsAlertsUpdating) return;
-    setNewsAlertsUpdating(true);
+    if (pendingAction) return;
+    setPendingAction('news-alerts');
     try {
       if (!value) {
         setNewsNotifications(false);
@@ -108,13 +120,13 @@ export default function SettingsScreen() {
         error instanceof Error ? error.message : 'Could not register this device for news alerts.',
       );
     } finally {
-      setNewsAlertsUpdating(false);
+      setPendingAction(null);
     }
   };
 
   const onToggleNewsSource = async (sourceId: string, value: boolean) => {
-    if (newsAlertsUpdating) return;
-    setNewsAlertsUpdating(true);
+    if (pendingAction) return;
+    setPendingAction(`news-source:${sourceId}`);
     const previous = newsNotificationSources;
     const next = value
       ? normalizeNewsNotificationSourceIds([...previous, sourceId])
@@ -136,7 +148,7 @@ export default function SettingsScreen() {
         error instanceof Error ? error.message : 'The selected sources could not be saved.',
       );
     } finally {
-      setNewsAlertsUpdating(false);
+      setPendingAction(null);
     }
   };
 
@@ -222,6 +234,8 @@ export default function SettingsScreen() {
             <GlassToggle
               value={alertNotifications}
               onValueChange={onToggleNotifications}
+              disabled={pendingAction !== null}
+              loading={pendingAction === 'price-alerts'}
               accessibilityLabel="Price alert notifications"
             />
           </View>
@@ -241,7 +255,8 @@ export default function SettingsScreen() {
             <GlassToggle
               value={newsNotifications}
               onValueChange={onToggleNewsNotifications}
-              disabled={newsAlertsUpdating}
+              disabled={pendingAction !== null}
+              loading={pendingAction === 'news-alerts'}
               accessibilityLabel="News push notifications"
             />
           </View>
@@ -258,7 +273,8 @@ export default function SettingsScreen() {
                 <GlassToggle
                   value={newsNotificationSources.includes(source.id)}
                   onValueChange={(value) => void onToggleNewsSource(source.id, value)}
-                  disabled={newsAlertsUpdating}
+                  disabled={pendingAction !== null}
+                  loading={pendingAction === `news-source:${source.id}`}
                   accessibilityLabel={`${source.label} news alerts`}
                 />
               </View>

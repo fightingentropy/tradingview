@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
@@ -102,6 +103,7 @@ export function MarginSheet({
       : null;
 
   const close = () => {
+    if (busy) return;
     setMode('add');
     setAmount('');
     onClose();
@@ -127,7 +129,7 @@ export function MarginSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <Pressable style={styles.backdrop} onPress={close} />
+      <Pressable style={styles.backdrop} onPress={close} disabled={busy} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.sheetWrap}>
@@ -266,13 +268,26 @@ export function MarginSheet({
           ) : null}
 
           <Pressable
-            style={[styles.submit, { backgroundColor: canSubmit ? Colors.accent : GLASS_FILL_STRONG }]}
+            style={[
+              styles.submit,
+              { backgroundColor: canSubmit || busy ? Colors.accent : GLASS_FILL_STRONG },
+            ]}
             onPress={() => onSubmit(mode === 'add' ? amt : -amt)}
-            disabled={!canSubmit}>
-            <AppText variant="label" color={canSubmit ? '#04150E' : Colors.textFaint}>
-              {mode === 'add' ? 'Add margin' : 'Review risky removal'}
-              {amt > 0 ? ` · ${usd(amt)}` : ''}
-            </AppText>
+            disabled={!canSubmit || busy}
+            accessibilityState={{ disabled: !canSubmit || busy, busy }}>
+            {busy ? (
+              <View style={styles.submitBusy}>
+                <ActivityIndicator size="small" color="#04150E" />
+                <AppText variant="label" color="#04150E">
+                  Updating margin…
+                </AppText>
+              </View>
+            ) : (
+              <AppText variant="label" color={canSubmit ? '#04150E' : Colors.textFaint}>
+                {mode === 'add' ? 'Add margin' : 'Review risky removal'}
+                {amt > 0 ? ` · ${usd(amt)}` : ''}
+              </AppText>
+            )}
           </Pressable>
         </SheetSurface>
 
@@ -369,6 +384,7 @@ const styles = StyleSheet.create({
 
   hint: { marginTop: -Spacing.xs },
   submit: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md, marginTop: Spacing.xs, minHeight: 48 },
+  submitBusy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
 
   accessory: {
     flexDirection: 'row',

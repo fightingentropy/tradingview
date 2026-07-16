@@ -1004,6 +1004,7 @@ export function TradeTicket({
   };
 
   const close = () => {
+    if (mutation.isPending) return;
     reset();
     onClose();
   };
@@ -1125,7 +1126,7 @@ export function TradeTicket({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <Pressable style={styles.backdrop} onPress={close} />
+      <Pressable style={styles.backdrop} onPress={close} disabled={mutation.isPending} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.sheetWrap}>
@@ -1749,9 +1750,18 @@ export function TradeTicket({
                 <Pressable
                   style={[styles.submit, { backgroundColor: canSubmit ? sideColor : GLASS_FILL_STRONG }]}
                   onPress={confirm}
-                  disabled={!canSubmit || mutation.isPending}>
+                  disabled={!canSubmit || mutation.isPending}
+                  accessibilityState={{
+                    disabled: !canSubmit || mutation.isPending,
+                    busy: mutation.isPending,
+                  }}>
                   {mutation.isPending ? (
-                    <ActivityIndicator color={Colors.text} />
+                    <View style={styles.submitBusy}>
+                      <ActivityIndicator size="small" color={Colors.text} />
+                      <AppText variant="label" color={Colors.text}>
+                        Submitting order…
+                      </AppText>
+                    </View>
                   ) : (
                     <AppText variant="label" color={canSubmit ? '#04150E' : Colors.textFaint}>
                       Review {submitVerb} {label}
@@ -2246,6 +2256,7 @@ const styles = StyleSheet.create({
   submitSummaryRight: { alignItems: 'flex-end' },
   stopDisclaimer: { textAlign: 'center' },
   submit: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md, minHeight: 48 },
+  submitBusy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
 
   accessory: {
     flexDirection: 'row',

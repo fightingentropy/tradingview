@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
-import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import { GlassSurface } from '@/components/ui/GlassSurface';
 
@@ -13,14 +13,17 @@ export function GlassToggle({
   value,
   onValueChange,
   disabled = false,
+  loading = false,
   accessibilityLabel,
 }: {
   value: boolean;
   onValueChange: (next: boolean) => void;
   disabled?: boolean;
+  loading?: boolean;
   accessibilityLabel?: string;
 }) {
   const [progress] = useState(() => new Animated.Value(value ? 1 : 0));
+  const interactionDisabled = disabled || loading;
 
   useEffect(() => {
     Animated.spring(progress, {
@@ -40,15 +43,15 @@ export function GlassToggle({
   return (
     <Pressable
       onPress={() => {
-        if (disabled) return;
+        if (interactionDisabled) return;
         void Haptics.selectionAsync();
         onValueChange(!value);
       }}
-      disabled={disabled}
+      disabled={interactionDisabled}
       hitSlop={8}
       accessibilityRole="switch"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ checked: value, disabled }}>
+      accessibilityState={{ checked: value, disabled: interactionDisabled, busy: loading }}>
       <GlassSurface
         style={[
           styles.track,
@@ -74,11 +77,17 @@ export function GlassToggle({
           style={[
             styles.thumb,
             value ? styles.thumbOn : styles.thumbOff,
-            disabled && styles.thumbDisabled,
+            interactionDisabled && styles.thumbDisabled,
+            loading && styles.thumbLoading,
             { transform: [{ translateX }] },
           ]}>
           <View style={styles.thumbHighlight} />
         </Animated.View>
+        {loading ? (
+          <View pointerEvents="none" style={styles.loadingIndicator}>
+            <ActivityIndicator size="small" color="#F4F4F5" />
+          </View>
+        ) : null}
       </GlassSurface>
     </Pressable>
   );
@@ -107,6 +116,16 @@ const styles = StyleSheet.create({
   thumbOn: { backgroundColor: '#050506', borderColor: 'rgba(255,255,255,0.32)' },
   thumbOff: { backgroundColor: '#F4F4F5', borderColor: 'rgba(255,255,255,0.72)' },
   thumbDisabled: { backgroundColor: '#68686D', borderColor: 'rgba(255,255,255,0.12)' },
+  thumbLoading: { opacity: 0 },
+  loadingIndicator: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   thumbHighlight: {
     position: 'absolute',
     top: 2,
