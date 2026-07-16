@@ -38,7 +38,12 @@ export function outcomeCoinKey(outcome: number, side: number): string {
   return `#${outcomeEncoding(outcome, side)}`;
 }
 
-/** Integer asset id used by signed order actions. Kept here for safe future trading support. */
+/** Token name returned by `spotClearinghouseState` for an outcome balance. */
+export function outcomeTokenName(outcome: number, side: number): string {
+  return `+${outcomeEncoding(outcome, side)}`;
+}
+
+/** Integer asset id used by signed order and cancel actions. */
 export function outcomeAssetId(outcome: number, side: number): number {
   return 100_000_000 + outcomeEncoding(outcome, side);
 }
@@ -188,6 +193,22 @@ export interface OutcomeMetadata {
   subCategory: string | null;
 }
 
+/** One independently tradable side of a displayed outcome choice. */
+export interface OutcomeTradeContract {
+  outcomeId: number;
+  side: number;
+  sideLabel: string;
+  instrumentId: string;
+  coinKey: string;
+  tokenName: string;
+  assetId: number;
+  quoteToken: string;
+  probability: number | null;
+  previousProbability: number | null;
+  change24hPoints: number | null;
+  dayVolume: number | null;
+}
+
 export interface OutcomeChoice {
   /** Stable id shared with the existing flattened market catalog. */
   id: string;
@@ -205,6 +226,11 @@ export interface OutcomeChoice {
   /** Absolute probability movement; 0.05 means five percentage points. */
   change24hPoints: number | null;
   dayVolume: number | null;
+  /**
+   * Signed-order contracts available from this card choice. Grouped questions
+   * keep their Yes and No contracts here while rendering one named choice.
+   */
+  tradeContracts: OutcomeTradeContract[];
 }
 
 export interface OutcomeEvent {
@@ -349,12 +375,11 @@ function contextsByCoin(source: OutcomeContextLookup | undefined): Map<string, O
   return indexed;
 }
 
-function makeChoice(
+function makeTradeContract(
   outcome: HlOutcomeDefinition,
   side: number,
-  label: string,
   contexts: ReadonlyMap<string, OutcomeMarketContext>,
-): OutcomeChoice {
+): OutcomeTradeContract {
   const coinKey = outcomeCoinKey(outcome.outcome, side);
   const context = contexts.get(coinKey);
   const current = probability(context?.markPx);
@@ -362,19 +387,46 @@ function makeChoice(
   const volume = finiteNumber(context?.dayNtlVlm);
   const instrumentId = `hl:outcome:${coinKey.slice(1)}`;
   return {
-    id: instrumentId,
-    instrumentId,
     outcomeId: outcome.outcome,
     side,
+    sideLabel: outcome.sideSpecs[side]?.name ?? `Side ${side + 1}`,
+    instrumentId,
     coinKey,
+    tokenName: outcomeTokenName(outcome.outcome, side),
     assetId: outcomeAssetId(outcome.outcome, side),
-    label,
-    description: outcomeDescription(outcome.description),
     quoteToken: outcome.quoteToken || 'USDC',
     probability: current,
     previousProbability: previous,
     change24hPoints: current !== null && previous !== null ? current - previous : null,
     dayVolume: volume !== null && volume >= 0 ? volume : null,
+  };
+}
+
+function makeChoice(
+  outcome: HlOutcomeDefinition,
+  side: number,
+  label: string,
+  contexts: ReadonlyMap<string, OutcomeMarketContext>,
+  tradeSides: readonly number[] = [side],
+): OutcomeChoice {
+  const primary = makeTradeContract(outcome, side, contexts);
+  return {
+    id: primary.instrumentId,
+    instrumentId: primary.instrumentId,
+    outcomeId: primary.outcomeId,
+    side: primary.side,
+    coinKey: primary.coinKey,
+    assetId: primary.assetId,
+    label,
+    description: outcomeDescription(outcome.description),
+    quoteToken: primary.quoteToken,
+    probability: primary.probability,
+    previousProbability: primary.previousProbability,
+    change24hPoints: primary.change24hPoints,
+    dayVolume: primary.dayVolume,
+    tradeContracts: tradeSides.map((tradeSide) =>
+      makeTradeContract(outcome, tradeSide, contexts),
+    ),
   };
 }
 
@@ -496,7 +548,15 @@ export function buildOutcomeEvents(
         template?.class === 'priceBucket'
           ? bucketChoiceLabel(outcome, template)
           : outcome.name;
-      return [makeChoice(outcome, affirmativeSide(outcome), label, contexts)];
+      return [
+        makeChoice(
+          outcome,
+          affirmativeSide(outcome),
+          label,
+          contexts,
+          visibleOutcomeSides(outcome.sideSpecs),
+        ),
+      ];
     });
     if (!choices.length) continue;
 

@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildAccountRiskSummary,
   deriveModeAwareAccountMetrics,
+  deriveSpendableSpotUsdc,
   isProtectiveStop,
 } from '../src/lib/accountRisk.ts';
 
@@ -206,4 +207,89 @@ test('does not invent a maintenance ratio for portfolio or DEX abstraction', () 
     deriveModeAwareAccountMetrics({ mode: 'dexAbstraction', ...inputs }).maintenanceUsage,
     null,
   );
+});
+
+test('uses available spot USDC directly in Standard mode', () => {
+  assert.equal(
+    deriveSpendableSpotUsdc({
+      mode: 'standard',
+      availableSpotUsdc: 125.5,
+      dexStates: [
+        {
+          collateralToken: 0,
+          accountValue: 500,
+          crossAccountValue: 400,
+          withdrawable: 300,
+          crossMaintenanceMarginUsed: 80,
+          isolatedMarginUsed: 20,
+        },
+      ],
+    }),
+    125.5,
+  );
+});
+
+test('reserves USDC-backed cross maintenance and isolated margin in Unified mode', () => {
+  assert.equal(
+    deriveSpendableSpotUsdc({
+      mode: 'unified',
+      availableSpotUsdc: 200,
+      dexStates: [
+        {
+          collateralToken: 0,
+          accountValue: 0,
+          crossAccountValue: 0,
+          withdrawable: 0,
+          crossMaintenanceMarginUsed: 20,
+          isolatedMarginUsed: 10,
+        },
+        {
+          collateralToken: 0,
+          accountValue: 0,
+          crossAccountValue: 0,
+          withdrawable: 0,
+          crossMaintenanceMarginUsed: 5,
+          isolatedMarginUsed: 2,
+        },
+        {
+          // A non-USDC collateral DEX must not reserve from the USDC balance.
+          collateralToken: 360,
+          accountValue: 0,
+          crossAccountValue: 0,
+          withdrawable: 0,
+          crossMaintenanceMarginUsed: 50,
+          isolatedMarginUsed: 25,
+        },
+      ],
+    }),
+    163,
+  );
+});
+
+test('clamps Unified spendable USDC at zero when reserves exceed the balance', () => {
+  assert.equal(
+    deriveSpendableSpotUsdc({
+      mode: 'unified',
+      availableSpotUsdc: 20,
+      dexStates: [
+        {
+          collateralToken: 0,
+          accountValue: 0,
+          crossAccountValue: 0,
+          withdrawable: 0,
+          crossMaintenanceMarginUsed: 15,
+          isolatedMarginUsed: 10,
+        },
+      ],
+    }),
+    0,
+  );
+});
+
+test('fails closed without spot data and for unsupported abstraction modes', () => {
+  const base = { availableSpotUsdc: 100, dexStates: [] };
+  assert.equal(deriveSpendableSpotUsdc({ mode: 'standard', ...base, spotLoaded: false }), 0);
+  assert.equal(deriveSpendableSpotUsdc({ mode: 'unified', ...base, spotLoaded: false }), 0);
+  assert.equal(deriveSpendableSpotUsdc({ mode: 'portfolioMargin', ...base }), 0);
+  assert.equal(deriveSpendableSpotUsdc({ mode: 'dexAbstraction', ...base }), 0);
 });

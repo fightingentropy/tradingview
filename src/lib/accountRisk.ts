@@ -30,6 +30,49 @@ export interface ModeAwareAccountMetrics {
   maintenanceUsage: number | null;
 }
 
+/** Hyperliquid's mainnet USDC spot-token index. */
+const USDC_TOKEN = 0;
+
+/**
+ * Conservative USDC that can fund a new spot/outcome buy.
+ *
+ * Standard mode keeps spot separate from perps, so the available spot USDC is
+ * spendable as reported. Unified mode shares that USDC with every USDC-backed
+ * perp DEX, so reserve both cross maintenance and isolated margin before
+ * presenting buying power. Portfolio Margin and legacy DEX abstraction need
+ * live collateral rules this app does not model and therefore fail closed.
+ */
+export function deriveSpendableSpotUsdc({
+  mode,
+  availableSpotUsdc,
+  dexStates,
+  spotLoaded = true,
+}: {
+  mode: HlAccountMode;
+  availableSpotUsdc: number;
+  dexStates: readonly HlDexMarginState[];
+  spotLoaded?: boolean;
+}): number {
+  if (!spotLoaded || !Number.isFinite(availableSpotUsdc) || availableSpotUsdc <= 0) return 0;
+  if (mode === 'standard') return availableSpotUsdc;
+  if (mode !== 'unified') return 0;
+
+  let reservedUsdc = 0;
+  for (const state of dexStates) {
+    if (state.collateralToken !== USDC_TOKEN) continue;
+    if (
+      !Number.isFinite(state.crossMaintenanceMarginUsed) ||
+      !Number.isFinite(state.isolatedMarginUsed)
+    ) {
+      return 0;
+    }
+    reservedUsdc +=
+      Math.max(0, state.crossMaintenanceMarginUsed) + Math.max(0, state.isolatedMarginUsed);
+    if (!Number.isFinite(reservedUsdc)) return 0;
+  }
+  return Math.max(0, availableSpotUsdc - reservedUsdc);
+}
+
 /**
  * Derive account-level risk without mixing incompatible abstraction modes.
  *

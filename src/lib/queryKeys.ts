@@ -19,4 +19,6 @@ export const queryKeys = {
   hlFillsPrefix: () => ['hl-fills'] as const,
   hlPortfolio: (network: HlNetwork, account: string) => ['hl-portfolio', network, account] as const,
   hlMeta: (network: HlNetwork) => ['hl-meta', network] as const,
+  hlLegalCheck: (network: HlNetwork, user: string) =>
+    ['hl-legal-check', network, user] as const,
 };

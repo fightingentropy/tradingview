@@ -17,7 +17,7 @@ import { AppText } from '@/components/ui/AppText';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { useMarkets } from '@/data/useMarkets';
+import { useAllMarkets } from '@/data/useMarkets';
 import {
   useHlAccount,
   useHlFills,
@@ -48,6 +48,7 @@ import {
 } from '@/lib/hyperliquid/tradingIdentity';
 import { formatCompact, formatPercent, formatPrice, priceDecimalsFor, signedUsd, usd } from '@/lib/format';
 import { priceToWire, sizeToWire } from '@/lib/hyperliquid/sign';
+import { outcomeAssetId } from '@/lib/outcomeMarkets';
 import { queryKeys } from '@/lib/queryKeys';
 import type { Instrument } from '@/domain/types';
 import { DEMO_ADDRESS, useHlConnection } from '@/store/hlConnection';
@@ -130,8 +131,53 @@ class AccountMutationStatusUnknownError extends Error {
   }
 }
 
-/** Clean ticker for a position coin ("xyz:SNDK" → "SNDK"). */
-const cleanCoin = (coin: string) => coin.replace(/^xyz:/, '');
+/** Outcome balances use `+encoding`, while books/orders/catalog entries use `#encoding`. */
+function marketCoinKey(coin: string): string {
+  const token = /^\+(\d+)$/.exec(coin);
+  return token ? `#${token[1]}` : coin;
+}
+
+/** Clean ticker for a position/token coin without exposing machine-only outcome ids as a symbol. */
+const cleanCoin = (coin: string) => {
+  const normalized = marketCoinKey(coin);
+  const outcome = /^#(\d+)$/.exec(normalized);
+  return outcome ? `Outcome #${outcome[1]}` : normalized.replace(/^xyz:/, '');
+};
+
+interface OrderAssetMeta {
+  assetIndex: number;
+  szDecimals: number;
+  isPerp: boolean;
+}
+
+/** Resolve both perp and outcome order assets for byte-exact cancellation checks. */
+function orderAssetMeta(
+  coin: string,
+  perpMeta: Readonly<Record<string, { assetIndex: number; szDecimals: number }>> | undefined,
+): OrderAssetMeta | null {
+  const normalized = marketCoinKey(coin);
+  const encoded = /^#(\d+)$/.exec(normalized);
+  if (encoded) {
+    const value = Number(encoded[1]);
+    const side = value % 10;
+    const outcome = Math.floor(value / 10);
+    if (!Number.isSafeInteger(value) || outcome < 0 || (side !== 0 && side !== 1)) return null;
+    return { assetIndex: outcomeAssetId(outcome, side), szDecimals: 0, isPerp: false };
+  }
+  const asset = perpMeta?.[coin];
+  return asset ? { ...asset, isPerp: true } : null;
+}
+
+function displayPriceDecimals(
+  coin: string,
+  instrument: Instrument | undefined,
+  price: number,
+): number {
+  const declared = marketCoinKey(coin).startsWith('#')
+    ? 5
+    : (instrument?.priceDecimals ?? 6);
+  return priceDecimalsFor(declared, price);
+}
 
 interface PositionProtectionLevels {
   readonly takeProfitPx: number | null;
@@ -260,8 +306,25 @@ export default function AccountScreen() {
   const executionIdentity = signedIdentityBinding(tradingIdentity);
   const { data: openOrders } = useHlOpenOrders();
   const { data: fills } = useHlFills();
-  const { data: markets } = useMarkets();
+  const { data: markets } = useAllMarkets();
   const { data: meta } = useHlMeta();
+
+  const outcomeLabelByCoin = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const event of markets?.outcomeEvents ?? []) {
+      for (const choice of event.choices) {
+        for (const contract of choice.tradeContracts) {
+          const label =
+            event.kind === 'question'
+              ? `${choice.label} · ${contract.sideLabel}`
+              : choice.label;
+          labels.set(contract.coinKey, label);
+          labels.set(contract.tokenName, label);
+        }
+      }
+    }
+    return labels;
+  }, [markets?.outcomeEvents]);
 
   const tradable = hasKey && !demo && !!executionIdentity;
   const [tab, setTab] = useState<'positions' | 'orders' | 'balances' | 'history'>('positions');
@@ -278,10 +341,19 @@ export default function AccountScreen() {
   const mask = useCallback((s: string) => (privacyMode ? MASK : s), [privacyMode]);
 
   // Resolve a position's coin to a real catalog instrument (logo + chart link + decimals).
-  // `coinKey` matches both default perps ("BTC") and trade.xyz coins ("xyz:SNDK").
+  // `coinKey` matches perps and outcome books. Outcome wallet tokens are normalized
+  // from `+encoding` to the catalog/order-book form `#encoding` first.
   const instrumentForCoin = useCallback(
-    (coin: string): Instrument | undefined => markets?.byCoinKey.get(coin),
+    (coin: string): Instrument | undefined => markets?.byCoinKey.get(marketCoinKey(coin)),
     [markets],
+  );
+  const symbolForCoin = useCallback(
+    (coin: string): string =>
+      outcomeLabelByCoin.get(coin) ??
+      outcomeLabelByCoin.get(marketCoinKey(coin)) ??
+      instrumentForCoin(coin)?.symbol ??
+      cleanCoin(coin),
+    [instrumentForCoin, outcomeLabelByCoin],
   );
 
   const marginTarget = marginTargetCoin
@@ -397,7 +469,7 @@ export default function AccountScreen() {
     mutationFn: async ({ o, identity }: { o: HlOpenOrder; identity: SignedTradingIdentityBinding }) => {
       const assertIdentityCurrent = () =>
         assertTradingIdentityCurrent(identity, useHlConnection.getState());
-      const m = meta?.[o.coin];
+      const m = orderAssetMeta(o.coin, meta);
       if (!m) throw new AccountPreflightError(`No market metadata for ${o.coin}. No cancellation was sent.`);
       const validateImmediatelyBeforeSigning = async () => {
         let latestOrders: HlOpenOrder[];
@@ -416,8 +488,8 @@ export default function AccountScreen() {
             ? true
             : live?.triggerPx != null &&
               o.triggerPx != null &&
-              priceToWire(live.triggerPx, m.szDecimals) ===
-                priceToWire(o.triggerPx, m.szDecimals);
+              priceToWire(live.triggerPx, m.szDecimals, m.isPerp) ===
+                priceToWire(o.triggerPx, m.szDecimals, m.isPerp);
         if (
           !live ||
           live.coin !== o.coin ||
@@ -425,7 +497,8 @@ export default function AccountScreen() {
           live.reduceOnly !== o.reduceOnly ||
           live.isTrigger !== o.isTrigger ||
           sizeToWire(live.size, m.szDecimals) !== sizeToWire(o.size, m.szDecimals) ||
-          priceToWire(live.limitPx, m.szDecimals) !== priceToWire(o.limitPx, m.szDecimals) ||
+          priceToWire(live.limitPx, m.szDecimals, m.isPerp) !==
+            priceToWire(o.limitPx, m.szDecimals, m.isPerp) ||
           !sameTrigger
         ) {
           throw new AccountPreflightError(
@@ -857,8 +930,9 @@ export default function AccountScreen() {
     (o: HlOpenOrder) => {
       if (!tradable || !executionIdentity) return;
       const identity = executionIdentity;
-      const sym = cleanCoin(o.coin);
-      const dec = priceDecimalsFor(6, o.limitPx);
+      const instrument = instrumentForCoin(o.coin);
+      const sym = symbolForCoin(o.coin);
+      const dec = displayPriceDecimals(o.coin, instrument, o.limitPx);
       Alert.alert(
         'Cancel order?',
         `Cancel your ${o.side} ${qty(o.size)} ${sym} @ $${formatPrice(o.limitPx, dec)}` +
@@ -873,7 +947,7 @@ export default function AccountScreen() {
         ],
       );
     },
-    [executionIdentity, tradable, network, cancelMutation],
+    [executionIdentity, tradable, network, cancelMutation, instrumentForCoin, symbolForCoin],
   );
 
   const confirmAdjustMargin = useCallback(
@@ -1206,6 +1280,7 @@ export default function AccountScreen() {
                   key={o.oid}
                   o={o}
                   instrument={instrumentForCoin(o.coin)}
+                  symbol={symbolForCoin(o.coin)}
                   tradable={tradable}
                   busy={cancelMutation.isPending && cancelMutation.variables?.o.oid === o.oid}
                   hidden={privacyMode}
@@ -1222,6 +1297,7 @@ export default function AccountScreen() {
                   key={b.coin}
                   b={b}
                   instrument={instrumentForCoin(b.coin)}
+                  symbol={symbolForCoin(b.coin)}
                   expanded={expanded.has('spot:' + b.coin)}
                   hidden={privacyMode}
                   onToggle={() => toggleExpand('spot:' + b.coin)}
@@ -1249,6 +1325,7 @@ export default function AccountScreen() {
                 key={f.key}
                 f={f}
                 instrument={instrumentForCoin(f.coin)}
+                symbol={symbolForCoin(f.coin)}
                 hidden={privacyMode}
                 expanded={expanded.has('fill:' + f.key)}
                 onToggle={() => toggleExpand('fill:' + f.key)}
@@ -1847,6 +1924,7 @@ function Cell({
 const SpotCard = memo(SpotCardImpl, (prev, next) =>
   prev.b === next.b &&
   prev.instrument?.id === next.instrument?.id &&
+  prev.symbol === next.symbol &&
   prev.expanded === next.expanded &&
   prev.hidden === next.hidden,
 );
@@ -1854,6 +1932,7 @@ const SpotCard = memo(SpotCardImpl, (prev, next) =>
 function SpotCardImpl({
   b,
   instrument,
+  symbol,
   expanded,
   hidden,
   onToggle,
@@ -1861,6 +1940,7 @@ function SpotCardImpl({
 }: {
   b: HlSpotBalance;
   instrument: Instrument | undefined;
+  symbol: string;
   expanded: boolean;
   hidden: boolean;
   onToggle: () => void;
@@ -1869,7 +1949,7 @@ function SpotCardImpl({
   // Derived per-token price; USDC ≈ $1, others off the spot mid.
   const price = b.total > 1e-9 ? b.usdValue / b.total : 0;
   const m = (s: string) => (hidden ? MASK : s);
-  const coinAmt = (v: number) => `${tokenAmt(v)} ${b.coin}`;
+  const coinAmt = (v: number) => `${tokenAmt(v)} ${symbol}`;
   return (
     <View style={styles.card}>
       <Pressable
@@ -1878,11 +1958,11 @@ function SpotCardImpl({
         <SymbolLogo instrument={instrument} coin={b.coin} size={40} />
         <View style={styles.mid}>
           <AppText style={styles.symbol} numberOfLines={1}>
-            {b.coin}
+            {symbol}
           </AppText>
           {/* Collapsed: just the token amount — "available" lives in the detail so nothing truncates. */}
           <AppText style={styles.sub} numeric numberOfLines={1}>
-            {hidden ? `${MASK} ${b.coin}` : coinAmt(b.total)}
+            {hidden ? `${MASK} ${symbol}` : coinAmt(b.total)}
           </AppText>
         </View>
         <AppText style={styles.spotValue} numeric numberOfLines={1}>
@@ -1899,12 +1979,15 @@ function SpotCardImpl({
       {expanded ? (
         <View style={styles.spotDetail}>
           {/* Key→value list reads cleaner than a 3-col grid for long token amounts. */}
-          <DetailRow label="Total" value={hidden ? `${MASK} ${b.coin}` : coinAmt(b.total)} />
-          <DetailRow label="Available" value={hidden ? `${MASK} ${b.coin}` : coinAmt(b.available)} />
+          <DetailRow label="Total" value={hidden ? `${MASK} ${symbol}` : coinAmt(b.total)} />
+          <DetailRow label="Available" value={hidden ? `${MASK} ${symbol}` : coinAmt(b.available)} />
           {b.hold > 1e-8 ? (
-            <DetailRow label="In Orders" value={hidden ? `${MASK} ${b.coin}` : coinAmt(b.hold)} />
+            <DetailRow label="In Orders" value={hidden ? `${MASK} ${symbol}` : coinAmt(b.hold)} />
           ) : null}
-          <DetailRow label="Price" value={usd(price)} />
+          <DetailRow
+            label="Price"
+            value={`$${formatPrice(price, displayPriceDecimals(b.coin, instrument, price))}`}
+          />
           <DetailRow label="USD Value" value={m(usd(b.usdValue))} strong />
           {instrument ? (
             <Pressable style={styles.chartLink} onPress={onChart} hitSlop={6}>
@@ -1937,6 +2020,7 @@ function DetailRow({ label, value, strong }: { label: string; value: string; str
 const OrderCard = memo(OrderCardImpl, (prev, next) =>
   prev.o === next.o &&
   prev.instrument?.id === next.instrument?.id &&
+  prev.symbol === next.symbol &&
   prev.tradable === next.tradable &&
   prev.busy === next.busy &&
   prev.hidden === next.hidden,
@@ -1945,6 +2029,7 @@ const OrderCard = memo(OrderCardImpl, (prev, next) =>
 function OrderCardImpl({
   o,
   instrument,
+  symbol,
   tradable,
   busy,
   hidden,
@@ -1952,13 +2037,13 @@ function OrderCardImpl({
 }: {
   o: HlOpenOrder;
   instrument: Instrument | undefined;
+  symbol: string;
   tradable: boolean;
   busy: boolean;
   hidden: boolean;
   onCancel: () => void;
 }) {
-  const symbol = instrument?.symbol ?? cleanCoin(o.coin);
-  const decimals = priceDecimalsFor(instrument?.priceDecimals ?? 6, o.limitPx);
+  const decimals = displayPriceDecimals(o.coin, instrument, o.limitPx);
   const sideColor = o.side === 'buy' ? Colors.up : Colors.down;
   const filledPct = o.origSize > o.size ? ((o.origSize - o.size) / o.origSize) * 100 : 0;
   const typeLabel = o.isTrigger ? `Stop ${o.orderType}`.trim() : o.orderType;
@@ -2020,6 +2105,7 @@ function OrderCardImpl({
 const FillCard = memo(FillCardImpl, (prev, next) =>
   prev.f === next.f &&
   prev.instrument?.id === next.instrument?.id &&
+  prev.symbol === next.symbol &&
   prev.hidden === next.hidden &&
   prev.expanded === next.expanded,
 );
@@ -2027,18 +2113,19 @@ const FillCard = memo(FillCardImpl, (prev, next) =>
 function FillCardImpl({
   f,
   instrument,
+  symbol,
   hidden,
   expanded,
   onToggle,
 }: {
   f: HlFill;
   instrument: Instrument | undefined;
+  symbol: string;
   hidden: boolean;
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const symbol = instrument?.symbol ?? cleanCoin(f.coin);
-  const decimals = priceDecimalsFor(instrument?.priceDecimals ?? 6, f.px);
+  const decimals = displayPriceDecimals(f.coin, instrument, f.px);
   const sideColor = f.side === 'buy' ? Colors.up : Colors.down;
   const pnlColor = f.closedPnl >= 0 ? Colors.up : Colors.down;
   const m = (s: string) => (hidden ? MASK : s);

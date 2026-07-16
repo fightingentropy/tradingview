@@ -167,6 +167,8 @@ export interface PlaceOrderParams extends SignedMutationIdentity {
   network: HlNetwork;
   assetIndex: number;
   szDecimals: number;
+  /** Select Hyperliquid's price precision rules. Existing perp callers default to `perp`. */
+  priceKind?: 'perp' | 'spot';
   isBuy: boolean;
   /** Order size in coins. */
   size: number;
@@ -175,7 +177,12 @@ export interface PlaceOrderParams extends SignedMutationIdentity {
   limitPrice?: number;
   /** Rest a limit as add-liquidity-only. Ignored for market orders. */
   postOnly?: boolean;
-  /** Required for a market order — the current mark used to derive the IOC cap. */
+  /**
+   * Exact, already-reviewed IOC limit for a market order. When provided it is
+   * captured in the order wire unchanged by later mark/slippage movement.
+   */
+  marketIocPrice?: number;
+  /** Required for a market order only when `marketIocPrice` is omitted. */
   markPx?: number;
   slippage?: number;
   /** Called immediately before the authenticated exchange POST begins. */
@@ -213,28 +220,62 @@ function marketCrossPx(markPx: number, isBuy: boolean, slippage: number): number
   return isBuy ? markPx * (1 + slippage) : markPx * (1 - slippage);
 }
 
-export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
+type BuildOrderWireParams = Pick<
+  PlaceOrderParams,
+  | 'assetIndex'
+  | 'szDecimals'
+  | 'priceKind'
+  | 'isBuy'
+  | 'size'
+  | 'reduceOnly'
+  | 'limitPrice'
+  | 'postOnly'
+  | 'marketIocPrice'
+  | 'markPx'
+  | 'slippage'
+>;
+
+/**
+ * Build the exact order payload before any asynchronous identity/preflight work.
+ * Exported so signing regression tests can lock outcome/spot wire semantics.
+ */
+export function buildOrderWire(p: BuildOrderWireParams): OrderWire {
   const isMarket = p.limitPrice === undefined;
 
   let px: number;
   let tif: 'Gtc' | 'Ioc' | 'Alo';
   if (isMarket) {
-    if (!p.markPx) throw new Error('Missing mark price for market order.');
-    px = marketCrossPx(p.markPx, p.isBuy, p.slippage ?? DEFAULT_SLIPPAGE);
+    if (p.marketIocPrice !== undefined) {
+      if (!Number.isFinite(p.marketIocPrice) || p.marketIocPrice <= 0) {
+        throw new Error('Invalid IOC price for market order.');
+      }
+      px = p.marketIocPrice;
+    } else {
+      const markPx = p.markPx;
+      if (markPx === undefined || !Number.isFinite(markPx) || markPx <= 0) {
+        throw new Error('Missing mark price for market order.');
+      }
+      px = marketCrossPx(markPx, p.isBuy, p.slippage ?? DEFAULT_SLIPPAGE);
+    }
     tif = 'Ioc';
   } else {
     px = p.limitPrice as number;
     tif = p.postOnly ? 'Alo' : 'Gtc';
   }
 
-  const order: OrderWire = {
+  return {
     a: p.assetIndex,
     b: p.isBuy,
-    p: priceToWire(px, p.szDecimals),
+    p: priceToWire(px, p.szDecimals, p.priceKind !== 'spot'),
     s: sizeToWire(p.size, p.szDecimals),
     r: !!p.reduceOnly,
     t: { limit: { tif } },
   };
+}
+
+export async function placeOrder(p: PlaceOrderParams): Promise<OrderResult> {
+  // Capture all mutable price inputs into the signed wire before preflight yields.
+  const order = buildOrderWire(p);
 
   const [res] = await submitOrders(p.network, [order], 'na', p, p.onPostAttempt);
   if (res === undefined) throw new Error('Hyperliquid returned no order status');

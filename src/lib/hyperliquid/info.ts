@@ -5,6 +5,7 @@
 import { toNum } from '@/lib/format';
 import {
   deriveModeAwareAccountMetrics,
+  deriveSpendableSpotUsdc,
   type HlAccountMode,
   type HlCollateralBalance,
   type HlDexMarginState,
@@ -16,6 +17,19 @@ export const HL_API: Record<HlNetwork, string> = {
   mainnet: 'https://api.hyperliquid.xyz',
   testnet: 'https://api.hyperliquid-testnet.xyz',
 };
+
+/** Restriction codes returned by Hyperliquid's public `legalCheck` info request. */
+export type HlLegalRestriction = 'n' | 'a' | 'o' | 'u';
+
+export interface HlLegalCheck {
+  acceptedTerms: boolean;
+  userAllowed: boolean;
+  /**
+   * `n` = unrestricted, `a` = actions blocked, `o` = outcomes hidden,
+   * `u` = UK. Keep unknown future values representable so callers fail closed.
+   */
+  restrictions: HlLegalRestriction | (string & {});
+}
 
 /** trade.xyz markets ride this HIP-3 builder-deployed perp dex (coins are `xyz:NAME`). */
 export const XYZ_DEX = 'xyz';
@@ -114,10 +128,16 @@ export interface HlAccount {
   positions: HlPosition[];
   /** Spot wallet token balances (non-zero), richest first. */
   spotBalances: HlSpotBalance[];
+  /** False when the tolerant spot-balance request failed; trading callers must fail closed. */
+  spotBalancesLoaded: boolean;
   /** Total USD value of the spot wallet (all tokens, incl. USDC reserved as margin). */
   spotValue: number;
   /** Freely-available USDC in the spot wallet (total − hold). */
   availableUsdc: number;
+  /** Conservative mode-aware USDC that can fund a new spot/outcome buy. */
+  spendableUsdc: number;
+  /** False when complete USDC-backed margin state could not be verified. */
+  spendableUsdcLoaded: boolean;
   /** Total USD equity deposited in vaults. */
   vaultValue: number;
   /**
@@ -148,6 +168,22 @@ async function infoRequest<T>(network: HlNetwork, body: object): Promise<T> {
   });
   if (!res.ok) throw new Error(`Hyperliquid info ${res.status}`);
   return (await res.json()) as T;
+}
+
+/**
+ * Current Hyperliquid legal/region status for an address and the request's IP.
+ * The official frontend bypasses the production restriction check off mainnet,
+ * so testnet is explicitly treated as allowed rather than depending on whether
+ * its API happens to expose `legalCheck`.
+ */
+export async function fetchLegalCheck(
+  user: string,
+  network: HlNetwork = 'mainnet',
+): Promise<HlLegalCheck> {
+  if (network !== 'mainnet') {
+    return { acceptedTerms: true, userAllowed: true, restrictions: 'n' };
+  }
+  return infoRequest<HlLegalCheck>(network, { type: 'legalCheck', user });
 }
 
 interface RawClearinghouse {
@@ -215,6 +251,82 @@ function fetchSupportedCollateralTokens(
     });
   supportedCollateralTokenCache.set(network, pending);
   return pending;
+}
+
+interface PerpDexCollateral {
+  /** Null is Hyperliquid's first/default perp DEX; builders use their DEX name. */
+  dex: string | null;
+  collateralToken: number;
+}
+
+interface PerpDexCollateralCacheEntry {
+  expiresAt: number;
+  request: Promise<readonly PerpDexCollateral[]>;
+}
+
+// DEXes can be deployed while the app is running. Keep discovery short-lived so
+// a new USDC-backed venue cannot remain invisible to Unified buying-power checks.
+const PERP_DEX_DISCOVERY_TTL = 30_000;
+const perpDexCollateralCache = new Map<HlNetwork, PerpDexCollateralCacheEntry>();
+
+function fetchPerpDexCollaterals(network: HlNetwork): Promise<readonly PerpDexCollateral[]> {
+  const now = Date.now();
+  const cached = perpDexCollateralCache.get(network);
+  if (cached && cached.expiresAt > now) return cached.request;
+
+  type RawDex = { name?: string } | null;
+  type RawMeta = { collateralToken?: number };
+  const request = Promise.all([
+    infoRequest<RawDex[]>(network, { type: 'perpDexs' }),
+    infoRequest<RawMeta[]>(network, { type: 'allPerpMetas' }),
+  ])
+    .then(([dexs, metas]) => {
+      if (dexs.length === 0 || dexs.length !== metas.length) {
+        throw new Error('Hyperliquid returned incomplete perp DEX collateral metadata.');
+      }
+      const seen = new Set<string>();
+      return dexs.map((dex, index): PerpDexCollateral => {
+        const name = index === 0 ? null : dex?.name?.trim() || null;
+        if (index > 0 && !name) {
+          throw new Error('Hyperliquid returned an unnamed builder perp DEX.');
+        }
+        const cacheKey = name ?? '';
+        if (seen.has(cacheKey)) throw new Error('Hyperliquid returned duplicate perp DEX metadata.');
+        seen.add(cacheKey);
+        const rawCollateral = metas[index]?.collateralToken ?? 0;
+        if (!Number.isSafeInteger(rawCollateral) || rawCollateral < 0) {
+          throw new Error('Hyperliquid returned an invalid perp DEX collateral token.');
+        }
+        return { dex: name, collateralToken: rawCollateral };
+      });
+    })
+    .catch((error) => {
+      const current = perpDexCollateralCache.get(network);
+      if (current?.request === request) perpDexCollateralCache.delete(network);
+      throw error;
+    });
+
+  perpDexCollateralCache.set(network, {
+    expiresAt: now + PERP_DEX_DISCOVERY_TTL,
+    request,
+  });
+  return request;
+}
+
+function marginStateFromClearinghouse(
+  state: RawClearinghouse,
+  collateralToken: number,
+): HlDexMarginState {
+  return {
+    collateralToken,
+    accountValue: n(state.marginSummary.accountValue),
+    crossAccountValue: n(state.crossMarginSummary?.accountValue),
+    withdrawable: n(state.withdrawable),
+    crossMaintenanceMarginUsed: n(state.crossMaintenanceMarginUsed),
+    isolatedMarginUsed: state.assetPositions
+      .filter(({ position }) => position.leverage.type === 'isolated')
+      .reduce((sum, { position }) => sum + n(position.marginUsed), 0),
+  };
 }
 
 /**
@@ -342,20 +454,35 @@ interface SpotMeta {
 interface SpotCtx {
   coin: string;
   midPx: string | null;
+  markPx?: string | null;
 }
 
-/** token index → USD price (USDC = 1; others from the token/USDC spot mid). */
-function spotPriceByToken([meta, ctxs]: [SpotMeta, SpotCtx[]]): Record<number, number> {
+interface SpotPrices {
+  byToken: Record<number, number>;
+  byCoin: Record<string, number>;
+}
+
+/** Token/coin → USD price. Outcome balances use `+encoding`, contexts use `#encoding`. */
+function spotPrices([meta, ctxs]: [SpotMeta, SpotCtx[]]): SpotPrices {
   const midByCoin: Record<string, number> = {};
-  for (const c of ctxs) midByCoin[c.coin] = n(c.midPx);
-  const price: Record<number, number> = { 0: 1 }; // USDC is token 0
+  const markByCoin: Record<string, number> = {};
+  for (const c of ctxs) {
+    midByCoin[c.coin] = n(c.midPx);
+    markByCoin[c.coin] = n(c.markPx);
+  }
+  const byToken: Record<number, number> = { 0: 1 }; // USDC is token 0
   for (const u of meta.universe) {
     const [base, quote] = u.tokens;
     if (quote !== 0) continue; // only USDC-quoted pairs give a USD price
     const px = midByCoin[u.name] ?? midByCoin[`@${u.index}`];
-    if (px) price[base] = px;
+    if (px) byToken[base] = px;
   }
-  return price;
+  const byCoin: Record<string, number> = {};
+  for (const coin of Object.keys(midByCoin)) {
+    const px = coin.startsWith('#') ? markByCoin[coin] || midByCoin[coin] : midByCoin[coin];
+    if (px) byCoin[coin] = px;
+  }
+  return { byToken, byCoin };
 }
 
 /**
@@ -380,12 +507,18 @@ async function fetchSpotBalances(
       infoRequest<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }),
       infoRequest<[SpotMeta, SpotCtx[]]>(network, { type: 'spotMetaAndAssetCtxs' }),
     ]);
-    const price = spotPriceByToken(metaCtxs);
+    const price = spotPrices(metaCtxs);
     const balances = state.balances
       .map((b) => {
         const total = n(b.total);
         const hold = n(b.hold);
-        const px = b.coin === 'USDC' ? 1 : (price[b.token] ?? 0);
+        const outcomeCoin = b.coin.startsWith('+') ? `#${b.coin.slice(1)}` : null;
+        const px =
+          b.coin === 'USDC'
+            ? 1
+            : outcomeCoin
+              ? (price.byCoin[outcomeCoin] ?? 0)
+              : (price.byToken[b.token] ?? 0);
         return { coin: b.coin, total, hold, available: total - hold, usdValue: total * px };
       })
       .filter((b) => b.total > 1e-8)
@@ -399,7 +532,12 @@ async function fetchSpotBalances(
         token: b.token,
         total: n(b.total),
         hold: n(b.hold),
-        usdPrice: b.coin === 'USDC' ? 1 : (price[b.token] ?? 0),
+        usdPrice:
+          b.coin === 'USDC'
+            ? 1
+            : b.coin.startsWith('+')
+              ? (price.byCoin[`#${b.coin.slice(1)}`] ?? 0)
+              : (price.byToken[b.token] ?? 0),
       })),
       value: balances.reduce((s, b) => s + b.usdValue, 0),
       usdcTotal,
@@ -443,7 +581,9 @@ async function fetchVaultEquity(address: string, network: HlNetwork): Promise<nu
  *
  * Account abstraction determines which balance surface is authoritative. Standard has
  * separate spot and per-DEX balances; unified and portfolio modes keep balances/holds
- * in spot. Read-only (the address is public, works for any account, no key).
+ * in spot. Unified buying power additionally verifies margin on every currently
+ * discovered USDC-backed perp DEX, even when that venue is not displayed in this app.
+ * Read-only (the address is public, works for any account, no key).
  */
 export async function fetchHlAccount(address: string, network: HlNetwork = 'mainnet'): Promise<HlAccount> {
   const dexes: HlPosition['dex'][] = ['default', 'xyz'];
@@ -473,16 +613,7 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     totalNotional += n(state.marginSummary.totalNtlPos);
     withdrawable += n(state.withdrawable);
     maintenanceMargin += n(state.crossMaintenanceMarginUsed);
-    marginStates.push({
-      collateralToken: collateralTokens[i],
-      accountValue: n(state.marginSummary.accountValue),
-      crossAccountValue: n(state.crossMarginSummary?.accountValue),
-      withdrawable: n(state.withdrawable),
-      crossMaintenanceMarginUsed: n(state.crossMaintenanceMarginUsed),
-      isolatedMarginUsed: state.assetPositions
-        .filter(({ position }) => position.leverage.type === 'isolated')
-        .reduce((sum, { position }) => sum + n(position.marginUsed), 0),
-    });
+    marginStates.push(marginStateFromClearinghouse(state, collateralTokens[i]));
 
     for (const { position: p } of state.assetPositions) {
       const szi = n(p.szi);
@@ -509,11 +640,63 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     }
   });
 
+  let spendableMarginStates = marginStates;
+  let completeUsdcMarginState = abstractionMode === 'standard';
+  if (abstractionMode === 'unified') {
+    try {
+      const collaterals = await fetchPerpDexCollaterals(network);
+      const defaultMeta = collaterals.find(({ dex }) => dex === null);
+      const xyzMeta = collaterals.find(({ dex }) => dex === XYZ_DEX);
+      if (
+        !defaultMeta ||
+        !xyzMeta ||
+        defaultMeta.collateralToken !== collateralTokens[0] ||
+        xyzMeta.collateralToken !== collateralTokens[1]
+      ) {
+        throw new Error('Base perp DEX collateral metadata changed during account refresh.');
+      }
+
+      const extraUsdcDexes = collaterals.filter(
+        ({ dex, collateralToken }) =>
+          collateralToken === 0 && dex !== null && dex !== XYZ_DEX,
+      );
+      const extraResults = await Promise.allSettled(
+        extraUsdcDexes.map(({ dex }) =>
+          infoRequest<RawClearinghouse>(network, {
+            type: 'clearinghouseState',
+            user: address,
+            dex,
+          }),
+        ),
+      );
+      completeUsdcMarginState = extraResults.every((result) => result.status === 'fulfilled');
+      if (completeUsdcMarginState) {
+        spendableMarginStates = [
+          ...marginStates,
+          ...extraResults.map((result, index) =>
+            marginStateFromClearinghouse(
+              (result as PromiseFulfilledResult<RawClearinghouse>).value,
+              extraUsdcDexes[index].collateralToken,
+            ),
+          ),
+        ];
+      }
+    } catch {
+      completeUsdcMarginState = false;
+    }
+  }
+
   const modeMetrics = deriveModeAwareAccountMetrics({
     mode: abstractionMode,
     dexStates: marginStates,
     spotBalances: spot.collateralBalances,
     spotLoaded: spot.loaded,
+  });
+  const spendableUsdc = deriveSpendableSpotUsdc({
+    mode: abstractionMode,
+    availableSpotUsdc: spot.usdcAvailable,
+    dexStates: spendableMarginStates,
+    spotLoaded: spot.loaded && completeUsdcMarginState,
   });
 
   // Standard balances are separate and additive. Unified/portfolio perp state values are
@@ -540,8 +723,11 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     unrealizedPnl: positions.reduce((s, p) => s + p.unrealizedPnl, 0),
     positions,
     spotBalances: spot.balances,
+    spotBalancesLoaded: spot.loaded,
     spotValue: spot.value,
     availableUsdc: spot.usdcAvailable,
+    spendableUsdc,
+    spendableUsdcLoaded: spot.loaded && completeUsdcMarginState,
     vaultValue,
     totalEquity,
   };

@@ -2,11 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   fetchHlAccount,
+  fetchLegalCheck,
   fetchHlPortfolio,
   fetchOpenOrders,
   fetchUserFills,
   type HlAccount,
   type HlFill,
+  type HlLegalCheck,
   type HlOpenOrder,
   type HlPortfolio,
 } from '@/lib/hyperliquid/info';
@@ -16,6 +18,8 @@ import {
 } from '@/lib/hyperliquid/tradingIdentity';
 import { queryKeys } from '@/lib/queryKeys';
 import { useHlConnection } from '@/store/hlConnection';
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 function useTradingIdentityInputs() {
   const address = useHlConnection((s) => s.address);
@@ -56,6 +60,28 @@ export function useTradingAddress() {
     staleTime: Infinity,
     retry: 1,
     select: (identity) => identity.accountAddress,
+  });
+}
+
+/**
+ * Hyperliquid's current terms/user/region decision. With no connected account,
+ * the zero address still returns the IP-level restriction used by the official
+ * frontend. Signed callers must fetch it again during their final preflight.
+ */
+export function useHlLegalCheck() {
+  const address = useHlConnection((s) => s.address);
+  const network = useHlConnection((s) => s.network);
+  const { data: accountAddress } = useTradingAddress();
+  const user = accountAddress ?? address?.trim().toLowerCase() ?? ZERO_ADDRESS;
+
+  return useQuery<HlLegalCheck>({
+    queryKey: queryKeys.hlLegalCheck(network, user),
+    queryFn: () => fetchLegalCheck(user, network),
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    retry: 1,
   });
 }
 

@@ -16,6 +16,7 @@ import {
   OutcomeHistoryChart,
   OUTCOME_SERIES_COLORS,
 } from '@/components/OutcomeHistoryChart';
+import { OutcomeOrderTicket } from '@/components/OutcomeOrderTicket';
 import { AppText } from '@/components/ui/AppText';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Screen } from '@/components/ui/Screen';
@@ -176,6 +177,7 @@ export default function OutcomeDetailScreen() {
   const event = data?.outcomeEvents.find((candidate) => candidate.id === id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [ticketAction, setTicketAction] = useState<'buy' | 'sell' | null>(null);
   const [now, setNow] = useState(INITIAL_NOW);
 
   useEffect(() => {
@@ -404,20 +406,44 @@ export default function OutcomeDetailScreen() {
           })}
         </GlassSurface>
 
-        <GlassSurface style={styles.readOnlyCard}>
-          <View style={styles.readOnlyIcon}>
-            <Ionicons name="eye-outline" size={18} color={Colors.text} />
+        <GlassSurface style={styles.tradeCard}>
+          <View style={styles.tradeIcon}>
+            <Ionicons name="swap-horizontal" size={19} color={Colors.text} />
           </View>
-          <View style={styles.readOnlyText}>
-            <AppText style={styles.readOnlyTitle}>View only</AppText>
-            <AppText variant="caption" muted style={styles.readOnlyCopy}>
-              Live Hyperliquid event odds are shown here without order entry.
+          <View style={styles.tradeText}>
+            <AppText style={styles.tradeTitle} numberOfLines={1}>
+              Trade {selectedChoice?.label ?? 'outcome'}
             </AppText>
+            <AppText variant="caption" muted style={styles.tradeCopy}>
+              Whole shares · Winning shares settle at $1.
+            </AppText>
+          </View>
+          <View style={styles.tradeActions}>
+            <Pressable
+              onPress={() => setTicketAction('buy')}
+              style={({ pressed }) => [styles.tradeButton, styles.buyButton, pressed && styles.tradeButtonPressed]}>
+              <AppText style={styles.tradeButtonLabel}>Buy</AppText>
+            </Pressable>
+            <Pressable
+              onPress={() => setTicketAction('sell')}
+              style={({ pressed }) => [styles.tradeButton, styles.sellButton, pressed && styles.tradeButtonPressed]}>
+              <AppText style={styles.tradeButtonLabel}>Sell</AppText>
+            </Pressable>
           </View>
         </GlassSurface>
       </ScrollView>
 
       <DetailsModal event={event} visible={detailsOpen} onClose={() => setDetailsOpen(false)} />
+      {selectedChoice && ticketAction ? (
+        <OutcomeOrderTicket
+          key={`${selectedChoice.id}-${ticketAction}`}
+          visible
+          onClose={() => setTicketAction(null)}
+          event={event}
+          choice={selectedChoice}
+          initialAction={ticketAction}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -501,14 +527,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.055)',
   },
   chanceButtonText: { color: Colors.text, fontSize: 14, fontWeight: '700' },
-  readOnlyCard: {
+  tradeCard: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: Radius.lg,
-    padding: Spacing.lg,
+    padding: Spacing.md,
     marginTop: Spacing.lg,
   },
-  readOnlyIcon: {
+  tradeIcon: {
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -517,9 +543,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.08)',
     marginRight: Spacing.md,
   },
-  readOnlyText: { flex: 1 },
-  readOnlyTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' },
-  readOnlyCopy: { marginTop: 3, lineHeight: 16 },
+  tradeText: { flex: 1, paddingRight: Spacing.sm },
+  tradeTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' },
+  tradeCopy: { marginTop: 3, lineHeight: 16 },
+  tradeActions: { flexDirection: 'row', gap: 6 },
+  tradeButton: {
+    minWidth: 52,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 9,
+    borderRadius: Radius.sm,
+  },
+  buyButton: { backgroundColor: Colors.up },
+  sellButton: { backgroundColor: Colors.down },
+  tradeButtonLabel: { color: '#050505', fontSize: 12, fontWeight: '800' },
+  tradeButtonPressed: { opacity: 0.75 },
   loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   missingHeader: { height: 48, justifyContent: 'center', paddingHorizontal: Spacing.md },
   missingTitle: { color: Colors.text, fontSize: 17, fontWeight: '700' },

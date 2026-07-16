@@ -10,6 +10,7 @@ import {
   outcomeEncoding,
   outcomeMetadata,
   outcomePresentation,
+  outcomeTokenName,
   parseOutcomeTemplate,
   visibleOutcomeSides,
 } from '../src/lib/outcomeMarkets.ts';
@@ -19,6 +20,7 @@ const yesNo = [{ name: 'Yes' }, { name: 'No' }];
 test('encodes outcome sides with Hyperliquid native ids', () => {
   assert.equal(outcomeEncoding(856, 0), 8560);
   assert.equal(outcomeCoinKey(856, 1), '#8561');
+  assert.equal(outcomeTokenName(856, 1), '+8561');
   assert.equal(outcomeAssetId(856, 1), 100_008_561);
 });
 
@@ -192,7 +194,9 @@ test('builds event-first grouped, standalone, and recurring cards', () => {
   };
   const contexts = {
     '#1730': { markPx: '0.41686', prevDayPx: '0.2044', dayNtlVlm: '183005.422' },
+    '#1731': { markPx: '0.58314', prevDayPx: '0.7956', dayNtlVlm: '248901.13' },
     '#2120': { markPx: '0.58342', prevDayPx: '0.57969', dayNtlVlm: '694110.28' },
+    '#2121': { markPx: '0.41658', prevDayPx: '0.42031', dayNtlVlm: '496301.82' },
     '#8560': { markPx: '0.582075', prevDayPx: '0.57901', dayNtlVlm: '26597.04' },
     '#8561': { markPx: '0.417925', prevDayPx: '0.42099', dayNtlVlm: '18925.95' },
     '#8470': { markPx: '0.14251', prevDayPx: '0.52999', dayNtlVlm: '163898.04' },
@@ -211,6 +215,27 @@ test('builds event-first grouped, standalone, and recurring cards', () => {
   assert.deepEqual(champion.choices.map((choice) => choice.coinKey), ['#1730', '#2120']);
   assert.equal(champion.choices[0].probability, 0.41686);
   assert.equal(champion.choices[0].change24hPoints, 0.41686 - 0.2044);
+  assert.deepEqual(
+    champion.choices.map((choice) =>
+      choice.tradeContracts.map((contract) => [
+        contract.sideLabel,
+        contract.coinKey,
+        contract.tokenName,
+        contract.assetId,
+      ]),
+    ),
+    [
+      [
+        ['Yes', '#1730', '+1730', 100_001_730],
+        ['No', '#1731', '+1731', 100_001_731],
+      ],
+      [
+        ['Yes', '#2120', '+2120', 100_002_120],
+        ['No', '#2121', '+2121', 100_002_121],
+      ],
+    ],
+  );
+  assert.equal(champion.choices[1].tradeContracts[1].probability, 0.41658);
   assert.equal(champion.dayVolume, 877115.702);
 
   const final = events.find((event) => event.outcomeIds[0] === 856);
@@ -222,6 +247,10 @@ test('builds event-first grouped, standalone, and recurring cards', () => {
     'hl:outcome:8560',
     'hl:outcome:8561',
   ]);
+  assert.deepEqual(
+    final.choices.map((choice) => choice.tradeContracts.map((contract) => contract.coinKey)),
+    [['#8560'], ['#8561']],
+  );
 
   const recurring = events.find((event) => event.outcomeIds[0] === 847);
   assert.ok(recurring);
