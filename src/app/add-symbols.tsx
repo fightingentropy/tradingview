@@ -11,10 +11,9 @@ import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import type { AssetClass, Instrument } from '@/domain/types';
 import { useMarkets } from '@/data/useMarkets';
-import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
-type Filter = 'all' | 'stocks' | 'crypto' | 'forex' | 'index' | 'outcomes';
+type Filter = 'all' | 'stocks' | 'crypto' | 'forex' | 'index';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -23,17 +22,15 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'forex', label: 'Forex' },
   { key: 'index', label: 'Index' },
 ];
-const OUTCOME_FILTER: { key: Filter; label: string } = { key: 'outcomes', label: 'Outcomes' };
-
 const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'commodity']);
 
 function matchesFilter(i: Instrument, f: Filter): boolean {
+  if (i.assetClass === 'outcome') return false;
   if (f === 'all') return true;
   if (f === 'stocks') return STOCK_CLASSES.has(i.assetClass);
   if (f === 'crypto') return i.assetClass === 'crypto-perp' || i.assetClass === 'crypto-spot';
   if (f === 'forex') return i.assetClass === 'fx';
   if (f === 'index') return i.assetClass === 'index';
-  if (f === 'outcomes') return i.assetClass === 'outcome';
   return true;
 }
 
@@ -107,12 +104,6 @@ export default function AddSymbolsScreen() {
   const isRestoring = useIsRestoring();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
-  const showOutcomeMarkets = usePreferences((s) => s.showOutcomeMarkets);
-  const filters = useMemo(
-    () => (showOutcomeMarkets ? [FILTERS[0], OUTCOME_FILTER, ...FILTERS.slice(1)] : FILTERS),
-    [showOutcomeMarkets],
-  );
-  const effectiveFilter = !showOutcomeMarkets && filter === 'outcomes' ? 'all' : filter;
 
   // Debounce the raw input so a 300-item filter+sort runs once typing settles,
   // not on every keystroke. The TextInput stays driven by `search` for instant echo.
@@ -142,14 +133,14 @@ export default function AddSymbolsScreen() {
     const q = debouncedSearch.trim().toLowerCase();
     const out = searchable
       .filter(({ instrument, haystack }) => {
-        if (!matchesFilter(instrument, effectiveFilter)) return false;
+        if (!matchesFilter(instrument, filter)) return false;
         if (!q) return true;
         return haystack.includes(q);
       })
       .map(({ instrument }) => instrument);
     out.sort((a, b) => (data.quotes[b.id]?.dayVolume ?? 0) - (data.quotes[a.id]?.dayVolume ?? 0));
     return out.slice(0, 300);
-  }, [data, searchable, debouncedSearch, effectiveFilter]);
+  }, [data, searchable, debouncedSearch, filter]);
 
   const onToggle = useCallback((i: Instrument) => toggle(activeId, i.id), [toggle, activeId]);
 
@@ -191,8 +182,8 @@ export default function AddSymbolsScreen() {
         horizontal
         contentContainerStyle={styles.tabs}
         showsHorizontalScrollIndicator={false}>
-        {filters.map((f) => {
-          const active = effectiveFilter === f.key;
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
           return (
             <Pressable
               key={f.key}

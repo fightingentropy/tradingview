@@ -1,10 +1,12 @@
 import type { AssetClass, Instrument, Quote } from '@/domain/types';
 import { toNum } from '@/lib/format';
 import {
+  buildOutcomeEvents,
   outcomeCoinKey,
   outcomePresentation,
   visibleOutcomeSides,
   type HlOutcomeMeta,
+  type OutcomeEvent,
 } from '@/lib/outcomeMarkets';
 
 import type {
@@ -175,7 +177,7 @@ export function buildSpot([meta, ctxs]: SpotMetaAndAssetCtxs): {
 export function buildOutcomes(
   meta: HlOutcomeMeta,
   ctxs: SpotAssetCtx[],
-): { instruments: Instrument[]; quotes: Record<string, Quote> } {
+): { instruments: Instrument[]; quotes: Record<string, Quote>; events: OutcomeEvent[] } {
   const ts = Date.now();
   const instruments: Instrument[] = [];
   const quotes: Record<string, Quote> = {};
@@ -218,5 +220,5 @@ export function buildOutcomes(
     }
   }
 
-  return { instruments, quotes };
+  return { instruments, quotes, events: buildOutcomeEvents(meta, ctxs) };
 }

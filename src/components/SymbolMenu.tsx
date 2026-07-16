@@ -21,7 +21,7 @@ import {
   formatProbabilityPointChange,
   priceDecimalsFor,
 } from '@/lib/format';
-import { useMarkets } from '@/data/useMarkets';
+import { useAllMarkets } from '@/data/useMarkets';
 import { useAlerts, useAlertsFor } from '@/store/alerts';
 import { useLivePrice } from '@/store/livePrices';
 import { useWatchlists } from '@/store/watchlists';
@@ -62,7 +62,7 @@ function SymbolMenuSheet({
   instrument: Instrument | null;
   onClose: () => void;
 }) {
-  const { data: markets } = useMarkets();
+  const { data: markets } = useAllMarkets();
   const quote = instrument ? markets?.quotes[instrument.id] : undefined;
   const live = useLivePrice(instrument?.coinKey);
   const anchor = live ?? quote?.last ?? null;

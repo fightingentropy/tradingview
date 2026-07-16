@@ -179,13 +179,13 @@ export default function SettingsScreen() {
             <View style={styles.rowText}>
               <AppText variant="body">Outcome markets</AppText>
               <AppText variant="caption" muted>
-                Show view-only Hyperliquid event markets in lists, search, and charts.
+                Add a view-only Outcomes tab to the bottom navigation.
               </AppText>
             </View>
             <GlassToggle
               value={showOutcomeMarkets}
               onValueChange={setShowOutcomeMarkets}
-              accessibilityLabel="Show Hyperliquid outcome markets"
+              accessibilityLabel="Show Hyperliquid Outcomes tab"
             />
           </View>
           <View style={styles.divider} />

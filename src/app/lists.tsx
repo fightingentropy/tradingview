@@ -9,7 +9,6 @@ import { Screen } from '@/components/ui/Screen';
 import { Colors, Spacing } from '@/constants/theme';
 import type { Instrument } from '@/domain/types';
 import { useMarkets } from '@/data/useMarkets';
-import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
 /** Comma-free ticker preview for a list; resolves real symbols when markets are
@@ -17,10 +16,9 @@ import { useWatchlists } from '@/store/watchlists';
 function previewFor(
   symbolIds: string[],
   byId?: Record<string, Instrument>,
-  showOutcomeMarkets = false,
 ): string {
   return symbolIds
-    .filter((id) => showOutcomeMarkets || !id.startsWith('hl:outcome:'))
+    .filter((id) => !id.startsWith('hl:outcome:'))
     .map((id) => byId?.[id]?.symbol ?? id.split(':').pop()?.toUpperCase() ?? id)
     .join('   ');
 }
@@ -34,7 +32,6 @@ export default function ListsScreen() {
   const deleteList = useWatchlists((s) => s.deleteList);
   const active = lists.find((l) => l.id === activeId);
   const { data } = useMarkets();
-  const showOutcomeMarkets = usePreferences((s) => s.showOutcomeMarkets);
 
   // The app always needs at least one list, so the final one isn't swipe-deletable.
   const canDelete = lists.length > 1;
@@ -87,7 +84,7 @@ export default function ListsScreen() {
                 {l.name}
               </AppText>
               <AppText style={[styles.preview, isActive && styles.previewActive]} numberOfLines={1}>
-                {previewFor(l.symbolIds, data?.byId, showOutcomeMarkets) || 'Empty list'}
+                {previewFor(l.symbolIds, data?.byId) || 'Empty list'}
               </AppText>
             </Pressable>
           );

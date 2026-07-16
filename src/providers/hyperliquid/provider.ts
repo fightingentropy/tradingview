@@ -48,7 +48,15 @@ export const hyperliquidProvider: MarketDataProvider = {
     const outcomes =
       outcomeResult.status === 'fulfilled' && spotResult.status === 'fulfilled'
         ? buildOutcomes(outcomeResult.value, spotResult.value[1])
-        : { instruments: [], quotes: {} };
+        : { instruments: [], quotes: {}, events: [] };
+    const outcomeMarketsError =
+      outcomeResult.status === 'rejected'
+        ? outcomeResult.reason instanceof Error
+          ? outcomeResult.reason.message
+          : String(outcomeResult.reason)
+        : spotResult.status === 'rejected'
+          ? 'Hyperliquid outcome price contexts are unavailable.'
+          : null;
 
     if (
       perps.instruments.length === 0 &&
@@ -74,6 +82,8 @@ export const hyperliquidProvider: MarketDataProvider = {
         ...outcomes.instruments,
       ],
       quotes: { ...perps.quotes, ...xyzs.quotes, ...spots.quotes, ...outcomes.quotes },
+      outcomeEvents: outcomes.events,
+      outcomeMarketsError,
     };
   },
 

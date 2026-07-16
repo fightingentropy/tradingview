@@ -58,7 +58,7 @@ export default function RootLayout() {
           persistOptions={{
             persister: queryPersister,
             maxAge: PERSIST_MAX_AGE,
-            buster: '1',
+            buster: '2',
             // A connected News feed may contain posts from private Telegram
             // channels. Keep that cache in memory only, never in MMKV.
             dehydrateOptions: {

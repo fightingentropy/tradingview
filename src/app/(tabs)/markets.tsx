@@ -16,7 +16,7 @@ import { useMarkets } from '@/data/useMarkets';
 import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
-type Filter = 'all' | 'crypto' | 'stocks' | 'spot' | 'outcomes';
+type Filter = 'all' | 'crypto' | 'stocks' | 'spot';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -24,15 +24,13 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'stocks', label: 'Stocks' },
   { key: 'spot', label: 'Spot' },
 ];
-const OUTCOME_FILTER: { key: Filter; label: string } = { key: 'outcomes', label: 'Outcomes' };
-
 const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'commodity', 'index', 'fx']);
 
 function matchesFilter(i: Instrument, f: Filter): boolean {
+  if (i.assetClass === 'outcome') return false;
   if (f === 'all') return true;
   if (f === 'crypto') return i.assetClass === 'crypto-perp';
   if (f === 'spot') return i.assetClass === 'crypto-spot';
-  if (f === 'outcomes') return i.assetClass === 'outcome';
   return STOCK_CLASSES.has(i.assetClass);
 }
 
@@ -52,12 +50,6 @@ export default function MarketsScreen() {
   // Persisted so the chosen order survives app restarts.
   const sort = usePreferences((s) => s.marketsSort);
   const setSort = usePreferences((s) => s.setMarketsSort);
-  const showOutcomeMarkets = usePreferences((s) => s.showOutcomeMarkets);
-  const filters = useMemo(
-    () => (showOutcomeMarkets ? [FILTERS[0], OUTCOME_FILTER, ...FILTERS.slice(1)] : FILTERS),
-    [showOutcomeMarkets],
-  );
-  const effectiveFilter = !showOutcomeMarkets && filter === 'outcomes' ? 'all' : filter;
 
   // Debounce the raw input so a 300-item filter+sort runs once typing settles,
   // not on every keystroke. The TextInput stays driven by `search` for instant echo.
@@ -87,7 +79,7 @@ export default function MarketsScreen() {
     const q = debouncedSearch.trim().toLowerCase();
     const filtered = searchable
       .filter(({ instrument, haystack }) => {
-        if (!matchesFilter(instrument, effectiveFilter)) return false;
+        if (!matchesFilter(instrument, filter)) return false;
         if (!q) return true;
         return haystack.includes(q);
       })
@@ -108,7 +100,7 @@ export default function MarketsScreen() {
       });
     }
     return filtered.slice(0, 300);
-  }, [data, searchable, debouncedSearch, effectiveFilter, sort]);
+  }, [data, searchable, debouncedSearch, filter, sort]);
 
   // Subscribe live prices to the full catalog (a stable set) rather than the
   // filtered results, so typing doesn't tear down and re-open the websocket
@@ -163,8 +155,8 @@ export default function MarketsScreen() {
           style={styles.chipScroller}
           contentContainerStyle={styles.chipGroup}
           showsHorizontalScrollIndicator={false}>
-          {filters.map((f) => {
-            const active = effectiveFilter === f.key;
+          {FILTERS.map((f) => {
+            const active = filter === f.key;
             return (
               <Pressable
                 key={f.key}

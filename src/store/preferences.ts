@@ -12,7 +12,7 @@ export const SMALL_BALANCE_USD = 1;
  * Global display preferences, persisted across sessions.
  */
 interface PreferencesState {
-  /** Show opt-in Hyperliquid event/prediction markets throughout the app. */
+  /** Add the opt-in Hyperliquid Outcomes destination to bottom navigation. */
   showOutcomeMarkets: boolean;
   setShowOutcomeMarkets: (value: boolean) => void;
   /** Hide spot balances worth less than {@link SMALL_BALANCE_USD}. On by default. */

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 
 import type { Instrument } from '@/domain/types';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
-import { useMarkets } from '@/data/useMarkets';
+import { useAllMarkets } from '@/data/useMarkets';
 import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
 import { formatPercent, formatPrice, formatProbability, priceDecimalsFor } from '@/lib/format';
 import { configureNotifications, notifyPriceAlert } from '@/lib/notifications';
@@ -20,11 +20,12 @@ import { usePreferences } from '@/store/preferences';
  * Renders nothing.
  */
 export function AlertWatcher() {
-  const { data: markets } = useMarkets();
+  const { data: markets } = useAllMarkets();
   const alerts = useAlerts((s) => s.alerts);
   const markTriggered = useAlerts((s) => s.markTriggered);
   const push = useAlertFeed((s) => s.push);
   const notifyEnabled = usePreferences((s) => s.alertNotifications);
+  const showOutcomeMarkets = usePreferences((s) => s.showOutcomeMarkets);
 
   // Install the notification handler once, and keep the background alert check
   // registered only while alert notifications are enabled.
@@ -44,8 +45,12 @@ export function AlertWatcher() {
     );
     return ids
       .map((id) => markets.byId[id])
-      .filter((i): i is Instrument => i !== undefined);
-  }, [markets, alerts]);
+      .filter(
+        (instrument): instrument is Instrument =>
+          instrument !== undefined &&
+          (showOutcomeMarkets || instrument.assetClass !== 'outcome'),
+      );
+  }, [markets, alerts, showOutcomeMarkets]);
 
   useLivePriceFeed(armedInstruments);
 
@@ -63,6 +68,7 @@ export function AlertWatcher() {
       for (const a of active) {
         const inst = m.byId[a.instrumentId];
         if (!inst || !a.anchorPrice) continue;
+        if (inst.assetClass === 'outcome' && !showOutcomeMarkets) continue;
         const price = prices[inst.coinKey];
         if (price == null) continue;
 
@@ -98,7 +104,7 @@ export function AlertWatcher() {
     // Evaluate immediately against the current snapshot, then on every tick.
     evaluate(useLivePrices.getState().prices);
     return useLivePrices.subscribe((s) => evaluate(s.prices));
-  }, [markTriggered, push]);
+  }, [markTriggered, push, showOutcomeMarkets]);
 
   return null;
 }

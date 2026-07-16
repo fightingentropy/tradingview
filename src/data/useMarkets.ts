@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import type { Instrument, Quote } from '@/domain/types';
+import type { OutcomeEvent } from '@/lib/outcomeMarkets';
 import { queryKeys } from '@/lib/queryKeys';
 import { allProviders } from '@/providers/registry';
 import { usePreferences } from '@/store/preferences';
@@ -14,17 +15,27 @@ export interface MarketsData {
   // Maps aren't JSON-serializable, so this is rebuilt by the queryFn each load.
   byCoinKey: Map<string, Instrument>;
   quotes: Record<string, Quote>;
+  outcomeEvents: OutcomeEvent[];
+  outcomeMarketsError: string | null;
 }
 
 export async function loadAllMarkets(): Promise<MarketsData> {
-  const results = await Promise.allSettled(allProviders().map((p) => p.loadMarkets()));
+  const providers = allProviders();
+  const results = await Promise.allSettled(providers.map((provider) => provider.loadMarkets()));
 
   const instruments: Instrument[] = [];
   const quotes: Record<string, Quote> = {};
-  for (const r of results) {
-    if (r.status === 'fulfilled') {
-      instruments.push(...r.value.instruments);
-      Object.assign(quotes, r.value.quotes);
+  const outcomeEvents: OutcomeEvent[] = [];
+  let outcomeMarketsError: string | null = null;
+  for (const [index, result] of results.entries()) {
+    if (result.status === 'fulfilled') {
+      instruments.push(...result.value.instruments);
+      Object.assign(quotes, result.value.quotes);
+      outcomeEvents.push(...(result.value.outcomeEvents ?? []));
+      outcomeMarketsError ??= result.value.outcomeMarketsError ?? null;
+    } else if (providers[index]?.source === 'hyperliquid') {
+      outcomeMarketsError =
+        result.reason instanceof Error ? result.reason.message : String(result.reason);
     }
   }
   const byId: Record<string, Instrument> = {};
@@ -33,7 +44,7 @@ export async function loadAllMarkets(): Promise<MarketsData> {
     byId[i.id] = i;
     byCoinKey.set(i.coinKey, i);
   }
-  return { instruments, byId, byCoinKey, quotes };
+  return { instruments, byId, byCoinKey, quotes, outcomeEvents, outcomeMarketsError };
 }
 
 /**
@@ -52,7 +63,7 @@ function withCoinKeyIndex(data: MarketsData): MarketsData {
   return { ...data, byCoinKey };
 }
 
-/** Hide outcome rows centrally while preserving the full cached catalog and saved ids. */
+/** Hide outcome contracts from ordinary market/watchlist consumers. */
 export function withOutcomeVisibility(
   data: MarketsData,
   showOutcomeMarkets: boolean,
@@ -71,11 +82,7 @@ export function withOutcomeVisibility(
 
 /** Full instrument catalog + 24h snapshot quotes, refreshed periodically. */
 export function useMarkets() {
-  const showOutcomeMarkets = usePreferences((state) => state.showOutcomeMarkets);
-  const select = useCallback(
-    (data: MarketsData) => withOutcomeVisibility(data, showOutcomeMarkets),
-    [showOutcomeMarkets],
-  );
+  const select = useCallback((data: MarketsData) => withOutcomeVisibility(data, false), []);
   return useQuery({
     queryKey: queryKeys.instruments(),
     queryFn: loadAllMarkets,
@@ -86,6 +93,44 @@ export function useMarkets() {
     refetchIntervalInBackground: false,
     // Repair the rehydrated `byCoinKey` Map (see {@link withCoinKeyIndex}).
     select,
+  });
+}
+
+/** Full shared catalog for legacy outcome deep links and alert evaluation. */
+export function useAllMarkets() {
+  return useQuery({
+    queryKey: queryKeys.instruments(),
+    queryFn: loadAllMarkets,
+    staleTime: 20_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    select: withCoinKeyIndex,
+  });
+}
+
+/** Outcome-only contracts and grouped events, backed by the same persisted query. */
+export function useOutcomeMarkets() {
+  const enabled = usePreferences((state) => state.showOutcomeMarkets);
+  return useQuery({
+    queryKey: queryKeys.instruments(),
+    queryFn: loadAllMarkets,
+    enabled,
+    staleTime: 20_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    select: (data: MarketsData): MarketsData => {
+      const indexed = withCoinKeyIndex(data);
+      const instruments = indexed.instruments.filter(
+        (instrument) => instrument.assetClass === 'outcome',
+      );
+      const byId: Record<string, Instrument> = {};
+      const byCoinKey = new Map<string, Instrument>();
+      for (const instrument of instruments) {
+        byId[instrument.id] = instrument;
+        byCoinKey.set(instrument.coinKey, instrument);
+      }
+      return { ...indexed, instruments, byId, byCoinKey };
+    },
   });
 }
 

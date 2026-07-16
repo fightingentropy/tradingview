@@ -40,7 +40,7 @@ import { useActiveAsset } from '@/data/useActiveAsset';
 import { useCandles } from '@/data/useCandles';
 import { useHlAccount, useHlOpenOrders, useTradingIdentity } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
-import { useMarkets } from '@/data/useMarkets';
+import { useAllMarkets } from '@/data/useMarkets';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import {
   formatCompact,
@@ -162,7 +162,7 @@ function orderIsMarket(order: HlOpenOrder): boolean {
 
 export default function SymbolScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, isLoading: marketsLoading } = useMarkets();
+  const { data, isLoading: marketsLoading } = useAllMarkets();
   const isRestoring = useIsRestoring();
   const instrument = id ? data?.byId[id] : undefined;
   const quote = id ? data?.quotes[id] : undefined;

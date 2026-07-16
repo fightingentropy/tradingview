@@ -2,8 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
 import { Colors } from '@/constants/theme';
+import { usePreferences } from '@/store/preferences';
 
 export default function TabsLayout() {
+  const showOutcomeMarkets = usePreferences((state) => state.showOutcomeMarkets);
+
   return (
     <Tabs
       screenOptions={{
@@ -32,6 +35,18 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Protected guard={showOutcomeMarkets}>
+        <Tabs.Screen
+          name="outcomes"
+          options={{
+            title: 'Outcomes',
+            headerShown: false,
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="radio-button-on-outline" color={color} size={size} />
+            ),
+          }}
+        />
+      </Tabs.Protected>
       <Tabs.Screen
         name="news"
         options={{

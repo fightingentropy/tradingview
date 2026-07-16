@@ -1,4 +1,5 @@
 import type { Candle, CandleInterval, Instrument, Quote, Source } from '@/domain/types';
+import type { OutcomeEvent } from '@/lib/outcomeMarkets';
 
 export type Unsubscribe = () => void;
 
@@ -13,6 +14,10 @@ export interface MarketSnapshot {
   instruments: Instrument[];
   /** Snapshot quotes (last, 24h change, volume) keyed by instrument id. */
   quotes: Record<string, Quote>;
+  /** Event-first metadata for the optional Hyperliquid Outcomes destination. */
+  outcomeEvents?: OutcomeEvent[];
+  /** Outcome-only failure while the provider's other market catalogs remain usable. */
+  outcomeMarketsError?: string | null;
 }
 
 /**
