@@ -9,10 +9,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -45,7 +47,12 @@ import {
 } from '@/lib/hyperliquid/tradingIdentity';
 import { formatPrice, signedUsd, usd } from '@/lib/format';
 import { queryKeys } from '@/lib/queryKeys';
-import { defaultTradeSizeMode, type TradeSizeMode } from '@/lib/tradeTicket';
+import {
+  defaultTradeSizeMode,
+  shouldDismissTradeTicket,
+  shouldStartTradeTicketDismiss,
+  type TradeSizeMode,
+} from '@/lib/tradeTicket';
 import { materiallyDifferentMid } from '@/lib/tradePreflight';
 import { useHlConnection } from '@/store/hlConnection';
 
@@ -350,6 +357,8 @@ export function TradeTicket({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [tpslOpen, setTpslOpen] = useState(false);
   const [allocationTrackWidth, setAllocationTrackWidth] = useState(0);
+  const [sheetTranslateY] = useState(() => new Animated.Value(0));
+  const [sheetAtTop, setSheetAtTop] = useState(true);
   const [postOnly, setPostOnly] = useState(false);
   const [slippagePct, setSlippagePct] = useState(DEFAULT_SLIPPAGE_PCT);
   // Leverage / margin overrides — null means "follow the account's current setting".
@@ -988,6 +997,9 @@ export function TradeTicket({
   });
 
   const reset = () => {
+    sheetTranslateY.stopAnimation();
+    sheetTranslateY.setValue(0);
+    setSheetAtTop(true);
     setSizeMode(defaultTradeSizeMode());
     setRiskUnit('usd');
     setAmount(initialSizeCoin != null ? String(initialSizeCoin) : '');
@@ -1010,6 +1022,54 @@ export function TradeTicket({
     reset();
     onClose();
   };
+
+  const finishSheetDrag = (dy: number, velocityY: number) => {
+    if (shouldDismissTradeTicket(dy, velocityY)) {
+      Animated.timing(sheetTranslateY, {
+        toValue: 900,
+        duration: 180,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) return;
+        close();
+      });
+      return;
+    }
+    Animated.spring(sheetTranslateY, {
+      toValue: 0,
+      damping: 24,
+      stiffness: 260,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const sheetPanResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) =>
+      shouldStartTradeTicketDismiss(
+        gesture.dx,
+        gesture.dy,
+        sheetAtTop ? 0 : 2,
+        mutation.isPending,
+      ),
+    onMoveShouldSetPanResponderCapture: (_, gesture) =>
+      shouldStartTradeTicketDismiss(
+        gesture.dx,
+        gesture.dy,
+        sheetAtTop ? 0 : 2,
+        mutation.isPending,
+      ),
+    onPanResponderGrant: () => {
+      sheetTranslateY.stopAnimation();
+      Keyboard.dismiss();
+    },
+    onPanResponderMove: (_, gesture) => {
+      sheetTranslateY.setValue(Math.max(0, gesture.dy));
+    },
+    onPanResponderRelease: (_, gesture) => finishSheetDrag(gesture.dy, gesture.vy),
+    onPanResponderTerminate: (_, gesture) => finishSheetDrag(gesture.dy, gesture.vy),
+    onPanResponderTerminationRequest: () => false,
+  });
 
   const submitVerb = actionLabel ?? (closing ? 'Close' : side === 'buy' ? 'Buy' : 'Sell');
 
@@ -1161,24 +1221,28 @@ export function TradeTicket({
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.sheetWrap}>
-        <SheetSurface style={styles.sheet}>
-          {/* Header */}
-          <View style={styles.handle} />
-          <View style={styles.headerRow}>
-            <AppText variant="heading">
-              {title ?? (closing ? `${actionLabel ?? 'Close'} ${label}` : `${label}-PERP`)}
-            </AppText>
-            <View style={styles.headerRight}>
-              <AppText variant="caption" muted numeric>
-                Mark ${formatPrice(triggerMarkPx, priceDecimals)}
+        <Animated.View
+          style={[styles.sheetMotion, { transform: [{ translateY: sheetTranslateY }] }]}>
+          <SheetSurface style={styles.sheet}>
+          {/* Header is one gesture zone; the scroll body below is the other. */}
+          <View style={styles.sheetDragHeader} {...sheetPanResponder.panHandlers}>
+            <View style={styles.handle} />
+            <View style={styles.headerRow}>
+              <AppText variant="heading">
+                {title ?? (closing ? `${actionLabel ?? 'Close'} ${label}` : `${label}-PERP`)}
               </AppText>
-              {!closing && assetMeta ? (
-                <View style={styles.levBadge}>
-                  <AppText variant="caption" color={Colors.text}>
-                    {isCross ? 'Cross' : 'Isolated'} · {leverage}×
-                  </AppText>
-                </View>
-              ) : null}
+              <View style={styles.headerRight}>
+                <AppText variant="caption" muted numeric>
+                  Mark ${formatPrice(triggerMarkPx, priceDecimals)}
+                </AppText>
+                {!closing && assetMeta ? (
+                  <View style={styles.levBadge}>
+                    <AppText variant="caption" color={Colors.text}>
+                      {isCross ? 'Cross' : 'Isolated'} · {leverage}×
+                    </AppText>
+                  </View>
+                ) : null}
+              </View>
             </View>
           </View>
 
@@ -1193,10 +1257,17 @@ export function TradeTicket({
           ) : (
             <View style={styles.ticketContent}>
               <ScrollView
+                {...sheetPanResponder.panHandlers}
                 style={styles.body}
+                bounces={false}
                 contentContainerStyle={styles.bodyContent}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
+                onScroll={(event) => {
+                  const nextAtTop = event.nativeEvent.contentOffset.y <= 1;
+                  setSheetAtTop((current) => (current === nextAtTop ? current : nextAtTop));
+                }}
+                scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}>
               {/* Reference-style primary controls: order type, margin mode and leverage. */}
               <View style={styles.tradeControlRow}>
@@ -1805,7 +1876,8 @@ export function TradeTicket({
               </View>
             </View>
           )}
-        </SheetSurface>
+          </SheetSurface>
+        </Animated.View>
 
         {/* Above-keyboard bar: decimal-pads have no Done key, so this is the only
             way to dismiss. Steppers nudge the focused field. */}
@@ -2087,6 +2159,7 @@ function Field({
 const styles = StyleSheet.create({
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000C2' },
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
+  sheetMotion: { height: '92%' },
   sheet: {
     // Dark Liquid Glass; the faint black scrim deepens it to "black glass" and keeps text legible.
     backgroundColor: 'rgba(0,0,0,0.20)',
@@ -2101,7 +2174,7 @@ const styles = StyleSheet.create({
     // A definite height lets the flexing ScrollView yield space to the fixed
     // review dock. `maxHeight` alone can leave the sheet intrinsically sized and
     // clip the dock when a longer sizing mode is selected.
-    height: '92%',
+    flex: 1,
   },
   // Used only when Liquid Glass isn't available (older iOS) — a near-black solid panel.
   sheetFallback: { backgroundColor: 'rgba(8,10,14,0.98)' },
@@ -2117,6 +2190,7 @@ const styles = StyleSheet.create({
   },
   body: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: 0 },
   bodyContent: { gap: 14, paddingBottom: Spacing.sm },
+  sheetDragHeader: { gap: Spacing.md },
   handle: {
     alignSelf: 'center',
     width: 40,
