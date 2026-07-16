@@ -1,6 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import {
+  GlassView,
+  isGlassEffectAPIAvailable,
+  isLiquidGlassAvailable,
+} from 'expo-glass-effect';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -154,7 +158,7 @@ const DEFAULT_SLIPPAGE_PCT = '0.5';
 /** Ties the numeric fields to their keyboard accessory bar (decimal-pads have no Done key). */
 const ACCESSORY_ID = 'trade-ticket-kb';
 
-const LIQUID_GLASS = isLiquidGlassAvailable();
+const LIQUID_GLASS = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
 // Translucent fills so the dark glass reads through the grouped panels.
 const GLASS_FILL = 'rgba(255,255,255,0.06)';
 const GLASS_FILL_STRONG = 'rgba(255,255,255,0.13)';
@@ -344,6 +348,8 @@ export function TradeTicket({
   // In close mode reduce-only is forced on and not user-toggleable.
   const [reduceOnly, setReduceOnly] = useState(!!closing);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [tpslOpen, setTpslOpen] = useState(false);
+  const [allocationTrackWidth, setAllocationTrackWidth] = useState(0);
   const [postOnly, setPostOnly] = useState(false);
   const [slippagePct, setSlippagePct] = useState(DEFAULT_SLIPPAGE_PCT);
   // Leverage / margin overrides — null means "follow the account's current setting".
@@ -537,20 +543,11 @@ export function TradeTicket({
   const grossTpPnl = tpNum > 0 ? (tpNum - refPx) * coinSize * (isBuy ? 1 : -1) : 0;
   const tpFeeAllowance = tpNum > 0 ? (refPx + tpNum) * coinSize * feeRate : 0;
   const tpPnl = grossTpPnl - tpFeeAllowance;
-  const priceLossAtStop = stopLoss.priceLossPerCoin * coinSize;
-  const feeAllowanceAtStop = stopLoss.feesPerCoin * coinSize;
   const maxLoss =
     slNum > 0 && slOk && coinSize > 0 ? stopLoss.totalPerCoin * coinSize : null;
   const slPnl = maxLoss ? -maxLoss : 0;
   const rewardRisk =
     tpNum > 0 && tpOk && maxLoss && maxLoss > 0 ? Math.max(0, tpPnl) / maxLoss : null;
-  const entrySlippageAllowance =
-    orderType === 'market'
-      ? Math.max(
-          0,
-          isBuy ? refPx - resolvedExecutionMidPx : resolvedExecutionMidPx - refPx,
-        ) * coinSize
-      : 0;
   const lossEstimateBasis =
     orderType === 'limit'
       ? 'Limit + stop cap + fee allowance'
@@ -610,6 +607,7 @@ export function TradeTicket({
     setSizeMode(next);
     setRiskUnit('usd');
     setAmount(nextAmount);
+    if (next === 'risk') setTpslOpen(true);
   };
 
   const toggleReduceOnly = () => {
@@ -617,6 +615,7 @@ export function TradeTicket({
     setReduceOnly(next);
     if (next) {
       if (sizeMode === 'risk') changeSizeMode(defaultTradeSizeMode());
+      setTpslOpen(false);
       setTpPrice('');
       setSlPrice('');
     }
@@ -998,6 +997,7 @@ export function TradeTicket({
     setSlippagePct(DEFAULT_SLIPPAGE_PCT);
     setPostOnly(false);
     setAdvancedOpen(false);
+    setTpslOpen(false);
     setReduceOnly(!!closing);
     setLevOverride(null);
     setCrossOverride(null);
@@ -1125,6 +1125,35 @@ export function TradeTicket({
   };
 
   const presets = levPresets(maxLev);
+  const sizeModes: SizeMode[] = closing || reduceOnly ? ['coin', 'usd'] : ['coin', 'usd', 'risk'];
+  const sizeModeCopy =
+    sizeMode === 'coin'
+      ? label
+      : sizeMode === 'usd'
+        ? 'USD'
+        : riskUnit === 'percent'
+          ? 'Risk %'
+          : 'Risk USD';
+  const cycleSizeMode = () => {
+    const currentIndex = sizeModes.indexOf(sizeMode);
+    changeSizeMode(sizeModes[(currentIndex + 1) % sizeModes.length] ?? defaultTradeSizeMode());
+  };
+  const allocationPercent =
+    maxSz > 0 && sizeMode !== 'risk'
+      ? Math.min(100, Math.max(0, (coinSize / maxSz) * 100))
+      : 0;
+  const allocationLeft = `${allocationPercent}%` as `${number}%`;
+  const applyAllocationPercent = (nextPercent: number) => {
+    if (!(maxSz > 0) || sizeMode === 'risk') return;
+    const clamped = Math.min(100, Math.max(0, nextPercent));
+    if (sizeMode === 'coin') {
+      const nextSize = floorSize((maxSz * clamped) / 100, assetMeta?.szDecimals ?? 4);
+      setAmount(nextSize > 0 ? String(nextSize) : '');
+      return;
+    }
+    const nextUsd = (maxSz * sizingPx * clamped) / 100;
+    setAmount(nextUsd > 0 ? String(Number(nextUsd.toFixed(2))) : '');
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
@@ -1169,6 +1198,38 @@ export function TradeTicket({
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
                 showsVerticalScrollIndicator={false}>
+              {/* Reference-style primary controls: order type, margin mode and leverage. */}
+              <View style={styles.tradeControlRow}>
+                <Pressable
+                  style={styles.tradeControl}
+                  onPress={() => {
+                    const next = orderType === 'market' ? 'limit' : 'market';
+                    setOrderType(next);
+                    if (next === 'market') setPostOnly(false);
+                  }}>
+                  <AppText variant="label" color={Colors.text}>
+                    {orderType === 'market' ? 'Market' : 'Limit'}
+                  </AppText>
+                  <Ionicons name="chevron-down" size={15} color={Colors.textMuted} />
+                </Pressable>
+                {!closing ? (
+                  <Pressable style={styles.tradeControl} onPress={() => setAdvancedOpen(true)}>
+                    <AppText variant="label" color={Colors.text}>
+                      {isCross ? 'Cross' : 'Isolated'}
+                    </AppText>
+                    <Ionicons name="chevron-down" size={15} color={Colors.textMuted} />
+                  </Pressable>
+                ) : null}
+                {!closing ? (
+                  <Pressable style={styles.tradeControl} onPress={() => setAdvancedOpen(true)}>
+                    <AppText variant="label" numeric color={Colors.text}>
+                      {leverage}×
+                    </AppText>
+                    <Ionicons name="chevron-down" size={15} color={Colors.textMuted} />
+                  </Pressable>
+                ) : null}
+              </View>
+
               {/* Buy / Sell — hidden in close mode (the side is fixed to flatten). */}
               {closing || lockSide ? (
                 <View style={styles.closeBanner}>
@@ -1206,46 +1267,21 @@ export function TradeTicket({
                 </View>
               )}
 
-              {/* Market / Limit */}
-              <View style={styles.segment}>
-                {(['market', 'limit'] as OrderType[]).map((t) => (
-                  <Pressable
-                    key={t}
-                    style={[styles.segmentItem, orderType === t && styles.segmentItemActive]}
-                    onPress={() => {
-                      setOrderType(t);
-                      if (t === 'market') setPostOnly(false);
-                    }}>
-                    <AppText variant="label" color={orderType === t ? Colors.text : Colors.textMuted}>
-                      {t === 'market' ? 'Market' : 'Limit'}
-                    </AppText>
-                  </Pressable>
-                ))}
+              <View style={styles.availableRow}>
+                <AppText variant="caption" muted>
+                  Avail. to Trade
+                </AppText>
+                <AppText variant="label" numeric color={Colors.text}>
+                  {compactNumber(avail, 2)} USDC
+                </AppText>
               </View>
 
-              <>
-                  {/* Reduce-only stays visible because it materially changes what the order can do. */}
-                  {!closing ? <View style={styles.safetyRow}>
-                    <View style={styles.safetyCopy}>
-                      <AppText variant="label">Reduce-only</AppText>
-                      <AppText variant="caption" muted>
-                        Can shrink a position, never open or flip it
-                      </AppText>
-                    </View>
-                    <Pressable
-                      accessibilityRole="switch"
-                      accessibilityState={{ checked: reduceOnly }}
-                      onPress={toggleReduceOnly}
-                      style={[styles.switchTrack, reduceOnly && styles.switchTrackOn]}>
-                      <View style={[styles.switchThumb, reduceOnly && styles.switchThumbOn]} />
-                    </Pressable>
-                  </View> : null}
-
-                  {/* Lower-frequency execution controls are intentionally progressive. */}
+              {/* Lower-frequency execution controls stay behind the three top controls. */}
+              {advancedOpen ? (
                   <View style={styles.advancedCard}>
-                    <Pressable style={styles.advancedHead} onPress={() => setAdvancedOpen((v) => !v)}>
+                    <Pressable style={styles.advancedHead} onPress={() => setAdvancedOpen(false)}>
                       <View>
-                        <AppText variant="label">Advanced</AppText>
+                        <AppText variant="label">Order settings</AppText>
                         <AppText variant="caption" muted>
                           {orderType === 'limit' && postOnly ? 'Post-only · ' : ''}
                           {!closing ? `${isCross ? 'Cross' : 'Isolated'} · ${leverage}× · ` : ''}
@@ -1253,13 +1289,12 @@ export function TradeTicket({
                         </AppText>
                       </View>
                       <Ionicons
-                        name={advancedOpen ? 'chevron-up' : 'chevron-down'}
+                        name="chevron-up"
                         size={18}
                         color={Colors.textMuted}
                       />
                     </Pressable>
 
-                    {advancedOpen ? (
                       <View style={styles.advancedBody}>
                         {!closing && !reduceOnly ? (
                           <>
@@ -1393,13 +1428,12 @@ export function TradeTicket({
                           </>
                         ) : null}
                       </View>
-                    ) : null}
                   </View>
-              </>
+              ) : null}
 
               {/* Limit price */}
               {orderType === 'limit' ? (
-                <Field label="Limit price">
+                <Field label="Price (USDC)">
                   <TextInput
                     value={limitPrice}
                     onChangeText={setLimitPrice}
@@ -1411,32 +1445,20 @@ export function TradeTicket({
                     inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
                     style={styles.input}
                   />
-                  <AppText variant="caption" muted>
-                    USD
-                  </AppText>
+                  <Pressable
+                    style={styles.midButton}
+                    onPress={() => setLimitPrice(String(Number(triggerMarkPx.toFixed(priceDecimals))))}>
+                    <AppText variant="label" color={Colors.accent}>
+                      Mid
+                    </AppText>
+                  </Pressable>
                 </Field>
               ) : null}
 
-              {/* Asset-unit sizing is the default. USD stays available as an explicit
-                  conversion, while risk sizing derives the position from stop distance. */}
-              <View style={styles.segment}>
-                {(closing || reduceOnly
-                  ? (['coin', 'usd'] as SizeMode[])
-                  : (['coin', 'usd', 'risk'] as SizeMode[])
-                ).map((mode) => (
-                  <Pressable
-                    key={mode}
-                    style={[styles.segmentItem, sizeMode === mode && styles.segmentItemActive]}
-                    onPress={() => changeSizeMode(mode)}>
-                    <AppText variant="label" color={sizeMode === mode ? Colors.text : Colors.textMuted}>
-                      {mode === 'usd' ? 'USD size' : mode === 'risk' ? 'Risk' : label}
-                    </AppText>
-                  </Pressable>
-                ))}
-              </View>
-
+              {/* Asset units are the default. Tap the unit inside the field to cycle
+                  through asset, USD and risk sizing without adding a separate tab row. */}
               <Field
-                label={sizeMode === 'risk' ? 'Account risk' : 'Order size'}
+                label={sizeMode === 'risk' ? 'Account risk' : 'Size'}
                 right={
                   sizeMode === 'risk' ? (
                     <View style={styles.marginToggle}>
@@ -1474,9 +1496,12 @@ export function TradeTicket({
                   inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
                   style={styles.input}
                 />
-                <AppText variant="caption" muted>
-                  {sizeMode === 'usd' ? 'USD' : sizeMode === 'coin' ? label : riskUnit === 'usd' ? 'USD' : '%'}
-                </AppText>
+                <Pressable style={styles.modeSelector} onPress={cycleSizeMode}>
+                  <AppText variant="label" color={Colors.text}>
+                    {sizeModeCopy}
+                  </AppText>
+                  <Ionicons name="chevron-down" size={15} color={Colors.textMuted} />
+                </Pressable>
               </Field>
 
               {sizeMode === 'risk' && percentageRiskUnavailable ? (
@@ -1495,7 +1520,47 @@ export function TradeTicket({
                       : 'Enter a valid stop price below to derive the position size'}
               </AppText>
 
-              {sizeMode === 'risk' ? (
+              {sizeMode !== 'risk' ? (
+                <View style={styles.allocationRow}>
+                  <Pressable
+                    style={styles.allocationTrackTouch}
+                    onLayout={(event) => setAllocationTrackWidth(event.nativeEvent.layout.width)}
+                    onPress={(event) => {
+                      if (allocationTrackWidth > 0) {
+                        applyAllocationPercent((event.nativeEvent.locationX / allocationTrackWidth) * 100);
+                      }
+                    }}>
+                    <View pointerEvents="none" style={styles.allocationTrack}>
+                      <View style={[styles.allocationFill, { width: allocationLeft }]} />
+                      {[25, 50, 75, 100].map((pct) => (
+                        <View
+                          key={pct}
+                          style={[
+                            styles.allocationDot,
+                            { left: `${pct}%` as `${number}%` },
+                            allocationPercent >= pct && styles.allocationDotOn,
+                          ]}
+                        />
+                      ))}
+                      <View style={[styles.allocationThumb, { left: allocationLeft }]} />
+                    </View>
+                  </Pressable>
+                  <View style={styles.allocationInputWrap}>
+                    <TextInput
+                      value={String(Number(allocationPercent.toFixed(1)))}
+                      onChangeText={(value) => applyAllocationPercent(num(value))}
+                      onFocus={() => setFocused('size')}
+                      keyboardType="decimal-pad"
+                      keyboardAppearance="dark"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
+                      style={styles.allocationInput}
+                    />
+                    <AppText variant="label" color={Colors.text}>
+                      %
+                    </AppText>
+                  </View>
+                </View>
+              ) : (
                 <View style={styles.pctRow}>
                   {[0.25, 0.5, 1].map((p) => (
                     <Pressable
@@ -1512,10 +1577,49 @@ export function TradeTicket({
                     </Pressable>
                   ))}
                 </View>
-              ) : null}
+              )}
+
+              <View style={styles.optionList}>
+                {!closing ? (
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: reduceOnly }}
+                    onPress={toggleReduceOnly}
+                    style={styles.optionRow}>
+                    <View style={[styles.checkbox, reduceOnly && styles.checkboxOn]}>
+                      {reduceOnly ? <Ionicons name="checkmark" size={15} color="#04150E" /> : null}
+                    </View>
+                    <AppText variant="label" color={Colors.text}>
+                      Reduce Only
+                    </AppText>
+                  </Pressable>
+                ) : null}
+                {!closing && !reduceOnly ? (
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: tpslOpen, disabled: sizeMode === 'risk' }}
+                    onPress={() => {
+                      if (sizeMode === 'risk') return;
+                      const next = !tpslOpen;
+                      setTpslOpen(next);
+                      if (!next) {
+                        setTpPrice('');
+                        setSlPrice('');
+                      }
+                    }}
+                    style={styles.optionRow}>
+                    <View style={[styles.checkbox, tpslOpen && styles.checkboxOn]}>
+                      {tpslOpen ? <Ionicons name="checkmark" size={15} color="#04150E" /> : null}
+                    </View>
+                    <AppText variant="label" color={Colors.text}>
+                      Take Profit / Stop Loss
+                    </AppText>
+                  </Pressable>
+                ) : null}
+              </View>
 
               {/* Take profit / stop loss (optional bracket) — attaches to a new entry. */}
-              {!closing && !reduceOnly ? (
+              {!closing && !reduceOnly && tpslOpen ? (
                 <View style={styles.tpslCard}>
                   <View style={styles.tpslHead}>
                     <AppText variant="caption" muted>
@@ -1581,73 +1685,21 @@ export function TradeTicket({
 
               {/* Order summary */}
               <View style={styles.infoCard}>
-                <InfoRow label="Order Value" value={notional > 0 ? usd(notional) : '—'} />
-                {orderType === 'market' && orderBook?.bids[0] && orderBook.asks[0] ? (
-                  <InfoRow
-                    label="Bid / Ask"
-                    value={`$${formatPrice(orderBook.bids[0].price, priceDecimals)} / $${formatPrice(
-                      orderBook.asks[0].price,
-                      priceDecimals,
-                    )}`}
-                  />
-                ) : null}
-                {orderType === 'market' ? (
-                  <>
-                    <InfoRow
-                      label="Execution Mid"
-                      value={`$${formatPrice(resolvedExecutionMidPx, priceDecimals)}`}
-                    />
-                    <InfoRow
-                      label="Hard IOC Bound"
-                      value={`$${formatPrice(marketEntryBoundPx, priceDecimals)}`}
-                      valueColor={Colors.warning}
-                    />
-                  </>
-                ) : null}
-                {orderType === 'market' && execution ? (
-                  <>
-                    <InfoRow
-                      label={execution.sufficientDepth ? 'Likely Book VWAP' : 'Visible Book Avg'}
-                      value={`$${formatPrice(execution.averagePrice, priceDecimals)}`}
-                    />
-                    <InfoRow
-                      label="Spread"
-                      value={execution.spreadPct == null ? '—' : `${execution.spreadPct.toFixed(3)}%`}
-                    />
-                    <InfoRow
-                      label="Price Impact"
-                      value={`${execution.priceImpactPct.toFixed(3)}%`}
-                      valueColor={execution.priceImpactPct > 0.5 ? Colors.warning : Colors.text}
-                    />
-                  </>
-                ) : null}
-                {maxLoss ? (
-                  <>
-                    {orderType === 'market' ? (
-                      <InfoRow
-                        label="Hard Entry IOC Allowance"
-                        value={usd(entrySlippageAllowance)}
-                      />
-                    ) : null}
-                    <InfoRow label="Price Loss (incl. entry slip)" value={usd(priceLossAtStop)} />
-                    <InfoRow
-                      label={`Fee Allowance (${(feeRate * 100).toFixed(2)}%/fill)`}
-                      value={usd(feeAllowanceAtStop)}
-                    />
-                    <InfoRow label="Loss at Caps + Fees" value={usd(maxLoss)} valueColor={Colors.down} />
-                    <AppText variant="caption" muted>
-                      {lossEstimateBasis}
-                    </AppText>
-                  </>
-                ) : null}
-                {!closing && !reduceOnly ? (
-                  <InfoRow label="Margin Required" value={marginRequired > 0 ? usd(marginRequired) : '—'} />
-                ) : null}
                 {!closing && !reduceOnly ? (
                   <InfoRow
-                    label="Liq. Price"
+                    label="Liquidation Price"
                     value={liqPrice ? `$${formatPrice(liqPrice, priceDecimals)}` : 'N/A'}
                     valueColor={liqPrice ? Colors.down : Colors.textMuted}
+                  />
+                ) : null}
+                <InfoRow
+                  label="Order Value"
+                  value={notional > 0 ? `${compactNumber(notional, 2)} USDC` : '—'}
+                />
+                {!closing && !reduceOnly ? (
+                  <InfoRow
+                    label="Margin Required"
+                    value={marginRequired > 0 ? `${compactNumber(marginRequired, 2)} USDC` : '—'}
                   />
                 ) : null}
                 <InfoRow
@@ -1659,18 +1711,8 @@ export function TradeTicket({
                         ? 'Post-only'
                         : 'Limit price'
                   }
+                  valueColor={orderType === 'market' ? Colors.accent : Colors.text}
                 />
-                <InfoRow label="Available" value={usd(avail)} />
-                {positionImplication ? (
-                  <View style={styles.implicationRow}>
-                    <AppText variant="caption" muted>
-                      Position if filled
-                    </AppText>
-                    <AppText variant="caption" numeric color={Colors.text} style={styles.implicationValue}>
-                      {positionImplication}
-                    </AppText>
-                  </View>
-                ) : null}
               </View>
 
               {visibleDepthShort && execution ? (
@@ -1726,31 +1768,16 @@ export function TradeTicket({
 
               </ScrollView>
 
-              {/* Always-visible review dock: risk and the final action never disappear below the fold. */}
+              {/* Always-visible action, matching the reference ticket's full-width order button. */}
               <View style={styles.submitDock}>
-                <View style={styles.submitSummary}>
-                  <View>
-                    <AppText variant="caption" muted>
-                      {closing || reduceOnly ? 'Exposure' : 'Loss at hard caps*'}
-                    </AppText>
-                    <AppText
-                      variant="label"
-                      numeric
-                      color={closing || reduceOnly ? Colors.accent : maxLoss ? Colors.down : Colors.warning}>
-                      {closing || reduceOnly ? 'Reduce only' : maxLoss ? usd(maxLoss) : 'Not capped'}
-                    </AppText>
-                  </View>
-                  <View style={styles.submitSummaryRight}>
-                    <AppText variant="caption" muted>
-                      {rewardRisk ? 'Reward : risk' : 'Order value'}
-                    </AppText>
-                    <AppText variant="label" numeric>
-                      {rewardRisk ? `1 : ${rewardRisk.toFixed(2)}` : notional > 0 ? usd(notional) : '—'}
-                    </AppText>
-                  </View>
-                </View>
                 <Pressable
-                  style={[styles.submit, { backgroundColor: canSubmit ? sideColor : GLASS_FILL_STRONG }]}
+                  style={[
+                    styles.submit,
+                    {
+                      backgroundColor: canSubmit ? sideColor + '22' : GLASS_FILL,
+                      borderColor: canSubmit ? sideColor : GLASS_HAIRLINE,
+                    },
+                  ]}
                   onPress={confirm}
                   disabled={!canSubmit || mutation.isPending}
                   accessibilityState={{
@@ -1765,8 +1792,8 @@ export function TradeTicket({
                       </AppText>
                     </View>
                   ) : (
-                    <AppText variant="label" color={canSubmit ? '#04150E' : Colors.textFaint}>
-                      Review {submitVerb} {label}
+                    <AppText variant="label" color={canSubmit ? sideColor : Colors.textFaint}>
+                      {closing || actionLabel ? `${submitVerb} ${label}` : 'Place Order'}
                     </AppText>
                   )}
                 </Pressable>
@@ -2089,7 +2116,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   body: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: 0 },
-  bodyContent: { gap: Spacing.md, paddingBottom: Spacing.xs },
+  bodyContent: { gap: 14, paddingBottom: Spacing.sm },
   handle: {
     alignSelf: 'center',
     width: 40,
@@ -2102,6 +2129,21 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   levBadge: { backgroundColor: GLASS_FILL_STRONG, paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.sm },
 
+  tradeControlRow: { flexDirection: 'row', gap: Spacing.sm },
+  tradeControl: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: GLASS_HAIRLINE,
+    backgroundColor: GLASS_FILL,
+  },
+
   closeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2111,16 +2153,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
   },
-  sideRow: { flexDirection: 'row', gap: Spacing.sm },
+  sideRow: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: GLASS_HAIRLINE,
+    backgroundColor: GLASS_INSET,
+  },
   sideBtn: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: Spacing.md,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: GLASS_HAIRLINE,
-    backgroundColor: GLASS_FILL,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
   },
+  availableRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 
   segment: { flexDirection: 'row', backgroundColor: GLASS_INSET, borderRadius: Radius.sm, padding: 3, gap: 3 },
   segmentItem: { flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, borderRadius: Radius.sm },
@@ -2147,7 +2198,13 @@ const styles = StyleSheet.create({
   switchThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.textMuted },
   switchThumbOn: { alignSelf: 'flex-end', backgroundColor: '#FFFFFF' },
 
-  advancedCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, overflow: 'hidden' },
+  advancedCard: {
+    backgroundColor: GLASS_FILL,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: GLASS_HAIRLINE,
+    overflow: 'hidden',
+  },
   advancedHead: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2207,24 +2264,132 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
 
-  field: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: 4 },
+  field: {
+    backgroundColor: GLASS_INSET,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: GLASS_HAIRLINE,
+    padding: Spacing.md,
+    gap: 4,
+  },
   fieldHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   inputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   // App font (SF Pro) with tabular figures — matches the rest of the app; no monospace.
-  input: { flex: 1, color: Colors.text, fontSize: 24, fontWeight: '700', fontVariant: ['tabular-nums'], paddingVertical: 2 },
+  input: { flex: 1, color: Colors.text, fontSize: 22, fontWeight: '600', fontVariant: ['tabular-nums'], paddingVertical: 2 },
+  modeSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    borderRadius: Radius.sm,
+    backgroundColor: GLASS_FILL,
+  },
+  midButton: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.accent + '14',
+  },
   modeToggle: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   convertLine: { marginTop: -Spacing.xs, marginLeft: Spacing.xs },
+
+  allocationRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  allocationTrackTouch: { flex: 1, minHeight: 48, justifyContent: 'center' },
+  allocationTrack: {
+    height: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: GLASS_FILL_STRONG,
+  },
+  allocationFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accent + '88',
+  },
+  allocationDot: {
+    position: 'absolute',
+    top: -2,
+    width: 12,
+    height: 12,
+    marginLeft: -6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.24)',
+  },
+  allocationDotOn: { backgroundColor: Colors.accent },
+  allocationThumb: {
+    position: 'absolute',
+    top: -7,
+    width: 22,
+    height: 22,
+    marginLeft: -11,
+    borderRadius: 11,
+    borderWidth: 3,
+    borderColor: Colors.accent,
+    backgroundColor: '#07090D',
+  },
+  allocationInputWrap: {
+    width: 92,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 5,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: GLASS_HAIRLINE,
+    backgroundColor: GLASS_INSET,
+  },
+  allocationInput: {
+    minWidth: 42,
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+    paddingVertical: 4,
+  },
+
+  optionList: { gap: Spacing.sm },
+  optionRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 34 },
+  checkbox: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: GLASS_FILL_STRONG,
+    backgroundColor: GLASS_INSET,
+  },
+  checkboxOn: { borderColor: Colors.accent, backgroundColor: Colors.accent },
 
   pctRow: { flexDirection: 'row', gap: Spacing.sm },
   pctChip: { flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, borderRadius: Radius.sm, backgroundColor: GLASS_FILL },
   pctChipDisabled: { opacity: 0.4 },
 
-  infoCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
-  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  infoCard: {
+    backgroundColor: 'rgba(0,0,0,0.14)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: GLASS_FILL_STRONG,
+    paddingTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 22 },
   implicationRow: { gap: 3, paddingTop: Spacing.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: GLASS_HAIRLINE },
   implicationValue: { flexShrink: 1 },
 
-  tpslCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
+  tpslCard: {
+    backgroundColor: GLASS_FILL,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: GLASS_HAIRLINE,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
   tpslHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   tpslRow: {
     flexDirection: 'row',
@@ -2257,7 +2422,14 @@ const styles = StyleSheet.create({
   submitSummary: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   submitSummaryRight: { alignItems: 'flex-end' },
   stopDisclaimer: { textAlign: 'center' },
-  submit: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md, minHeight: 48 },
+  submit: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    minHeight: 52,
+  },
   submitBusy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
 
   accessory: {
