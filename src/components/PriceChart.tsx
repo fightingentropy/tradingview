@@ -43,6 +43,10 @@ import {
   signedUsd,
   type AxisTickKind,
 } from '@/lib/format';
+import {
+  crosshairTextInputProps,
+  isUsableCrosshairGeometry,
+} from '@/lib/chartCrosshair';
 
 export type ChartType = 'candle' | 'line';
 
@@ -171,25 +175,6 @@ function nearestIndex(xs: number[], x: number): number {
     }
   }
   return best;
-}
-
-/** Group-thousands price formatter that is safe to run inside a reanimated worklet (no regex). */
-function formatPriceWorklet(v: number, decimals: number): string {
-  'worklet';
-  if (!Number.isFinite(v)) return '';
-  const neg = v < 0;
-  const fixed = Math.abs(v).toFixed(decimals);
-  const dot = fixed.indexOf('.');
-  const intPart = dot === -1 ? fixed : fixed.slice(0, dot);
-  const fracPart = dot === -1 ? '' : fixed.slice(dot);
-  let grouped = '';
-  let count = 0;
-  for (let i = intPart.length - 1; i >= 0; i--) {
-    grouped = intPart[i] + grouped;
-    count++;
-    if (count % 3 === 0 && i > 0) grouped = ',' + grouped;
-  }
-  return (neg ? '-' : '') + grouped + fracPart;
 }
 
 export function PriceChart({
@@ -337,6 +322,7 @@ export function PriceChart({
   useEffect(() => {
     const g = geomRef.current;
     if (g.sig === flushedSigRef.current) return;
+    if (!isUsableCrosshairGeometry(g.xs.length, g.bounds, g.m, g.b)) return;
     flushedSigRef.current = g.sig;
     xPositionsSV.value = g.xs;
     boundsSV.value = g.bounds;
@@ -462,9 +448,10 @@ export function PriceChart({
   }));
   const priceProps = useAnimatedProps(
     () =>
-      ({
-        text: formatPriceWorklet(priceMSV.value * crossY.value + priceBSV.value, priceDecimals),
-      }) as object,
+      crosshairTextInputProps(
+        priceMSV.value * crossY.value + priceBSV.value,
+        priceDecimals,
+      ) as object,
     [priceDecimals],
   );
 
@@ -643,7 +630,6 @@ export function PriceChart({
           <AnimatedTextInput
             style={styles.pricePillText}
             editable={false}
-            defaultValue=""
             animatedProps={priceProps}
             underlineColorAndroid="transparent"
           />
