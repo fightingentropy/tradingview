@@ -3,6 +3,7 @@ export type Source = 'hyperliquid' | 'cboe';
 export type AssetClass =
   | 'crypto-perp'
   | 'crypto-spot'
+  | 'outcome'
   | 'equity-perp'
   | 'fx'
   | 'commodity'

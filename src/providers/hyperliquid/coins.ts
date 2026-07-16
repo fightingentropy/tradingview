@@ -1,5 +1,11 @@
 import type { AssetClass, Instrument, Quote } from '@/domain/types';
 import { toNum } from '@/lib/format';
+import {
+  outcomeCoinKey,
+  outcomePresentation,
+  visibleOutcomeSides,
+  type HlOutcomeMeta,
+} from '@/lib/outcomeMarkets';
 
 import type {
   MetaAndAssetCtxs,
@@ -161,6 +167,56 @@ export function buildSpot([meta, ctxs]: SpotMetaAndAssetCtxs): {
     instruments.push(instrument);
     quotes[id] = quote;
   });
+
+  return { instruments, quotes };
+}
+
+/** Build the currently-active, user-facing Outcome Markets catalog. */
+export function buildOutcomes(
+  meta: HlOutcomeMeta,
+  ctxs: SpotAssetCtx[],
+): { instruments: Instrument[]; quotes: Record<string, Quote> } {
+  const ts = Date.now();
+  const instruments: Instrument[] = [];
+  const quotes: Record<string, Quote> = {};
+  const ctxByCoin = new Map(
+    ctxs.flatMap((ctx) => (ctx.coin ? ([[ctx.coin, ctx]] as const) : [])),
+  );
+  const fallbackIds = new Set(meta.questions.map((question) => question.fallbackOutcome));
+  const questionByOutcome = new Map(
+    meta.questions.flatMap((question) =>
+      question.namedOutcomes.map((outcome) => [outcome, question] as const),
+    ),
+  );
+
+  for (const outcome of meta.outcomes) {
+    // Fallback contracts are settlement plumbing, not choices shown to traders.
+    if (fallbackIds.has(outcome.outcome)) continue;
+    const question = questionByOutcome.get(outcome.outcome);
+
+    for (const side of visibleOutcomeSides(outcome.sideSpecs, question !== undefined)) {
+      const coinKey = outcomeCoinKey(outcome.outcome, side);
+      const ctx = ctxByCoin.get(coinKey);
+      if (!ctx) continue;
+
+      const id = `hl:outcome:${coinKey.slice(1)}`;
+      const quote = quoteFromCtx(id, ctx, ts);
+      if (!quote) continue;
+      const presentation = outcomePresentation(outcome, question, side);
+      instruments.push({
+        id,
+        source: 'hyperliquid',
+        assetClass: 'outcome',
+        symbol: presentation.symbol,
+        name: presentation.name,
+        venue: 'Hyperliquid Outcomes',
+        priceDecimals: 5,
+        coinKey,
+        quoteCurrency: outcome.quoteToken || 'USDC',
+      });
+      quotes[id] = quote;
+    }
+  }
 
   return { instruments, quotes };
 }

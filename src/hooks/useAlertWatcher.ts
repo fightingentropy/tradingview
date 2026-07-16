@@ -4,7 +4,7 @@ import type { Instrument } from '@/domain/types';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useMarkets } from '@/data/useMarkets';
 import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
-import { formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
+import { formatPercent, formatPrice, formatProbability, priceDecimalsFor } from '@/lib/format';
 import { configureNotifications, notifyPriceAlert } from '@/lib/notifications';
 import { useAlertFeed } from '@/store/alertFeed';
 import { useAlerts } from '@/store/alerts';
@@ -77,7 +77,9 @@ export function AlertWatcher() {
 
         markTriggered(a.id, price, Date.now());
         const decimals = priceDecimalsFor(inst.priceDecimals, price);
-        const message = `${formatPercent(pct)} · ${formatPrice(price, decimals)}`;
+        const displayedPrice =
+          inst.assetClass === 'outcome' ? formatProbability(price) : formatPrice(price, decimals);
+        const message = `${formatPercent(pct)} · ${displayedPrice}`;
         push({
           id: a.id,
           instrumentId: a.instrumentId,

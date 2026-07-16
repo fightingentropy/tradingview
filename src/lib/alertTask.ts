@@ -9,9 +9,10 @@ import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 
 import { loadAllMarkets } from '@/data/useMarkets';
-import { formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
+import { formatPercent, formatPrice, formatProbability, priceDecimalsFor } from '@/lib/format';
 import { notifyPriceAlert } from '@/lib/notifications';
 import { useAlerts } from '@/store/alerts';
+import { usePreferences } from '@/store/preferences';
 
 /** Task name; also the BGTaskScheduler identifier on iOS. */
 export const ALERT_TASK = 'price-alert-check';
@@ -25,11 +26,15 @@ async function checkAlertsInBackground(): Promise<void> {
   if (armed.length === 0) return;
 
   const markets = await loadAllMarkets();
+  const showOutcomeMarkets = usePreferences.getState().showOutcomeMarkets;
   const now = Date.now();
   for (const a of armed) {
     const inst = markets.byId[a.instrumentId];
     const price = markets.quotes[a.instrumentId]?.last;
     if (!inst || !a.anchorPrice || price == null) continue;
+    // Turning the catalog off hides outcome routes and should also silence their
+    // background notifications; the saved alert remains intact if re-enabled.
+    if (inst.assetClass === 'outcome' && !showOutcomeMarkets) continue;
 
     const pct = ((price - a.anchorPrice) / a.anchorPrice) * 100;
     const hit =
@@ -42,7 +47,9 @@ async function checkAlertsInBackground(): Promise<void> {
 
     useAlerts.getState().markTriggered(a.id, price, now);
     const decimals = priceDecimalsFor(inst.priceDecimals, price);
-    await notifyPriceAlert(a.symbol, `${formatPercent(pct)} · ${formatPrice(price, decimals)}`, {
+    const displayedPrice =
+      inst.assetClass === 'outcome' ? formatProbability(price) : formatPrice(price, decimals);
+    await notifyPriceAlert(a.symbol, `${formatPercent(pct)} · ${displayedPrice}`, {
       instrumentId: a.instrumentId,
     });
   }

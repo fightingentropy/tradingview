@@ -32,9 +32,15 @@ export function formatCrosshairPrice(value: number, decimals: number): string {
  * internal `text` prop. Keep both animated props identical so a React render
  * during an active gesture cannot reset a valid native price label to blank.
  */
-export function crosshairTextInputProps(value: number, decimals: number) {
+export function crosshairTextInputProps(
+  value: number,
+  decimals: number,
+  multiplier = 1,
+  suffix = '',
+) {
   'worklet';
-  const text = formatCrosshairPrice(value, decimals);
+  const formatted = formatCrosshairPrice(value * multiplier, decimals);
+  const text = formatted === '—' ? formatted : formatted + suffix;
   return { text, defaultValue: text };
 }
 

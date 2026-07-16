@@ -8,7 +8,14 @@ import { AppText } from '@/components/ui/AppText';
 import { Colors, Spacing } from '@/constants/theme';
 import type { Instrument, Quote } from '@/domain/types';
 import { useContextMenuTrigger } from '@/hooks/useContextMenuTrigger';
-import { formatPercent, formatPrice, formatSignedPrice, priceDecimalsFor } from '@/lib/format';
+import {
+  formatPercent,
+  formatPrice,
+  formatProbability,
+  formatProbabilityPointChange,
+  formatSignedPrice,
+  priceDecimalsFor,
+} from '@/lib/format';
 import { useLivePrice } from '@/store/livePrices';
 
 interface Props {
@@ -53,11 +60,14 @@ function SymbolRowImpl({
       : (quote?.change24hPct ?? null);
   const decimals = priceDecimalsFor(instrument.priceDecimals, last);
   const absChange = last !== null && prev !== null ? last - prev : null;
+  const isOutcome = instrument.assetClass === 'outcome';
 
   const up = (changePct ?? 0) >= 0;
   const changeColor = changePct === null ? Colors.textMuted : up ? Colors.up : Colors.down;
   const changeText =
-    absChange !== null
+    isOutcome && absChange !== null
+      ? `${formatProbabilityPointChange(absChange)}  24h`
+      : absChange !== null
       ? `${formatSignedPrice(absChange, decimals)}  ${formatPercent(changePct)}`
       : formatPercent(changePct);
 
@@ -107,7 +117,7 @@ function SymbolRowImpl({
       {editing ? null : (
         <View style={styles.right}>
           <AppText style={styles.price} numeric numberOfLines={1}>
-            {formatPrice(last, decimals)}
+            {isOutcome ? formatProbability(last) : formatPrice(last, decimals)}
           </AppText>
           <AppText style={[styles.change, { color: changeColor }]} numeric numberOfLines={1}>
             {changeText}

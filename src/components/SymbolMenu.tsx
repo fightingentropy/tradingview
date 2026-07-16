@@ -14,7 +14,13 @@ import { AppText } from '@/components/ui/AppText';
 import { VenueBadge } from '@/components/VenueBadge';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import type { AlertDirection, Instrument, PriceAlert } from '@/domain/types';
-import { formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
+import {
+  formatPercent,
+  formatPrice,
+  formatProbability,
+  formatProbabilityPointChange,
+  priceDecimalsFor,
+} from '@/lib/format';
 import { useMarkets } from '@/data/useMarkets';
 import { useAlerts, useAlertsFor } from '@/store/alerts';
 import { useLivePrice } from '@/store/livePrices';
@@ -61,6 +67,9 @@ function SymbolMenuSheet({
   const live = useLivePrice(instrument?.coinKey);
   const anchor = live ?? quote?.last ?? null;
   const decimals = priceDecimalsFor(instrument?.priceDecimals ?? 2, anchor);
+  const isOutcome = instrument?.assetClass === 'outcome';
+  const displayPrice = (value: number | null | undefined) =>
+    isOutcome ? formatProbability(value) : formatPrice(value, decimals);
 
   const prev = quote?.prevClose ?? null;
   const changePct =
@@ -113,10 +122,10 @@ function SymbolMenuSheet({
     anchor == null || !validCustom
       ? null
       : direction === 'up'
-        ? `→ ${formatPrice(anchor * (1 + customPct / 100), decimals)}`
+        ? `→ ${displayPrice(anchor * (1 + customPct / 100))}`
         : direction === 'down'
-          ? `→ ${formatPrice(anchor * (1 - customPct / 100), decimals)}`
-          : `→ ${formatPrice(anchor * (1 - customPct / 100), decimals)} / ${formatPrice(anchor * (1 + customPct / 100), decimals)}`;
+          ? `→ ${displayPrice(anchor * (1 - customPct / 100))}`
+          : `→ ${displayPrice(anchor * (1 - customPct / 100))} / ${displayPrice(anchor * (1 + customPct / 100))}`;
 
   const openChart = () => {
     if (!instrument) return;
@@ -147,13 +156,15 @@ function SymbolMenuSheet({
               </View>
               <View style={styles.headerRight}>
                 <AppText variant="body" numeric>
-                  {formatPrice(anchor, decimals)}
+                  {displayPrice(anchor)}
                 </AppText>
                 <AppText
                   variant="caption"
                   numeric
                   color={changePct === null ? Colors.textMuted : changePct >= 0 ? Colors.up : Colors.down}>
-                  {formatPercent(changePct)}
+                  {isOutcome && anchor !== null && prev !== null
+                    ? formatProbabilityPointChange(anchor - prev)
+                    : formatPercent(changePct)}
                 </AppText>
               </View>
             </View>
@@ -224,7 +235,7 @@ function SymbolMenuSheet({
             </View>
             {targetPreview ? (
               <AppText variant="caption" muted style={styles.preview}>
-                From {formatPrice(anchor, decimals)} {targetPreview}
+                From {displayPrice(anchor)} {targetPreview}
               </AppText>
             ) : null}
 
@@ -240,6 +251,7 @@ function SymbolMenuSheet({
                       key={a.id}
                       alert={a}
                       decimals={decimals}
+                      probability={isOutcome}
                       onRemove={() => remove(a.id)}
                       onRearm={anchor == null ? undefined : () => rearm(a.id, anchor)}
                     />
@@ -278,16 +290,20 @@ function SymbolMenuSheet({
 function AlertRow({
   alert,
   decimals,
+  probability = false,
   onRemove,
   onRearm,
 }: {
   alert: PriceAlert;
   decimals: number;
+  probability?: boolean;
   onRemove: () => void;
   onRearm?: () => void;
 }) {
   const dirSymbol = alert.direction === 'up' ? '▲' : alert.direction === 'down' ? '▼' : '±';
   const triggered = alert.triggeredAt != null;
+  const displayPrice = (value: number | null) =>
+    probability ? formatProbability(value) : formatPrice(value, decimals);
   return (
     <View style={styles.alertRow}>
       <View style={styles.alertInfo}>
@@ -296,8 +312,8 @@ function AlertRow({
         </AppText>
         <AppText variant="caption" muted>
           {triggered
-            ? `Fired @ ${formatPrice(alert.triggeredPrice, decimals)}`
-            : `Armed from ${formatPrice(alert.anchorPrice, decimals)}`}
+            ? `Fired @ ${displayPrice(alert.triggeredPrice)}`
+            : `Armed from ${displayPrice(alert.anchorPrice)}`}
         </AppText>
       </View>
       <View style={styles.alertActions}>

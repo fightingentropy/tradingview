@@ -55,6 +55,23 @@ export function formatPercent(value: number | string | null | undefined): string
   return `${sign}${n.toFixed(2)}%`;
 }
 
+/** Render a 0..1 outcome-contract price as its implied probability. */
+export function formatProbability(value: number | string | null | undefined): string {
+  const n = toNum(value);
+  if (n === null) return '—';
+  return `${(n * 100).toFixed(2)}%`;
+}
+
+/** Absolute 24h change in probability points, rather than a misleading relative return. */
+export function formatProbabilityPointChange(
+  value: number | string | null | undefined,
+): string {
+  const n = toNum(value);
+  if (n === null) return '—';
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${(n * 100).toFixed(2)} pts`;
+}
+
 /**
  * Signed absolute price change, e.g. `+2.47`, `-15.44`. Always carries an explicit
  * sign so it can sit next to a signed percent in watchlist rows. Returns '' when

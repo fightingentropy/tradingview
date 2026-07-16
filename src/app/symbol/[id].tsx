@@ -47,6 +47,8 @@ import {
   formatFundingApr,
   formatPercent,
   formatPrice,
+  formatProbability,
+  formatProbabilityPointChange,
   priceDecimalsFor,
   signedUsd,
 } from '@/lib/format';
@@ -621,6 +623,7 @@ export default function SymbolScreen() {
       ? ((last - prev) / prev) * 100
       : (quote?.change24hPct ?? null);
   const up = (changePct ?? 0) >= 0;
+  const isOutcome = instrument.assetClass === 'outcome';
   const decimals = priceDecimalsFor(instrument.priceDecimals, last);
   // `last` is the chart/mid display price. Execution and mark-trigger validation
   // must use Hyperliquid's mark: the open position carries it for management
@@ -849,14 +852,16 @@ export default function SymbolScreen() {
           </AppText>
         </View>
         <AppText variant="title" numeric>
-          {formatPrice(last, decimals)}
+          {isOutcome ? formatProbability(last) : formatPrice(last, decimals)}
         </AppText>
         <View style={styles.metaRow}>
           <AppText
             variant="label"
             numeric
             color={changePct === null ? Colors.textMuted : up ? Colors.up : Colors.down}>
-            {formatPercent(changePct)}
+            {isOutcome && last !== null && prev !== null
+              ? `${formatProbabilityPointChange(last - prev)} 24h`
+              : formatPercent(changePct)}
           </AppText>
           {quote?.dayVolume ? (
             <AppText variant="label" numeric muted>
@@ -882,6 +887,7 @@ export default function SymbolScreen() {
             key={range}
             candles={candles}
             priceDecimals={decimals}
+            priceDisplay={isOutcome ? 'probability' : 'price'}
             type={chartType}
             smaPeriods={smaPeriods}
             showVolume={volume}

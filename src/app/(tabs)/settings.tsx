@@ -15,7 +15,7 @@ import {
   normalizeNewsNotificationSourceIds,
 } from '@/domain/newsNotificationSources';
 import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
-import { formatPrice } from '@/lib/format';
+import { formatPrice, formatProbability } from '@/lib/format';
 import { ensureNotificationPermission } from '@/lib/notifications';
 import {
   registerNewsPushNotifications,
@@ -42,6 +42,12 @@ function StatusRow({ label, detail }: { label: string; detail: string }) {
   );
 }
 
+function formatAlertPrice(instrumentId: string, value: number | null): string {
+  return instrumentId.startsWith('hl:outcome:')
+    ? formatProbability(value)
+    : formatPrice(value);
+}
+
 export default function SettingsScreen() {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const resetDefaults = useWatchlists((s) => s.resetDefaults);
@@ -50,6 +56,8 @@ export default function SettingsScreen() {
   const clearAlerts = useAlerts((s) => s.clearAll);
   const hideSmallBalances = usePreferences((s) => s.hideSmallBalances);
   const setHideSmallBalances = usePreferences((s) => s.setHideSmallBalances);
+  const showOutcomeMarkets = usePreferences((s) => s.showOutcomeMarkets);
+  const setShowOutcomeMarkets = usePreferences((s) => s.setShowOutcomeMarkets);
   const showPosition = useChartSettings((s) => s.showPosition);
   const setShowPosition = useChartSettings((s) => s.setShowPosition);
   const alertNotifications = usePreferences((s) => s.alertNotifications);
@@ -167,6 +175,20 @@ export default function SettingsScreen() {
           DISPLAY
         </AppText>
         <GlassSurface style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <AppText variant="body">Outcome markets</AppText>
+              <AppText variant="caption" muted>
+                Show view-only Hyperliquid event markets in lists, search, and charts.
+              </AppText>
+            </View>
+            <GlassToggle
+              value={showOutcomeMarkets}
+              onValueChange={setShowOutcomeMarkets}
+              accessibilityLabel="Show Hyperliquid outcome markets"
+            />
+          </View>
+          <View style={styles.divider} />
           <View style={styles.row}>
             <View style={styles.rowText}>
               <AppText variant="body">Hide small balances</AppText>
@@ -305,8 +327,8 @@ export default function SettingsScreen() {
                     </AppText>
                     <AppText variant="caption" muted>
                       {a.triggeredAt
-                        ? `Triggered @ ${formatPrice(a.triggeredPrice)}`
-                        : `Armed from ${formatPrice(a.anchorPrice)}`}
+                        ? `Triggered @ ${formatAlertPrice(a.instrumentId, a.triggeredPrice)}`
+                        : `Armed from ${formatAlertPrice(a.instrumentId, a.anchorPrice)}`}
                     </AppText>
                   </View>
                   <Pressable

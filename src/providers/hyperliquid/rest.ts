@@ -3,6 +3,7 @@
  * returned as strings by the API and parsed by callers.
  */
 import type { CandleInterval } from '@/domain/types';
+import type { HlOutcomeMeta } from '@/lib/outcomeMarkets';
 
 export const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 export const HL_WS_URL = 'wss://api.hyperliquid.xyz/ws';
@@ -84,6 +85,10 @@ export function fetchPerpMeta(dex?: string) {
 
 export function fetchSpotMeta() {
   return info<SpotMetaAndAssetCtxs>({ type: 'spotMetaAndAssetCtxs' });
+}
+
+export function fetchOutcomeMeta() {
+  return info<HlOutcomeMeta>({ type: 'outcomeMeta' });
 }
 
 export function fetchCandleSnapshot(coin: string, interval: CandleInterval, startTime: number, endTime: number) {

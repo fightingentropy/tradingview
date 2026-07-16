@@ -5,6 +5,7 @@ import { Colors, Radius } from '@/constants/theme';
 
 const VENUE_COLOR: Record<string, string> = {
   Hyperliquid: '#2EBD85',
+  'Hyperliquid Outcomes': '#C59CFF',
   'trade.xyz': '#B07CFF',
   NASDAQ: '#5AA9FF',
   NYSE: '#5AA9FF',

@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import type { Instrument, Quote } from '@/domain/types';
 import { queryKeys } from '@/lib/queryKeys';
 import { allProviders } from '@/providers/registry';
+import { usePreferences } from '@/store/preferences';
 
 export interface MarketsData {
   instruments: Instrument[];
@@ -51,8 +52,30 @@ function withCoinKeyIndex(data: MarketsData): MarketsData {
   return { ...data, byCoinKey };
 }
 
+/** Hide outcome rows centrally while preserving the full cached catalog and saved ids. */
+export function withOutcomeVisibility(
+  data: MarketsData,
+  showOutcomeMarkets: boolean,
+): MarketsData {
+  const indexed = withCoinKeyIndex(data);
+  if (showOutcomeMarkets) return indexed;
+  const instruments = indexed.instruments.filter((instrument) => instrument.assetClass !== 'outcome');
+  const byId: Record<string, Instrument> = {};
+  const byCoinKey = new Map<string, Instrument>();
+  for (const instrument of instruments) {
+    byId[instrument.id] = instrument;
+    byCoinKey.set(instrument.coinKey, instrument);
+  }
+  return { ...indexed, instruments, byId, byCoinKey };
+}
+
 /** Full instrument catalog + 24h snapshot quotes, refreshed periodically. */
 export function useMarkets() {
+  const showOutcomeMarkets = usePreferences((state) => state.showOutcomeMarkets);
+  const select = useCallback(
+    (data: MarketsData) => withOutcomeVisibility(data, showOutcomeMarkets),
+    [showOutcomeMarkets],
+  );
   return useQuery({
     queryKey: queryKeys.instruments(),
     queryFn: loadAllMarkets,
@@ -62,7 +85,7 @@ export function useMarkets() {
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     // Repair the rehydrated `byCoinKey` Map (see {@link withCoinKeyIndex}).
-    select: withCoinKeyIndex,
+    select,
   });
 }
 

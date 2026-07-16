@@ -101,6 +101,10 @@ const PALETTE = [
 function colorFor(symbol: string): string {
   const key = symbol.toUpperCase();
   if (BRAND[key]) return BRAND[key];
+  // Outcome labels can carry a target/side after the underlying (`BTC $64,911 · Yes`).
+  // Keep the recognizable underlying colour while still rendering the contract initials.
+  const underlying = key.split(/[\s·]/)[0];
+  if (BRAND[underlying]) return BRAND[underlying];
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];

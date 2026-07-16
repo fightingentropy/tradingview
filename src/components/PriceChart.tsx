@@ -39,6 +39,8 @@ import {
   formatCompact,
   formatPercent,
   formatPrice,
+  formatProbability,
+  formatProbabilityPointChange,
   formatSignedPrice,
   signedUsd,
   type AxisTickKind,
@@ -120,6 +122,8 @@ type Bounds = { top: number; bottom: number; left: number; right: number };
 interface Props {
   candles: Candle[];
   priceDecimals: number;
+  /** Outcome contracts render their 0..1 prices as implied probabilities. */
+  priceDisplay?: 'price' | 'probability';
   type: ChartType;
   /** SMA overlay lines to draw, by period (e.g. [20, 50, 200]). */
   smaPeriods?: number[];
@@ -180,6 +184,7 @@ function nearestIndex(xs: number[], x: number): number {
 export function PriceChart({
   candles,
   priceDecimals,
+  priceDisplay = 'price',
   type,
   smaPeriods = [],
   showVolume = false,
@@ -192,6 +197,7 @@ export function PriceChart({
   hideValues = false,
   onPositionPress,
 }: Props) {
+  const isProbability = priceDisplay === 'probability';
   // While a finger is pressing the chart, hold the candle series steady so live
   // websocket ticks can't shift the bar under the crosshair (or reset gestures).
   const [pressing, setPressing] = useState(false);
@@ -450,9 +456,11 @@ export function PriceChart({
     () =>
       crosshairTextInputProps(
         priceMSV.value * crossY.value + priceBSV.value,
-        priceDecimals,
+        isProbability ? 2 : priceDecimals,
+        isProbability ? 100 : 1,
+        isProbability ? '%' : '',
       ) as object,
-    [priceDecimals],
+    [isProbability, priceDecimals],
   );
 
   const scrubbing = activeIndex !== null;
@@ -479,10 +487,10 @@ export function PriceChart({
       {legend ? (
         <View style={styles.legend} pointerEvents="none">
           <View style={styles.legendRow}>
-            <OhlcItem label="O" value={legend.o} decimals={priceDecimals} candle={legend} />
-            <OhlcItem label="H" value={legend.h} decimals={priceDecimals} candle={legend} />
-            <OhlcItem label="L" value={legend.l} decimals={priceDecimals} candle={legend} />
-            <OhlcItem label="C" value={legend.c} decimals={priceDecimals} candle={legend} />
+            <OhlcItem label="O" value={legend.o} decimals={priceDecimals} candle={legend} probability={isProbability} />
+            <OhlcItem label="H" value={legend.h} decimals={priceDecimals} candle={legend} probability={isProbability} />
+            <OhlcItem label="L" value={legend.l} decimals={priceDecimals} candle={legend} probability={isProbability} />
+            <OhlcItem label="C" value={legend.c} decimals={priceDecimals} candle={legend} probability={isProbability} />
           </View>
           {smaPeriods.length > 0 ? (
             <View style={styles.legendRow}>
@@ -492,6 +500,7 @@ export function PriceChart({
                   period={p}
                   value={smaSeries[p]?.[legendIndex] ?? null}
                   decimals={priceDecimals}
+                  probability={isProbability}
                 />
               ))}
             </View>
@@ -506,7 +515,9 @@ export function PriceChart({
                   variant="caption"
                   numeric
                   color={legendChange >= 0 ? Colors.up : Colors.down}>
-                  {formatSignedPrice(legendChange, priceDecimals)} {formatPercent(legendChangePct)}
+                  {isProbability
+                    ? formatProbabilityPointChange(legendChange)
+                    : `${formatSignedPrice(legendChange, priceDecimals)} ${formatPercent(legendChangePct)}`}
                 </AppText>
               ) : null}
             </View>
@@ -1096,11 +1107,13 @@ function OhlcItem({
   value,
   decimals,
   candle,
+  probability = false,
 }: {
   label: string;
   value: number | null;
   decimals: number;
   candle: Candle;
+  probability?: boolean;
 }) {
   const color = candle.c >= candle.o ? Colors.up : Colors.down;
   return (
@@ -1109,7 +1122,7 @@ function OhlcItem({
         {label}
       </AppText>
       <AppText variant="caption" numeric color={color}>
-        {formatPrice(value, decimals)}
+        {probability ? formatProbability(value) : formatPrice(value, decimals)}
       </AppText>
     </View>
   );
@@ -1119,10 +1132,12 @@ function SmaLegendItem({
   period,
   value,
   decimals,
+  probability = false,
 }: {
   period: number;
   value: number | null;
   decimals: number;
+  probability?: boolean;
 }) {
   const color = smaColor(period);
   return (
@@ -1131,7 +1146,7 @@ function SmaLegendItem({
         SMA{period}
       </AppText>
       <AppText variant="caption" numeric color={color}>
-        {formatPrice(value, decimals)}
+        {probability ? formatProbability(value) : formatPrice(value, decimals)}
       </AppText>
     </View>
   );

@@ -22,6 +22,13 @@ test('never renders an empty label for transient invalid price data', () => {
   assert.equal(formatCrosshairPrice(-1234.5678, 3), '-1,234.568');
 });
 
+test('formats outcome crosshairs as implied probabilities', () => {
+  assert.deepEqual(crosshairTextInputProps(0.58448, 2, 100, '%'), {
+    text: '58.45%',
+    defaultValue: '58.45%',
+  });
+});
+
 test('accepts only complete finite chart transforms', () => {
   const bounds = { top: 10, bottom: 210, left: 8, right: 300 };
   assert.equal(isUsableCrosshairGeometry(40, bounds, -0.25, 100), true);
