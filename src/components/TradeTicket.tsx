@@ -41,12 +41,13 @@ import {
 } from '@/lib/hyperliquid/tradingIdentity';
 import { formatPrice, signedUsd, usd } from '@/lib/format';
 import { queryKeys } from '@/lib/queryKeys';
+import { defaultTradeSizeMode, type TradeSizeMode } from '@/lib/tradeTicket';
 import { materiallyDifferentMid } from '@/lib/tradePreflight';
 import { useHlConnection } from '@/store/hlConnection';
 
 type Side = 'buy' | 'sell';
 type OrderType = 'market' | 'limit';
-type SizeMode = 'usd' | 'coin' | 'risk';
+type SizeMode = TradeSizeMode;
 type RiskUnit = 'usd' | 'percent';
 
 interface TradeSubmission {
@@ -334,8 +335,9 @@ export function TradeTicket({
 
   const [side, setSide] = useState<Side>(initialSide ?? 'buy');
   const [orderType, setOrderType] = useState<OrderType>(initialType ?? 'market');
-  // New orders default to familiar USD notional; a prefilled close keeps its coin size exact.
-  const [sizeMode, setSizeMode] = useState<SizeMode>(initialSizeCoin != null ? 'coin' : 'usd');
+  // Start in the asset's native unit (for example, SNDK). USD and risk sizing
+  // remain explicit alternatives, while prefilled closes keep their exact coin size.
+  const [sizeMode, setSizeMode] = useState<SizeMode>(defaultTradeSizeMode);
   const [riskUnit, setRiskUnit] = useState<RiskUnit>('usd');
   const [amount, setAmount] = useState(initialSizeCoin != null ? String(initialSizeCoin) : '');
   const [limitPrice, setLimitPrice] = useState('');
@@ -614,7 +616,7 @@ export function TradeTicket({
     const next = !reduceOnly;
     setReduceOnly(next);
     if (next) {
-      if (sizeMode === 'risk') changeSizeMode('usd');
+      if (sizeMode === 'risk') changeSizeMode(defaultTradeSizeMode());
       setTpPrice('');
       setSlPrice('');
     }
@@ -987,7 +989,7 @@ export function TradeTicket({
   });
 
   const reset = () => {
-    setSizeMode(initialSizeCoin != null ? 'coin' : 'usd');
+    setSizeMode(defaultTradeSizeMode());
     setRiskUnit('usd');
     setAmount(initialSizeCoin != null ? String(initialSizeCoin) : '');
     setLimitPrice('');
@@ -1415,12 +1417,12 @@ export function TradeTicket({
                 </Field>
               ) : null}
 
-              {/* USD is the default; coin sizing is secondary and risk sizing derives
-                  the position from the stop distance. */}
+              {/* Asset-unit sizing is the default. USD stays available as an explicit
+                  conversion, while risk sizing derives the position from stop distance. */}
               <View style={styles.segment}>
                 {(closing || reduceOnly
-                  ? (['usd', 'coin'] as SizeMode[])
-                  : (['usd', 'risk', 'coin'] as SizeMode[])
+                  ? (['coin', 'usd'] as SizeMode[])
+                  : (['coin', 'usd', 'risk'] as SizeMode[])
                 ).map((mode) => (
                   <Pressable
                     key={mode}
