@@ -23,10 +23,78 @@ function storyTimestamps(html) {
   return timestamps;
 }
 
-export function parseDiggTech(html) {
-  const $ = load(html);
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseNextDataEnvelope(script) {
+  const match = /^self\.__next_f\.push\((.+)\);?$/s.exec(script.trim());
+  if (!match) return undefined;
+
+  try {
+    const envelope = JSON.parse(match[1]);
+    const chunk = Array.isArray(envelope) ? envelope[1] : undefined;
+    if (typeof chunk !== 'string') return undefined;
+    const separator = chunk.indexOf(':');
+    return separator >= 0 ? JSON.parse(chunk.slice(separator + 1)) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function findTopStoriesFeed(value) {
+  if (!value || typeof value !== 'object') return undefined;
+  if (isRecord(value) && isRecord(value.storiesByFilter)) {
+    const top = value.storiesByFilter.top;
+    if (isRecord(top) && Array.isArray(top.posts)) {
+      return {
+        posts: top.posts,
+        topic: typeof value.topic === 'string' ? value.topic.trim() : '',
+      };
+    }
+  }
+
+  const children = Array.isArray(value) ? value : Object.values(value);
+  for (const child of children) {
+    const feed = findTopStoriesFeed(child);
+    if (feed) return feed;
+  }
+  return undefined;
+}
+
+function parseStructuredStories($, avatarUrl) {
+  let feed;
+  $('script').each((_, node) => {
+    if (feed) return;
+    const payload = parseNextDataEnvelope($(node).html() ?? '');
+    if (payload) feed = findTopStoriesFeed(payload);
+  });
+  if (!feed) return [];
+
+  return feed.posts.flatMap((value) => {
+    if (!isRecord(value)) return [];
+    const id = typeof value.clusterId === 'string' ? value.clusterId.trim() : '';
+    const slug = typeof value.clusterUrlId === 'string' ? value.clusterUrlId.trim() : '';
+    const title = typeof value.title === 'string' ? value.title.replace(/\s+/g, ' ').trim() : '';
+    const summary = typeof value.tldr === 'string' ? value.tldr.replace(/\s+/g, ' ').trim() : '';
+    const publishedAt = typeof value.createdAt === 'string' ? new Date(value.createdAt) : undefined;
+    const topic = feed.topic && /^[a-z0-9-]+$/i.test(feed.topic) ? feed.topic : 'tech';
+    if (!id || !slug || !title || !publishedAt || !Number.isFinite(publishedAt.getTime())) return [];
+
+    return [{
+      id,
+      source: 'digg',
+      author: { name: 'Digg Tech', handle: 'tech', ...(avatarUrl ? { avatarUrl } : {}) },
+      text: summary ? `${title}\n\n${summary}` : title,
+      publishedAt: publishedAt.toISOString(),
+      url: new URL(`/${topic}/${encodeURIComponent(slug)}`, DIGG_TECH_URL).toString(),
+      media: [],
+    }];
+  });
+}
+
+function parseLegacyStories($, html, avatarUrl) {
   const timestamps = storyTimestamps(html);
-  const avatarUrl = faviconUrl($);
   const items = [];
 
   $('[data-testid="top-stories-stack"] [data-story-row="true"]').each((_, node) => {
@@ -59,6 +127,15 @@ export function parseDiggTech(html) {
   });
 
   return items;
+}
+
+export function parseDiggTech(html) {
+  const $ = load(html);
+  const avatarUrl = faviconUrl($);
+  const structuredStories = parseStructuredStories($, avatarUrl);
+  return structuredStories.length > 0
+    ? structuredStories
+    : parseLegacyStories($, html, avatarUrl);
 }
 
 export async function fetchDiggTech() {

@@ -3,7 +3,60 @@ import test from 'node:test';
 
 import { parseDiggTech } from './digg-tech.mjs';
 
-test('parses only ranked Digg Tech stories with stable timestamps', () => {
+test('parses ranked Digg Tech stories from the current structured payload', () => {
+  const payload = [
+    '$',
+    '$Lfeed',
+    null,
+    {
+      basePath: '/tech',
+      topic: 'ai',
+      storiesByFilter: {
+        top: {
+          posts: [
+            {
+              type: 'cluster',
+              clusterId: 'story-current',
+              clusterUrlId: 'abc123',
+              title: 'Current tech story',
+              tldr: 'A useful current summary.',
+              createdAt: '2026-07-19T08:04:15.230903+00:00',
+            },
+            {
+              type: 'cluster',
+              clusterId: 'missing-slug',
+              title: 'Incomplete story',
+              createdAt: '2026-07-19T09:04:15+00:00',
+            },
+          ],
+        },
+      },
+    },
+  ];
+  const nextData = JSON.stringify([1, `2b:${JSON.stringify(payload)}`]);
+  const html = `
+    <head><link rel="icon" href="/icon.svg?current"></head>
+    <script>self.__next_f.push(${nextData})</script>
+  `;
+
+  assert.deepEqual(parseDiggTech(html), [
+    {
+      id: 'story-current',
+      source: 'digg',
+      author: {
+        name: 'Digg Tech',
+        handle: 'tech',
+        avatarUrl: 'https://digg.com/icon.svg?current',
+      },
+      text: 'Current tech story\n\nA useful current summary.',
+      publishedAt: '2026-07-19T08:04:15.230Z',
+      url: 'https://digg.com/ai/abc123',
+      media: [],
+    },
+  ]);
+});
+
+test('keeps the legacy ranked-story parser as a fallback', () => {
   const html = `
     <head><link rel="icon" href="/icon.svg?current"></head>
     <div data-testid="top-stories-stack">
