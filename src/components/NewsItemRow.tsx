@@ -4,7 +4,7 @@ import * as Linking from 'expo-linking';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { NewsColors, Radius, Spacing } from '@/constants/theme';
 import type { NewsItem } from '@/domain/news';
 import { NewsSourceIcon } from '@/components/NewsSourceIcon';
 
@@ -50,7 +50,11 @@ export function NewsItemRow({ item }: { item: NewsItem }) {
             {relativeTime(item.publishedAt)}
           </AppText>
         </View>
-        {openItem ? <Ionicons name="open-outline" size={16} color={Colors.textFaint} /> : null}
+        {openItem ? (
+          <View style={styles.openButton}>
+            <Ionicons name="arrow-up-outline" size={14} color={NewsColors.textMuted} />
+          </View>
+        ) : null}
       </View>
 
       <AppText style={styles.body}>{item.text}</AppText>
@@ -71,34 +75,58 @@ export function NewsItemRow({ item }: { item: NewsItem }) {
 
 const styles = StyleSheet.create({
   row: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 14,
-    gap: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    marginHorizontal: Spacing.lg,
+    marginVertical: 5,
+    padding: Spacing.lg,
+    gap: 10,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NewsColors.border,
+    borderRadius: 22,
+    backgroundColor: NewsColors.surface,
   },
-  pressed: { backgroundColor: Colors.surface },
+  pressed: { backgroundColor: NewsColors.chip },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surfaceAlt },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NewsColors.border,
+    backgroundColor: NewsColors.chip,
+  },
   avatarFallback: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.surfaceAlt,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NewsColors.border,
+    backgroundColor: NewsColors.chip,
   },
-  avatarLetter: { fontSize: 15, fontWeight: '700' },
+  avatarLetter: { color: NewsColors.text, fontSize: 15, fontWeight: '700' },
   identity: { flex: 1, minWidth: 0, gap: 2 },
   nameLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  name: { flexShrink: 1, fontSize: 14, fontWeight: '700' },
-  body: { fontSize: 15, lineHeight: 21, fontWeight: '400' },
+  name: { flexShrink: 1, color: NewsColors.text, fontSize: 14, fontWeight: '700' },
+  openButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: NewsColors.controlBorder,
+  },
+  body: { color: NewsColors.text, fontSize: 15, lineHeight: 21, fontWeight: '400' },
   mediaWrap: {
     height: 190,
-    marginTop: 2,
+    marginTop: 4,
     overflow: 'hidden',
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NewsColors.border,
+    backgroundColor: NewsColors.surfaceRaised,
   },
   media: { width: '100%', height: '100%' },
   play: {

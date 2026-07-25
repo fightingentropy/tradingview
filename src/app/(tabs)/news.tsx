@@ -7,7 +7,7 @@ import { NewsExecutiveSummaryView } from '@/components/NewsExecutiveSummary';
 import { NewsItemRow } from '@/components/NewsItemRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, NewsColors, Radius, Spacing } from '@/constants/theme';
 import { useNewsFeed } from '@/data/useNewsFeed';
 import type { NewsItem, NewsSourceFilter } from '@/domain/news';
 import { isNewsFeedConfigured, usesLocalNewsFeed } from '@/providers/news/client';
@@ -28,7 +28,7 @@ function SetupState() {
   return (
     <View style={styles.stateWrap}>
       <View style={styles.stateIcon}>
-        <Ionicons name="newspaper-outline" size={28} color={Colors.accent} />
+        <Ionicons name="newspaper-outline" size={24} color={NewsColors.text} />
       </View>
       <AppText variant="heading" style={styles.stateTitle}>
         Connect your news feeds
@@ -39,7 +39,7 @@ function SetupState() {
         stay on the service, not in this app.
       </AppText>
       <View style={styles.privacyRow}>
-        <Ionicons name="shield-checkmark-outline" size={17} color={Colors.up} />
+        <Ionicons name="shield-checkmark-outline" size={17} color={NewsColors.textMuted} />
         <AppText variant="caption" style={styles.privacyText}>
           Private feed content is kept out of the on-device persisted cache.
         </AppText>
@@ -88,7 +88,7 @@ export default function NewsScreen() {
                   <Ionicons
                     name={filter.icon}
                     size={13}
-                    color={active ? Colors.text : Colors.textMuted}
+                    color={active ? NewsColors.onSelected : NewsColors.textMuted}
                   />
                 ) : null}
                 <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
@@ -103,7 +103,7 @@ export default function NewsScreen() {
         <SetupState />
       ) : isLoading ? (
         <View style={styles.center}>
-          <ActivityIndicator color={Colors.accent} />
+          <ActivityIndicator color={NewsColors.text} />
         </View>
       ) : isError ? (
         <View style={styles.stateWrap}>
@@ -122,7 +122,7 @@ export default function NewsScreen() {
             disabled={isRefetching}
             accessibilityState={{ disabled: isRefetching, busy: isRefetching }}>
             {isRefetching ? (
-              <ActivityIndicator size="small" color={Colors.accent} />
+              <ActivityIndicator size="small" color={NewsColors.onSelected} />
             ) : (
               <AppText style={styles.retryText}>Try again</AppText>
             )}
@@ -149,7 +149,7 @@ export default function NewsScreen() {
             disabled={isRefetching}
             accessibilityState={{ disabled: isRefetching, busy: isRefetching }}>
             {isRefetching ? (
-              <ActivityIndicator size="small" color={Colors.accent} />
+              <ActivityIndicator size="small" color={NewsColors.onSelected} />
             ) : (
               <AppText style={styles.retryText}>Check again</AppText>
             )}
@@ -174,12 +174,12 @@ export default function NewsScreen() {
             <RefreshControl
               refreshing={isRefetching && !isFetchingNextPage}
               onRefresh={refetch}
-              tintColor={Colors.accent}
+              tintColor={NewsColors.text}
             />
           }
           ListFooterComponent={
             isFetchingNextPage ? (
-              <ActivityIndicator style={styles.footerLoader} color={Colors.accent} />
+              <ActivityIndicator style={styles.footerLoader} color={NewsColors.text} />
             ) : null
           }
         />
@@ -191,29 +191,34 @@ export default function NewsScreen() {
 const styles = StyleSheet.create({
   filterScroller: {
     flexGrow: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    backgroundColor: NewsColors.background,
   },
   filters: {
     flexDirection: 'row',
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 14,
     minWidth: '100%',
   },
   chip: {
-    minHeight: 32,
-    paddingHorizontal: Spacing.md,
+    minHeight: 36,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NewsColors.border,
+    backgroundColor: NewsColors.chip,
   },
-  chipActive: { backgroundColor: Colors.surfaceAlt },
-  chipLabel: { color: Colors.textMuted, fontSize: 13, fontWeight: '600' },
-  chipLabelActive: { color: Colors.text },
+  chipActive: {
+    borderColor: NewsColors.selected,
+    backgroundColor: NewsColors.selected,
+  },
+  chipLabel: { color: NewsColors.textMuted, fontSize: 13, fontWeight: '600' },
+  chipLabelActive: { color: NewsColors.onSelected },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   stateWrap: {
     flex: 1,
@@ -223,16 +228,23 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   stateIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 18,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.accentSoft,
+    borderWidth: 1,
+    borderColor: NewsColors.controlBorder,
     marginBottom: 4,
   },
-  stateTitle: { fontSize: 20, textAlign: 'center' },
-  stateBody: { maxWidth: 430, textAlign: 'center', lineHeight: 21, fontWeight: '400' },
+  stateTitle: { color: NewsColors.text, fontSize: 20, textAlign: 'center' },
+  stateBody: {
+    maxWidth: 430,
+    color: NewsColors.textMuted,
+    textAlign: 'center',
+    lineHeight: 21,
+    fontWeight: '400',
+  },
   privacyRow: {
     maxWidth: 390,
     marginTop: Spacing.sm,
@@ -242,16 +254,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: 10,
     borderRadius: Radius.md,
-    backgroundColor: Colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NewsColors.border,
+    backgroundColor: NewsColors.surface,
   },
-  privacyText: { flex: 1, lineHeight: 16 },
+  privacyText: { flex: 1, color: NewsColors.textMuted, lineHeight: 16 },
   retry: {
     marginTop: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 10,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceAlt,
+    minHeight: 44,
+    paddingHorizontal: Spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.pill,
+    backgroundColor: NewsColors.selected,
   },
-  retryText: { color: Colors.accent, fontWeight: '700' },
+  retryText: { color: NewsColors.onSelected, fontWeight: '700' },
   footerLoader: { paddingVertical: Spacing.lg },
 });

@@ -19,6 +19,25 @@ export const Colors = {
   warning: '#F0B90B',
 } as const;
 
+/**
+ * The quieter, warm monochrome hierarchy used by the News experience.
+ * It mirrors Wallet's true-black canvas and near-black elevated surfaces while
+ * leaving the trading palette above intact for charts and market data.
+ */
+export const NewsColors = {
+  background: '#000000',
+  surface: '#080808',
+  surfaceRaised: '#10100F',
+  chip: '#171716',
+  selected: '#F6F6F2',
+  onSelected: '#000000',
+  text: '#F1F1EC',
+  textMuted: '#98989A',
+  textFaint: '#626264',
+  border: 'rgba(255, 255, 255, 0.105)',
+  controlBorder: 'rgba(255, 255, 255, 0.36)',
+} as const;
+
 /** Indicator/overlay line colors, kept distinct from price up/down. */
 export const Indicators: { sma: Record<number, string>; rsi: string } = {
   /** Distinct line color per SMA period. */
