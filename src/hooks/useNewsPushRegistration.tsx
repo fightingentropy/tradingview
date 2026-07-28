@@ -3,12 +3,36 @@ import { router } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
-import { normalizeNewsNotificationSourceIds } from '@/domain/newsNotificationSources';
+import {
+  normalizeNewsNotificationSourceIds,
+  parseNewsNotificationItemId,
+} from '@/domain/newsNotificationSources';
 import { registerNewsPushNotifications } from '@/lib/newsPush';
 import { usePreferences } from '@/store/preferences';
 
-function openNotification(notification: Notifications.Notification): void {
-  if (notification.request.content.data?.type === 'news') router.push('/news');
+function openNotification(response: Notifications.NotificationResponse): void {
+  if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+
+  const data = response.notification.request.content.data;
+  if (data?.type !== 'news') return;
+
+  const target = parseNewsNotificationItemId(data.itemId);
+  router.push(
+    target
+      ? {
+          pathname: '/news',
+          params: { itemId: target.itemId },
+        }
+      : '/news',
+  );
+
+  // A handled cold-start response otherwise remains available and can send a
+  // later ordinary launch back to the same article.
+  try {
+    Notifications.clearLastNotificationResponse();
+  } catch {
+    // Routing already succeeded; clearing is best-effort for custom native builds.
+  }
 }
 
 /** Keeps the push token current and routes notification taps into the News tab. */
@@ -37,7 +61,7 @@ export function NewsPushRegistration() {
     if (typeof Notifications.getLastNotificationResponse === 'function') {
       try {
         const initial = Notifications.getLastNotificationResponse();
-        if (initial?.notification) openNotification(initial.notification);
+        if (initial?.notification) openNotification(initial);
       } catch {
         // A custom native build may omit the emitter; live routing can still be attempted below.
       }
@@ -46,7 +70,7 @@ export function NewsPushRegistration() {
     if (typeof Notifications.addNotificationResponseReceivedListener === 'function') {
       try {
         subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-          openNotification(response.notification);
+          openNotification(response);
         });
       } catch {
         // Keep launch reliable when the optional native capability is unavailable.

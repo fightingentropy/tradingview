@@ -20,7 +20,13 @@ function relativeTime(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export function NewsItemRow({ item }: { item: NewsItem }) {
+export function NewsItemRow({
+  item,
+  highlighted = false,
+}: {
+  item: NewsItem;
+  highlighted?: boolean;
+}) {
   const openItem = item.url ? () => Linking.openURL(item.url!) : undefined;
   const preview = item.media?.[0];
 
@@ -29,7 +35,12 @@ export function NewsItemRow({ item }: { item: NewsItem }) {
       disabled={!openItem}
       onPress={openItem}
       accessibilityRole={openItem ? 'link' : undefined}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+      accessibilityState={{ selected: highlighted }}
+      style={({ pressed }) => [
+        styles.row,
+        highlighted && styles.highlighted,
+        pressed && styles.pressed,
+      ]}>
       <View style={styles.header}>
         {item.author.avatarUrl ? (
           <Image source={item.author.avatarUrl} style={styles.avatar} contentFit="cover" />
@@ -84,6 +95,10 @@ const styles = StyleSheet.create({
     borderColor: NewsColors.border,
     borderRadius: 22,
     backgroundColor: NewsColors.surface,
+  },
+  highlighted: {
+    borderColor: NewsColors.controlBorder,
+    backgroundColor: NewsColors.surfaceRaised,
   },
   pressed: { backgroundColor: NewsColors.chip },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },

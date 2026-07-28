@@ -59,6 +59,28 @@ export const ALL_NEWS_NOTIFICATION_SOURCE_IDS = NEWS_NOTIFICATION_SOURCES.map(
 );
 
 const VALID_SOURCE_IDS = new Set<string>(ALL_NEWS_NOTIFICATION_SOURCE_IDS);
+const NEWS_SOURCES = new Set<NewsSource>(['x', 'telegram', 'digg', 'paste']);
+
+export interface NewsNotificationTarget {
+  itemId: string;
+  source: NewsSource;
+}
+
+/**
+ * Parses the stable `<source>:<feed item id>` value carried by news pushes.
+ * The feed item ID may itself contain colons, so only the first separator is
+ * structural.
+ */
+export function parseNewsNotificationItemId(value: unknown): NewsNotificationTarget | undefined {
+  if (typeof value !== 'string') return undefined;
+  const separator = value.indexOf(':');
+  if (separator <= 0 || separator === value.length - 1) return undefined;
+
+  const source = value.slice(0, separator);
+  if (!NEWS_SOURCES.has(source as NewsSource)) return undefined;
+
+  return { itemId: value, source: source as NewsSource };
+}
 
 export function normalizeNewsNotificationSourceIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [...ALL_NEWS_NOTIFICATION_SOURCE_IDS];
