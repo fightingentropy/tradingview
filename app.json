@@ -9,6 +9,7 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/images/icon.png",
+      "appleTeamId": "T29NU9NCA2",
       "bundleIdentifier": "com.erlinhoxha.tradingview",
       "supportsTablet": true,
       "config": {
@@ -46,7 +47,8 @@
         }
       ],
       "expo-secure-store",
-      "expo-background-task"
+      "expo-background-task",
+      "./plugins/with-ios-scene-lifecycle.cjs"
     ],
     "experiments": {
       "typedRoutes": true,
