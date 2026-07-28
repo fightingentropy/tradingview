@@ -1,6 +1,7 @@
-import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { NewsExecutiveSummaryView } from '@/components/NewsExecutiveSummary';
@@ -10,6 +11,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Colors, NewsColors, Radius, Spacing } from '@/constants/theme';
 import { useNewsFeed } from '@/data/useNewsFeed';
 import type { NewsItem, NewsSourceFilter } from '@/domain/news';
+import { parseNewsNotificationItemId } from '@/domain/newsNotificationSources';
 import { isNewsFeedConfigured, usesLocalNewsFeed } from '@/providers/news/client';
 
 const FILTERS: {
@@ -49,7 +51,14 @@ function SetupState() {
 }
 
 export default function NewsScreen() {
-  const [source, setSource] = useState<NewsSourceFilter>('all');
+  const { itemId } = useLocalSearchParams<{ itemId?: string | string[] }>();
+  const notificationTarget = useMemo(() => parseNewsNotificationItemId(itemId), [itemId]);
+  const [selectedSource, setSelectedSource] = useState<NewsSourceFilter>('all');
+  const source = notificationTarget?.source ?? selectedSource;
+  const listRef = useRef<FlashListRef<NewsItem>>(null);
+  const focusedItemRef = useRef<string | undefined>(undefined);
+  const paginationAttemptsRef = useRef(0);
+  const [loadedListSource, setLoadedListSource] = useState<NewsSourceFilter | undefined>();
   const {
     items,
     isLoading,
@@ -60,10 +69,82 @@ export default function NewsScreen() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isFetchNextPageError,
     executiveSummary,
   } = useNewsFeed(source);
 
-  const renderItem = useCallback(({ item }: { item: NewsItem }) => <NewsItemRow item={item} />, []);
+  const targetIndex = useMemo(() => {
+    if (!notificationTarget || source !== notificationTarget.source) return -1;
+    return items.findIndex(
+      (item) => `${item.source}:${item.id}` === notificationTarget.itemId,
+    );
+  }, [items, notificationTarget, source]);
+
+  useEffect(() => {
+    focusedItemRef.current = undefined;
+    paginationAttemptsRef.current = 0;
+  }, [notificationTarget?.itemId]);
+
+  useEffect(() => {
+    if (
+      !notificationTarget ||
+      source !== notificationTarget.source ||
+      isLoading ||
+      isError ||
+      targetIndex >= 0 ||
+      !hasNextPage ||
+      isFetchingNextPage ||
+      isFetchNextPageError ||
+      paginationAttemptsRef.current >= 5
+    ) {
+      return;
+    }
+
+    paginationAttemptsRef.current += 1;
+    void fetchNextPage();
+  }, [
+    fetchNextPage,
+    hasNextPage,
+    isError,
+    isFetchNextPageError,
+    isFetchingNextPage,
+    isLoading,
+    notificationTarget,
+    source,
+    targetIndex,
+  ]);
+
+  useEffect(() => {
+    if (
+      !notificationTarget ||
+      targetIndex < 0 ||
+      loadedListSource !== source ||
+      focusedItemRef.current === notificationTarget.itemId ||
+      !listRef.current
+    ) {
+      return;
+    }
+
+    focusedItemRef.current = notificationTarget.itemId;
+    const frame = requestAnimationFrame(() => {
+      void listRef.current?.scrollToIndex({
+        index: targetIndex,
+        animated: true,
+        viewPosition: 0.16,
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loadedListSource, notificationTarget, source, targetIndex]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: NewsItem }) => (
+      <NewsItemRow
+        item={item}
+        highlighted={`${item.source}:${item.id}` === notificationTarget?.itemId}
+      />
+    ),
+    [notificationTarget?.itemId],
+  );
   const loadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
@@ -80,7 +161,10 @@ export default function NewsScreen() {
             return (
               <Pressable
                 key={filter.key}
-                onPress={() => setSource(filter.key)}
+                onPress={() => {
+                  setSelectedSource(filter.key);
+                  if (notificationTarget) router.setParams({ itemId: undefined });
+                }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
                 style={[styles.chip, active && styles.chipActive]}>
@@ -165,9 +249,12 @@ export default function NewsScreen() {
         </View>
       ) : (
         <FlashList
+          key={source}
+          ref={listRef}
           data={items}
           keyExtractor={(item) => `${item.source}:${item.id}`}
           renderItem={renderItem}
+          onLoad={() => setLoadedListSource(source)}
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
           refreshControl={

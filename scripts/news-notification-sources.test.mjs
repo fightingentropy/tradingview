@@ -6,6 +6,7 @@ import {
   filterNewsItemsByNotificationSources,
   newsNotificationSourceIdForItem,
   normalizeNewsNotificationSourceIds,
+  parseNewsNotificationItemId,
 } from '../src/domain/newsNotificationSources.ts';
 
 const xItem = { source: 'x', author: { name: 'X account', handle: 'account' } };
@@ -60,4 +61,18 @@ test('filters a mixed batch to only the selected alert sources', () => {
     ]),
     [xItem, tradfiItem],
   );
+});
+
+test('parses a notification item target without truncating colons in the feed ID', () => {
+  assert.deepEqual(parseNewsNotificationItemId('telegram:tradfi_t3:93214'), {
+    itemId: 'telegram:tradfi_t3:93214',
+    source: 'telegram',
+  });
+  assert.deepEqual(parseNewsNotificationItemId('x:191234567890'), {
+    itemId: 'x:191234567890',
+    source: 'x',
+  });
+  assert.equal(parseNewsNotificationItemId('news:summary'), undefined);
+  assert.equal(parseNewsNotificationItemId('telegram:'), undefined);
+  assert.equal(parseNewsNotificationItemId(undefined), undefined);
 });
