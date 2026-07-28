@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 
+import { patchExpoModulesJsiSource } from './patch-expo-modules-jsi.mjs';
+
 const require = createRequire(import.meta.url);
 const plugin = require('../plugins/with-ios-scene-lifecycle.cjs');
 
@@ -52,4 +54,16 @@ test('adds the single-window SceneDelegate manifest', () => {
     },
   });
   assert.equal(updated.CFBundleName, 'TradingView');
+});
+
+test('patches the Expo JSI setter for the Xcode 27 Swift compiler', () => {
+  const original = `before
+    let callbacks = expo.HostObjectCallbacks(
+      context, getter, set == nil ? nil : setter, propertyNamesGetter, deallocate)
+after`;
+  const patched = patchExpoModulesJsiSource(original);
+
+  assert.match(patched, /let setterPointer:/);
+  assert.match(patched, /set == nil \? nil : setterPointer/);
+  assert.equal(patchExpoModulesJsiSource(patched), patched);
 });
