@@ -72,6 +72,7 @@
     "test:trade-ticket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/trade-ticket.test.mjs",
     "test:news-refresh": "node --test scripts/news-refresh-policy.test.mjs",
     "test:news-summary": "node --test scripts/news-executive-summary.test.mjs",
+    "test:economic-calendar": "node --test scripts/economic-calendar.test.mjs",
     "test:ios-scene": "node --test scripts/ios-scene-lifecycle-plugin.test.mjs",
     "test:trading": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/account-risk.test.mjs scripts/chart-crosshair.test.mjs scripts/execution-estimate.test.mjs scripts/trade-preflight.test.mjs scripts/trade-ticket.test.mjs && npm run verify:signing && npm run verify:identity",
     "relay:deploy": "node scripts/news-relay-deploy.mjs",

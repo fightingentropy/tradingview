@@ -156,6 +156,13 @@ export default function NewsScreen() {
         showsHorizontalScrollIndicator={false}
         style={styles.filterScroller}
         contentContainerStyle={styles.filters}>
+          <Pressable
+            onPress={() => router.push('/economic-calendar' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Open economic calendar"
+            style={styles.calendarButton}>
+            <Ionicons name="calendar" size={20} color={NewsColors.textMuted} />
+          </Pressable>
           {FILTERS.map((filter) => {
             const active = source === filter.key;
             return (
@@ -306,6 +313,16 @@ const styles = StyleSheet.create({
   },
   chipLabel: { color: NewsColors.textMuted, fontSize: 13, fontWeight: '600' },
   chipLabelActive: { color: NewsColors.onSelected },
+  calendarButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NewsColors.border,
+    backgroundColor: NewsColors.chip,
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   stateWrap: {
     flex: 1,

@@ -83,6 +83,14 @@ export default function RootLayout() {
                   name="add-symbols"
                   options={{ headerShown: false, presentation: 'modal' }}
                 />
+                <Stack.Screen
+                  name="economic-calendar"
+                  options={{
+                    headerShown: false,
+                    presentation: 'fullScreenModal',
+                    animation: 'slide_from_bottom',
+                  }}
+                />
               </Stack>
             </SymbolMenuProvider>
             <AlertWatcher />
