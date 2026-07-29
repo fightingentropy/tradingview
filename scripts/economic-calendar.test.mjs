@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES,
+  ECONOMIC_CALENDAR_COUNTRY_CODES,
   countryCodeToFlag,
   economicCalendarDateFromKey,
   economicCalendarDateKey,
@@ -9,6 +11,8 @@ import {
   economicCalendarEventDescriptor,
   filterEconomicCalendarEvents,
   formatEconomicCalendarValue,
+  normalizeEconomicCalendarCountries,
+  normalizeEconomicCalendarImportances,
   parseEconomicCalendarEvents,
 } from '../src/domain/economicCalendar.ts';
 
@@ -111,5 +115,24 @@ test('filters events by both country and severity', () => {
   assert.deepEqual(
     filterEconomicCalendarEvents(events, ['US', 'GB'], [-1, 1]).map((event) => event.id),
     ['gb-high', 'us-low', 'us-high'],
+  );
+});
+
+test('normalizes persisted country and severity filters', () => {
+  assert.deepEqual(
+    normalizeEconomicCalendarCountries(['gb', 'US', 'GB', 'invalid']),
+    ['GB', 'US'],
+  );
+  assert.deepEqual(
+    normalizeEconomicCalendarCountries([]),
+    ECONOMIC_CALENDAR_COUNTRY_CODES,
+  );
+  assert.deepEqual(
+    normalizeEconomicCalendarImportances([1, -1, 1, 12]),
+    [-1, 1],
+  );
+  assert.deepEqual(
+    normalizeEconomicCalendarImportances(['high']),
+    DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES,
   );
 });

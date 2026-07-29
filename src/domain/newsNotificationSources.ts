@@ -66,6 +66,80 @@ export interface NewsNotificationTarget {
   source: NewsSource;
 }
 
+export interface NewsPushNotificationContent {
+  title: string;
+  body: string;
+  itemId: string;
+  itemUrl?: string;
+}
+
+const MAX_NEWS_NOTIFICATION_BODY_LENGTH = 180;
+
+export function newsNotificationItemKey(
+  item: Pick<NewsItem, 'source' | 'id'>,
+): string {
+  return `${item.source}:${item.id}`;
+}
+
+export function normalizeNewsNotificationSeenKeys(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(
+    value.filter(
+      (key): key is string =>
+        typeof key === 'string' &&
+        parseNewsNotificationItemId(key) !== undefined,
+    ),
+  )];
+}
+
+export function mergeNewsNotificationSeenKeys(
+  items: readonly Pick<NewsItem, 'source' | 'id'>[],
+  existingKeys: unknown,
+  limit = 1_000,
+): string[] {
+  return [...new Set([
+    ...items.map(newsNotificationItemKey),
+    ...normalizeNewsNotificationSeenKeys(existingKeys),
+  ])].slice(0, Math.max(0, limit));
+}
+
+export function filterUnseenNewsNotificationItems<
+  T extends Pick<NewsItem, 'source' | 'id'>,
+>(
+  items: readonly T[],
+  seenKeys: unknown,
+): T[] {
+  const seen = new Set(normalizeNewsNotificationSeenKeys(seenKeys));
+  return items.filter((item) => !seen.has(newsNotificationItemKey(item)));
+}
+
+function compactNewsNotificationBody(text: string): string {
+  const body = text.replace(/\s+/g, ' ').trim();
+  return body.length > MAX_NEWS_NOTIFICATION_BODY_LENGTH
+    ? `${body.slice(0, MAX_NEWS_NOTIFICATION_BODY_LENGTH - 3)}…`
+    : body;
+}
+
+export function buildNewsPushNotificationContent(
+  items: readonly Pick<NewsItem, 'id' | 'source' | 'text' | 'author' | 'url'>[],
+): NewsPushNotificationContent | undefined {
+  const first = items[0];
+  if (!first) return undefined;
+  if (items.length === 1) {
+    return {
+      title: `${first.source === 'x' ? 'X' : 'Telegram'} · ${first.author.name}`,
+      body: compactNewsNotificationBody(first.text),
+      itemId: newsNotificationItemKey(first),
+      itemUrl: first.url,
+    };
+  }
+  return {
+    title: `${items.length} new selected news updates`,
+    body: compactNewsNotificationBody(`Latest — ${first.author.name}: ${first.text}`),
+    itemId: 'news:summary',
+  };
+}
+
 /**
  * Parses the stable `<source>:<feed item id>` value carried by news pushes.
  * The feed item ID may itself contain colons, so only the first separator is

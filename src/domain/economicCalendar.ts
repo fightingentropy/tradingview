@@ -21,6 +21,17 @@ export const ECONOMIC_CALENDAR_COUNTRIES = [
 
 export type EconomicCalendarImportance = -1 | 0 | 1;
 
+export const ECONOMIC_CALENDAR_COUNTRY_CODES = ECONOMIC_CALENDAR_COUNTRIES.map(
+  ({ code }) => code,
+);
+
+export const DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES: EconomicCalendarImportance[] = [0, 1];
+
+const VALID_ECONOMIC_CALENDAR_COUNTRY_CODES = new Set<string>(
+  ECONOMIC_CALENDAR_COUNTRY_CODES,
+);
+const VALID_ECONOMIC_CALENDAR_IMPORTANCES = new Set<EconomicCalendarImportance>([-1, 0, 1]);
+
 export type EconomicCalendarEvent = {
   id: string;
   title: string;
@@ -36,6 +47,33 @@ export type EconomicCalendarEvent = {
 };
 
 type UnknownRecord = Record<string, unknown>;
+
+export function normalizeEconomicCalendarCountries(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...ECONOMIC_CALENDAR_COUNTRY_CODES];
+  const countries = [...new Set(
+    value
+      .filter((country): country is string => typeof country === 'string')
+      .map((country) => country.toUpperCase())
+      .filter((country) => VALID_ECONOMIC_CALENDAR_COUNTRY_CODES.has(country)),
+  )];
+  return countries.length > 0 ? countries : [...ECONOMIC_CALENDAR_COUNTRY_CODES];
+}
+
+export function normalizeEconomicCalendarImportances(
+  value: unknown,
+): EconomicCalendarImportance[] {
+  if (!Array.isArray(value)) return [...DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES];
+  const importances = [...new Set(
+    value.filter(
+      (importance): importance is EconomicCalendarImportance =>
+        typeof importance === 'number' &&
+        VALID_ECONOMIC_CALENDAR_IMPORTANCES.has(importance as EconomicCalendarImportance),
+    ),
+  )].sort((left, right) => left - right);
+  return importances.length > 0
+    ? importances
+    : [...DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES];
+}
 
 function parseValue(value: unknown): number | string | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;

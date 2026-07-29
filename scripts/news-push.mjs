@@ -2,6 +2,8 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { buildNewsPushNotificationContent } from '../src/domain/newsNotificationSources.ts';
+
 const STATE_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'TradingView News');
 const TOKENS_FILE = path.join(STATE_DIR, 'push-tokens.json');
 const SEEN_FILE = path.join(STATE_DIR, 'seen-news.json');
@@ -26,11 +28,6 @@ async function atomicWriteJson(file, value) {
 
 function itemKey(item) {
   return `${item.source}:${item.id}`;
-}
-
-function compactBody(text) {
-  const body = String(text ?? '').replace(/\s+/g, ' ').trim();
-  return body.length > 180 ? `${body.slice(0, 177)}…` : body;
 }
 
 export class NewsPushService {
@@ -129,27 +126,21 @@ export class NewsPushService {
         const sourceId = this.sourceIdForItem(item);
         return sourceId ? allowed.has(sourceId) : false;
       });
-      const selected = allowedItems.slice(0, 3);
-      const notifications = selected.map((item) => ({
-        sound: 'default',
-        title: `${item.source === 'x' ? 'X' : 'Telegram'} · ${item.author.name}`,
-        body: compactBody(item.text),
-        data: {
-          type: 'news',
-          screen: '/news',
-          itemUrl: item.url,
-          itemId: itemKey(item),
-        },
-      }));
-      if (allowedItems.length > selected.length) {
-        notifications.push({
-          sound: 'default',
-          title: `${allowedItems.length - selected.length} more selected news updates`,
-          body: 'Open the News tab to see the latest posts from your alert sources.',
-          data: { type: 'news', screen: '/news', itemId: 'news:summary' },
-        });
-      }
-      return notifications.map((notification) => ({ to, ...notification }));
+      const notification = buildNewsPushNotificationContent(allowedItems);
+      return notification
+        ? [{
+            to,
+            sound: 'default',
+            title: notification.title,
+            body: notification.body,
+            data: {
+              type: 'news',
+              screen: '/news',
+              itemUrl: notification.itemUrl,
+              itemId: notification.itemId,
+            },
+          }]
+        : [];
     });
     if (messages.length === 0) return;
     const response = await fetch(PUSH_SEND_URL, {

@@ -1,17 +1,24 @@
 import {
   ALL_NEWS_NOTIFICATION_SOURCE_IDS,
+  buildNewsPushNotificationContent,
   filterNewsItemsByNotificationSources,
+  filterUnseenNewsNotificationItems,
+  mergeNewsNotificationSeenKeys,
+  newsNotificationItemKey,
+  normalizeNewsNotificationSeenKeys,
   normalizeNewsNotificationSourceIds,
 } from '../src/domain/newsNotificationSources';
 
 const FEED_KEY = 'feed:all';
 const RECEIPTS_KEY = 'push:receipts';
+const SEEN_ITEMS_KEY = 'push:seen-items';
 const TOKEN_PREFIX = 'push:token:';
 const PUSH_SEND_URL = 'https://exp.host/--/api/v2/push/send';
 const PUSH_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getReceipts';
 const TOKEN_PATTERN = /^(?:Exponent|Expo)PushToken\[[A-Za-z0-9_-]+\]$/;
 const MAX_FEED_ITEMS = 200;
 const MAX_PUSH_TOKENS = 25;
+const MAX_SEEN_ITEMS = 1_000;
 const MAX_INGEST_BODY_BYTES = 2_000_000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -373,10 +380,6 @@ function normalizeSnapshot(value: unknown): FeedSnapshot | undefined {
   };
 }
 
-function itemKey(item: NewsItem): string {
-  return `${item.source}:${item.id}`;
-}
-
 async function authorized(request: Request, env: Env): Promise<boolean> {
   const authorization = request.headers.get('Authorization');
   if (!authorization?.startsWith('Bearer ')) return false;
@@ -473,11 +476,6 @@ async function listSubscriptions(
   });
 }
 
-function compactBody(text: string): string {
-  const body = text.replace(/\s+/g, ' ').trim();
-  return body.length > 180 ? `${body.slice(0, 177)}…` : body;
-}
-
 async function checkReceipts(env: Env): Promise<void> {
   const refs = await env.NEWS_RELAY_KV.get<PushReceiptRef[]>(RECEIPTS_KEY, 'json');
   if (!Array.isArray(refs) || refs.length === 0) return;
@@ -509,26 +507,25 @@ async function sendNewsPushes(env: Env, items: NewsItem[]): Promise<void> {
 
   const messages = subscriptions.flatMap(({ key, subscription }) => {
     const allowedItems = filterNewsItemsByNotificationSources(items, subscription.sourceIds);
-    const selected = allowedItems.slice(0, 3);
-    const notifications = selected.map((item) => ({
-      sound: 'default',
-      title: `${item.source === 'x' ? 'X' : 'Telegram'} · ${item.author.name}`,
-      body: compactBody(item.text),
-      data: { type: 'news', screen: '/news', itemUrl: item.url, itemId: itemKey(item) },
-    }));
-    if (allowedItems.length > selected.length) {
-      notifications.push({
-        sound: 'default',
-        title: `${allowedItems.length - selected.length} more selected news updates`,
-        body: 'Open the News tab to see the latest posts from your alert sources.',
-        data: { type: 'news', screen: '/news', itemUrl: undefined, itemId: 'news:summary' },
-      });
-    }
-    return notifications.map((notification) => ({
-      key,
-      token: subscription.token,
-      message: { to: subscription.token, ...notification },
-    }));
+    const notification = buildNewsPushNotificationContent(allowedItems);
+    return notification
+      ? [{
+          key,
+          token: subscription.token,
+          message: {
+            to: subscription.token,
+            sound: 'default',
+            title: notification.title,
+            body: notification.body,
+            data: {
+              type: 'news',
+              screen: '/news',
+              itemUrl: notification.itemUrl,
+              itemId: notification.itemId,
+            },
+          },
+        }]
+      : [];
   });
   if (messages.length === 0) return;
   const response = await fetch(PUSH_SEND_URL, {
@@ -614,13 +611,31 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
   const snapshot = normalizeSnapshot(JSON.parse(body) as unknown);
   if (!snapshot) return json({ error: 'Invalid snapshot' }, 400);
 
-  const previous = await env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json');
+  const [previous, storedSeenKeys] = await Promise.all([
+    env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json'),
+    env.NEWS_RELAY_KV.get<unknown>(SEEN_ITEMS_KEY, 'json'),
+  ]);
   if (!snapshot.executiveSummary && previous?.executiveSummary) {
     snapshot.executiveSummary = previous.executiveSummary;
   }
-  await env.NEWS_RELAY_KV.put(FEED_KEY, JSON.stringify(snapshot));
-  const seen = new Set(previous?.items.map(itemKey) ?? snapshot.items.map(itemKey));
-  const fresh = snapshot.items.filter((item) => !seen.has(itemKey(item)));
+  const storedSeen = normalizeNewsNotificationSeenKeys(storedSeenKeys);
+  const isSeenStateInitialized = storedSeen.length > 0;
+  const previousKeys = previous?.items.map(newsNotificationItemKey) ?? [];
+  const fresh = filterUnseenNewsNotificationItems(
+    snapshot.items,
+    isSeenStateInitialized
+      ? [...storedSeen, ...previousKeys]
+      : snapshot.items.map(newsNotificationItemKey),
+  );
+  const nextSeen = mergeNewsNotificationSeenKeys(
+    snapshot.items,
+    isSeenStateInitialized ? storedSeen : previousKeys,
+    MAX_SEEN_ITEMS,
+  );
+  await Promise.all([
+    env.NEWS_RELAY_KV.put(FEED_KEY, JSON.stringify(snapshot)),
+    env.NEWS_RELAY_KV.put(SEEN_ITEMS_KEY, JSON.stringify(nextSeen)),
+  ]);
   ctx.waitUntil(
     sendNewsPushes(env, fresh).catch((error: unknown) => {
       console.error(JSON.stringify({ event: 'push_failed', message: String(error) }));

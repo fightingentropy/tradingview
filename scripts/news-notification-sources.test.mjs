@@ -3,7 +3,12 @@ import test from 'node:test';
 
 import {
   ALL_NEWS_NOTIFICATION_SOURCE_IDS,
+  buildNewsPushNotificationContent,
   filterNewsItemsByNotificationSources,
+  filterUnseenNewsNotificationItems,
+  mergeNewsNotificationSeenKeys,
+  newsNotificationItemKey,
+  normalizeNewsNotificationSeenKeys,
   newsNotificationSourceIdForItem,
   normalizeNewsNotificationSourceIds,
   parseNewsNotificationItemId,
@@ -21,6 +26,20 @@ const tradfiItem = {
 const removedTradeXyzItem = {
   source: 'telegram',
   author: { name: 'TradeXYZ', handle: '@tradexyz_announcements' },
+};
+const completeXItem = {
+  id: '191234567890',
+  source: 'x',
+  text: 'Stocks rise after the latest release.',
+  author: { name: 'Market account', handle: 'account' },
+  url: 'https://example.com/x-item',
+};
+const completeTelegramItem = {
+  id: 'tradfi_t3:93214',
+  source: 'telegram',
+  text: 'Central bank decision published.',
+  author: { name: 'TradFi', handle: '@tradfi_t3' },
+  url: 'https://example.com/telegram-item',
 };
 
 test('normalizes, validates, and de-duplicates selected source IDs', () => {
@@ -75,4 +94,49 @@ test('parses a notification item target without truncating colons in the feed ID
   assert.equal(parseNewsNotificationItemId('news:summary'), undefined);
   assert.equal(parseNewsNotificationItemId('telegram:'), undefined);
   assert.equal(parseNewsNotificationItemId(undefined), undefined);
+});
+
+test('keeps a bounded durable set of previously notified item keys', () => {
+  assert.equal(newsNotificationItemKey(completeTelegramItem), 'telegram:tradfi_t3:93214');
+  assert.deepEqual(
+    normalizeNewsNotificationSeenKeys([
+      'x:191234567890',
+      'invalid',
+      'x:191234567890',
+    ]),
+    ['x:191234567890'],
+  );
+  assert.deepEqual(
+    mergeNewsNotificationSeenKeys(
+      [completeTelegramItem],
+      ['x:191234567890'],
+      2,
+    ),
+    ['telegram:tradfi_t3:93214', 'x:191234567890'],
+  );
+  assert.deepEqual(
+    filterUnseenNewsNotificationItems(
+      [completeTelegramItem, completeXItem],
+      ['x:191234567890'],
+    ),
+    [completeTelegramItem],
+  );
+});
+
+test('builds at most one notification for each selected update batch', () => {
+  assert.deepEqual(buildNewsPushNotificationContent([completeXItem]), {
+    title: 'X · Market account',
+    body: 'Stocks rise after the latest release.',
+    itemId: 'x:191234567890',
+    itemUrl: 'https://example.com/x-item',
+  });
+  assert.deepEqual(
+    buildNewsPushNotificationContent([completeTelegramItem, completeXItem]),
+    {
+      title: '2 new selected news updates',
+      body: 'Latest — TradFi: Central bank decision published.',
+      itemId: 'news:summary',
+    },
+  );
+  assert.equal(buildNewsPushNotificationContent([]), undefined);
 });

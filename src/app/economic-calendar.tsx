@@ -19,7 +19,9 @@ import { Screen } from '@/components/ui/Screen';
 import { NewsColors, Radius, Spacing } from '@/constants/theme';
 import { useEconomicCalendar } from '@/data/useEconomicCalendar';
 import {
+  DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES,
   ECONOMIC_CALENDAR_COUNTRIES,
+  ECONOMIC_CALENDAR_COUNTRY_CODES,
   countryCodeToFlag,
   economicCalendarDateFromKey,
   economicCalendarDateKey,
@@ -29,13 +31,12 @@ import {
   type EconomicCalendarEvent,
   type EconomicCalendarImportance,
 } from '@/domain/economicCalendar';
+import { useEconomicCalendarFilters } from '@/store/economicCalendarFilters';
 
 type CalendarListItem =
   | { type: 'event'; event: EconomicCalendarEvent }
   | { type: 'now'; id: string };
 
-const ALL_COUNTRY_CODES = ECONOMIC_CALENDAR_COUNTRIES.map((country) => country.code);
-const DEFAULT_IMPORTANCES: EconomicCalendarImportance[] = [0, 1];
 const IMPORTANCE_OPTIONS: {
   value: EconomicCalendarImportance;
   label: string;
@@ -176,7 +177,7 @@ function CalendarFilters({
 
   const toggleCountry = (code: string) => {
     setDraftCountries((current) => {
-      if (current.length === ALL_COUNTRY_CODES.length) return [code];
+      if (current.length === ECONOMIC_CALENDAR_COUNTRY_CODES.length) return [code];
       if (!current.includes(code)) return [...current, code];
       return current.length === 1 ? current : current.filter((item) => item !== code);
     });
@@ -193,7 +194,8 @@ function CalendarFilters({
     });
   };
 
-  const allCountriesSelected = draftCountries.length === ALL_COUNTRY_CODES.length;
+  const allCountriesSelected =
+    draftCountries.length === ECONOMIC_CALENDAR_COUNTRY_CODES.length;
 
   return (
     <Modal
@@ -272,7 +274,7 @@ function CalendarFilters({
               </AppText>
             </View>
             <Pressable
-              onPress={() => setDraftCountries([...ALL_COUNTRY_CODES])}
+              onPress={() => setDraftCountries([...ECONOMIC_CALENDAR_COUNTRY_CODES])}
               accessibilityRole="button"
               accessibilityState={{ selected: allCountriesSelected }}
               style={[
@@ -321,8 +323,8 @@ function CalendarFilters({
           <View style={styles.filterActions}>
             <Pressable
               onPress={() => {
-                setDraftCountries([...ALL_COUNTRY_CODES]);
-                setDraftImportances([...DEFAULT_IMPORTANCES]);
+                setDraftCountries([...ECONOMIC_CALENDAR_COUNTRY_CODES]);
+                setDraftImportances([...DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES]);
               }}
               accessibilityRole="button"
               style={styles.resetButton}>
@@ -347,12 +349,13 @@ export default function EconomicCalendarScreen() {
     economicCalendarDateKey(new Date()),
   );
   const [filtersVisible, setFiltersVisible] = useState(false);
-  const [selectedCountries, setSelectedCountries] = useState<string[]>(() => [
-    ...ALL_COUNTRY_CODES,
-  ]);
-  const [selectedImportances, setSelectedImportances] = useState<
-    EconomicCalendarImportance[]
-  >(() => [...DEFAULT_IMPORTANCES]);
+  const selectedCountries = useEconomicCalendarFilters(
+    (state) => state.selectedCountries,
+  );
+  const selectedImportances = useEconomicCalendarFilters(
+    (state) => state.selectedImportances,
+  );
+  const setFilters = useEconomicCalendarFilters((state) => state.setFilters);
   const [now, setNow] = useState(() => new Date());
   const selectedDate = useMemo(
     () => economicCalendarDateFromKey(selectedDateKey),
@@ -368,8 +371,13 @@ export default function EconomicCalendarScreen() {
   }, []);
 
   const activeFilterCount =
-    Number(!sameSelection(selectedCountries, ALL_COUNTRY_CODES)) +
-    Number(!sameSelection(selectedImportances, DEFAULT_IMPORTANCES));
+    Number(!sameSelection(selectedCountries, ECONOMIC_CALENDAR_COUNTRY_CODES)) +
+    Number(
+      !sameSelection(
+        selectedImportances,
+        DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES,
+      ),
+    );
 
   const listItems = useMemo<CalendarListItem[]>(() => {
     const visibleEvents = filterEconomicCalendarEvents(
@@ -404,10 +412,11 @@ export default function EconomicCalendarScreen() {
   const header = (
     <>
       <View style={styles.header}>
-        <View style={styles.headerSpacer} />
-        <AppText numberOfLines={1} style={styles.headerTitle}>
-          Economic Calendar
-        </AppText>
+        <View style={styles.headerTitleSlot}>
+          <AppText numberOfLines={1} style={styles.headerTitle}>
+            Economic Calendar
+          </AppText>
+        </View>
         <View style={styles.headerActions}>
           <Pressable
             onPress={() => setFiltersVisible(true)}
@@ -544,8 +553,7 @@ export default function EconomicCalendarScreen() {
           selectedImportances={selectedImportances}
           onClose={() => setFiltersVisible(false)}
           onApply={(countries, importances) => {
-            setSelectedCountries(countries);
-            setSelectedImportances(importances);
+            setFilters(countries, importances);
             setFiltersVisible(false);
           }}
         />
@@ -568,10 +576,14 @@ const styles = StyleSheet.create({
     minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
   },
-  headerSpacer: { position: 'absolute', left: Spacing.lg, width: 94 },
+  headerTitleSlot: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+  },
   headerTitle: {
     color: NewsColors.text,
     fontSize: 19,
@@ -579,10 +591,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   headerActions: {
-    position: 'absolute',
-    right: Spacing.lg,
     flexDirection: 'row',
     gap: Spacing.sm,
+    flexShrink: 0,
   },
   headerButton: {
     width: 46,
