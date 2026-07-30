@@ -44,7 +44,7 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>${home}</string>
-    <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:${path.join(home, '.bun', 'bin')}:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>${path.join(home, '.local', 'bin')}:/usr/local/bin:/opt/homebrew/bin:${path.join(home, '.bun', 'bin')}:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

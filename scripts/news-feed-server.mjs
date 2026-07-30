@@ -576,7 +576,7 @@ const server = http.createServer(async (request, response) => {
 server.listen(PORT, HOST, () => {
   console.log(`News feed bridge listening on http://${HOST}:${PORT}`);
   console.log(`X source: https://x.com/i/lists/${LIST_ID} via bird browser-cookie auth`);
-  console.log(`Digg source: ${DIGG_TECH_URL}`);
+  console.log(`Digg source: ${DIGG_TECH_URL} via curl-impersonate (Chrome TLS)`);
   console.log(`Paste source: ${PASTE_TRADE_URL}`);
   console.log(
     `Refresh intervals: X ${NEWS_SOURCE_REFRESH_INTERVAL_MS.x / 60_000}m, ` +
