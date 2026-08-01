@@ -49,11 +49,12 @@
     "eslint": "^9.39.5",
     "eslint-config-expo": "~56.0.4",
     "telegram": "^2.26.22",
+    "tsx": "4.23.1",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "wrangler": "^4.110.0"
   },
   "scripts": {
-    "postinstall": "node scripts/patch-expo-modules-jsi.mjs",
+    "postinstall": "node scripts/patch-expo-modules-jsi.mjs --allow-already-patched",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
@@ -81,6 +82,10 @@
     "lint": "expo lint",
     "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit && npm run typecheck:worker",
     "typecheck:worker": "wrangler types worker/worker-configuration.d.ts && node node_modules/@typescript/native/bin/tsc -p worker/tsconfig.json",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs",
+    "build": "expo export --platform web --output-dir dist",
+    "verify:expo-jsi-patch": "node scripts/patch-expo-modules-jsi.mjs --verify",
+    "check": "npm run lint && npm run typecheck && npm test && npm run verify:signing && npm run verify:identity && npm run verify:expo-jsi-patch && npm run build",
     "verify:signing": "npx tsx scripts/verify-hl-signing.mts",
     "verify:identity": "npx tsx scripts/verify-trading-identity.mts"
   },
