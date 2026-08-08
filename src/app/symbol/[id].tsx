@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 
 import { IndicatorMenu } from '@/components/IndicatorMenu';
+import { FundingChart } from '@/components/FundingChart';
 import { PriceChart, type ChartOrderLevel, type ChartType } from '@/components/PriceChart';
 import { RangeBar } from '@/components/RangeBar';
 import { RsiPane } from '@/components/RsiPane';
@@ -174,6 +175,7 @@ export default function SymbolScreen() {
 
   const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);
   const [chartType, setChartType] = useState<ChartType>('candle');
+  const [detailTab, setDetailTab] = useState<'chart' | 'funding'>('chart');
   const [ticketMode, setTicketMode] = useState<TicketMode | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const { interval, fetch: fetchCount, visible, render, axis } = resolveRange(range);
@@ -636,6 +638,7 @@ export default function SymbolScreen() {
   // Trading covers Hyperliquid perps AND the trade.xyz (HIP-3) dex — the venues we can
   // sign orders for. Both resolve their order asset-id from the cached meta by coinKey.
   const isHlTradable = hlTradeCoin !== undefined;
+  const showFunding = detailTab === 'funding' && hlTradeCoin !== undefined;
 
   // Funding rate (perps only). Positive = longs pay shorts (red); negative = shorts pay longs (green).
   const funding = quote?.funding ?? null;
@@ -876,8 +879,32 @@ export default function SymbolScreen() {
         </View>
       </View>
 
+      {hlTradeCoin ? (
+        <View style={styles.detailTabs}>
+          {(['chart', 'funding'] as const).map((item) => {
+            const active = detailTab === item;
+            return (
+              <Pressable
+                key={item}
+                onPress={() => setDetailTab(item)}
+                style={[styles.detailTab, active && styles.detailTabActive]}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}>
+                <AppText
+                  variant="label"
+                  color={active ? Colors.text : Colors.textMuted}>
+                  {item === 'chart' ? 'Chart' : 'Funding'}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+
       <View style={styles.chartArea}>
-        {candlesLoading && candles.length === 0 ? (
+        {showFunding ? (
+          <FundingChart coin={hlTradeCoin} />
+        ) : candlesLoading && candles.length === 0 ? (
           <View style={styles.center}>
             <ActivityIndicator color={Colors.accent} />
           </View>
@@ -901,7 +928,7 @@ export default function SymbolScreen() {
             onPositionPress={openPositionActions}
           />
         )}
-        {position && !chartPositionVisible ? (
+        {!showFunding && position && !chartPositionVisible ? (
           <Pressable
             style={({ pressed }) => [styles.positionFallback, pressed && styles.positionFallbackPressed]}
             onPress={openPositionActions}
@@ -915,27 +942,29 @@ export default function SymbolScreen() {
         ) : null}
       </View>
 
-      {rsi && candles.length > 0 ? (
+      {!showFunding && rsi && candles.length > 0 ? (
         <RsiPane candles={candles} period={rsiPeriod} visibleCount={visible} />
       ) : null}
 
-      <View style={styles.controls}>
-        <Pressable
-          style={styles.typeToggle}
-          onPress={() => setChartType((t) => (t === 'candle' ? 'line' : 'candle'))}
-          accessibilityRole="button"
-          accessibilityLabel="Toggle chart type">
-          <Ionicons
-            name={chartType === 'candle' ? 'stats-chart' : 'pulse'}
-            size={18}
-            color={Colors.textMuted}
-          />
-        </Pressable>
-        <IndicatorMenu />
-        <View style={styles.timeframeWrap}>
-          <RangeBar value={range} onChange={setRange} />
+      {!showFunding ? (
+        <View style={styles.controls}>
+          <Pressable
+            style={styles.typeToggle}
+            onPress={() => setChartType((t) => (t === 'candle' ? 'line' : 'candle'))}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle chart type">
+            <Ionicons
+              name={chartType === 'candle' ? 'stats-chart' : 'pulse'}
+              size={18}
+              color={Colors.textMuted}
+            />
+          </Pressable>
+          <IndicatorMenu />
+          <View style={styles.timeframeWrap}>
+            <RangeBar value={range} onChange={setRange} />
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {isHlTradable ? (
         <FlatTradeBar
@@ -1082,6 +1111,22 @@ const styles = StyleSheet.create({
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   name: { flexShrink: 1 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.xs, rowGap: 2 },
+  detailTabs: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  detailTab: {
+    minWidth: 76,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  detailTabActive: { borderBottomColor: Colors.accent },
   chartArea: { flex: 1, marginTop: Spacing.sm },
   positionFallback: {
     position: 'absolute',

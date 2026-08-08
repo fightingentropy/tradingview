@@ -784,6 +784,203 @@ export async function fetchHlPortfolio(
   return { day: win('day'), week: win('week'), month: win('month'), allTime: win('allTime') };
 }
 
+// ---- Funding + borrow/lend interest history ------------------------------
+
+export interface HlFundingPoint {
+  /** Funding interval timestamp, ms epoch. */
+  t: number;
+  /** Hourly funding rate as a fraction (0.0000125 = 0.00125%). */
+  rate: number;
+}
+
+export interface HlUserFunding {
+  key: string;
+  timestamp: number;
+  coin: string;
+  /** Positive means the account received USDC; negative means it paid USDC. */
+  payment: number;
+  /** Signed position size at the funding interval. */
+  signedSize: number;
+  /** Applied hourly funding rate as a fraction. */
+  rate: number;
+  /** Non-null when Hyperliquid aggregates several hourly samples into one row. */
+  sampleCount: number | null;
+}
+
+export interface HlBorrowLendInterest {
+  key: string;
+  timestamp: number;
+  token: string;
+  /** Interest charged to borrowed balances, expressed as a positive token amount. */
+  paid: number;
+  /** Interest credited to supplied balances, expressed as a positive token amount. */
+  earned: number;
+}
+
+interface TimedApiRow {
+  time: number;
+}
+
+/**
+ * Hyperliquid time-range reads return at most 500 rows and use inclusive bounds.
+ * Advance by one millisecond so boundary rows are neither duplicated nor requested
+ * forever. The cap protects the shared IP rate limit if an unexpectedly dense account
+ * history is requested.
+ */
+async function fetchTimeRangePages<T extends TimedApiRow>(
+  network: HlNetwork,
+  request: (startTime: number, endTime: number) => object,
+  startTime: number,
+  endTime: number,
+  maxPages: number,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let cursor = startTime;
+  for (let page = 0; page < maxPages && cursor <= endTime; page++) {
+    const batch = await infoRequest<T[]>(network, request(cursor, endTime));
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    rows.push(...batch);
+
+    let lastTime = cursor - 1;
+    for (const row of batch) {
+      if (Number.isFinite(row.time)) lastTime = Math.max(lastTime, row.time);
+    }
+    if (batch.length < 500 || lastTime >= endTime || lastTime < cursor) break;
+    cursor = lastTime + 1;
+  }
+
+  // Normalize out-of-order pages while preserving distinct rows that share an hourly
+  // timestamp (one account can settle many markets at the same time).
+  return rows.sort((a, b) => a.time - b.time);
+}
+
+interface RawFundingPoint extends TimedApiRow {
+  coin: string;
+  fundingRate: string;
+}
+
+/** Hourly market funding history. Ninety days fits in five 500-row pages. */
+export async function fetchFundingHistory(
+  coin: string,
+  network: HlNetwork = 'mainnet',
+  startTime = Date.now() - 90 * 24 * 60 * 60 * 1000,
+  endTime = Date.now(),
+): Promise<HlFundingPoint[]> {
+  const raw = await fetchTimeRangePages<RawFundingPoint>(
+    network,
+    (cursor, end) => ({ type: 'fundingHistory', coin, startTime: cursor, endTime: end }),
+    startTime,
+    endTime,
+    6,
+  );
+  const byTime = new Map<number, HlFundingPoint>();
+  for (const row of raw) {
+    const rate = toNum(row.fundingRate);
+    if (Number.isFinite(row.time) && rate != null) byTime.set(row.time, { t: row.time, rate });
+  }
+  return [...byTime.values()].sort((a, b) => a.t - b.t);
+}
+
+interface RawUserFunding extends TimedApiRow {
+  hash?: string;
+  delta?: {
+    type?: string;
+    coin?: string;
+    usdc?: string;
+    szi?: string;
+    fundingRate?: string;
+    nSamples?: number | null;
+  };
+}
+
+/** Recent account funding payments, newest first. */
+export async function fetchUserFundingHistory(
+  address: string,
+  network: HlNetwork = 'mainnet',
+  startTime = Date.now() - 36 * 60 * 60 * 1000,
+  endTime = Date.now(),
+  limit = 200,
+): Promise<HlUserFunding[]> {
+  const raw = await fetchTimeRangePages<RawUserFunding>(
+    network,
+    (cursor, end) => ({ type: 'userFunding', user: address, startTime: cursor, endTime: end }),
+    startTime,
+    endTime,
+    8,
+  );
+  return raw
+    .flatMap((row, index): HlUserFunding[] => {
+      const delta = row.delta;
+      const payment = toNum(delta?.usdc);
+      const signedSize = toNum(delta?.szi);
+      const rate = toNum(delta?.fundingRate);
+      if (
+        delta?.type !== 'funding' ||
+        !delta.coin ||
+        payment == null ||
+        signedSize == null ||
+        rate == null ||
+        !Number.isFinite(row.time)
+      ) {
+        return [];
+      }
+      return [{
+        key: `${row.hash ?? 'funding'}-${row.time}-${delta.coin}-${index}`,
+        timestamp: row.time,
+        coin: delta.coin,
+        payment,
+        signedSize,
+        rate,
+        sampleCount: Number.isFinite(delta.nSamples) ? (delta.nSamples as number) : null,
+      }];
+    })
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, limit);
+}
+
+interface RawBorrowLendInterest extends TimedApiRow {
+  token?: string;
+  borrow?: string;
+  supply?: string;
+}
+
+/** Hourly portfolio-margin borrow charges and supply earnings, newest first. */
+export async function fetchUserBorrowLendInterest(
+  address: string,
+  network: HlNetwork = 'mainnet',
+  startTime = Date.now() - 30 * 24 * 60 * 60 * 1000,
+  endTime = Date.now(),
+  limit = 200,
+): Promise<HlBorrowLendInterest[]> {
+  const raw = await fetchTimeRangePages<RawBorrowLendInterest>(
+    network,
+    (cursor, end) => ({
+      type: 'userBorrowLendInterest',
+      user: address,
+      startTime: cursor,
+      endTime: end,
+    }),
+    startTime,
+    endTime,
+    6,
+  );
+  return raw
+    .flatMap((row, index): HlBorrowLendInterest[] => {
+      const paid = toNum(row.borrow);
+      const earned = toNum(row.supply);
+      if (!row.token || paid == null || earned == null || !Number.isFinite(row.time)) return [];
+      return [{
+        key: `${row.time}-${row.token}-${index}`,
+        timestamp: row.time,
+        token: row.token,
+        paid,
+        earned,
+      }];
+    })
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, limit);
+}
+
 // ---- Open orders ----------------------------------------------------------
 
 export interface HlOpenOrder {

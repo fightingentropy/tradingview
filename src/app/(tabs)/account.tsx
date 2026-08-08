@@ -24,6 +24,7 @@ import {
   useHlOpenOrders,
   useTradingIdentity,
 } from '@/data/useHlAccount';
+import { useHlBorrowLendInterest, useHlUserFunding } from '@/data/useHlHistory';
 import { useHlMeta } from '@/data/useHlMeta';
 import {
   buildAccountRiskSummary,
@@ -39,7 +40,14 @@ import {
   type OrderResult,
 } from '@/lib/hyperliquid/exchange';
 import { fetchHlAccount, fetchOpenOrders } from '@/lib/hyperliquid/info';
-import type { HlFill, HlOpenOrder, HlPosition, HlSpotBalance } from '@/lib/hyperliquid/info';
+import type {
+  HlBorrowLendInterest,
+  HlFill,
+  HlOpenOrder,
+  HlPosition,
+  HlSpotBalance,
+  HlUserFunding,
+} from '@/lib/hyperliquid/info';
 import {
   assertTradingIdentityCurrent,
   signedIdentityBinding,
@@ -50,6 +58,7 @@ import { formatCompact, formatPercent, formatPrice, priceDecimalsFor, signedUsd,
 import { priceToWire, sizeToWire } from '@/lib/hyperliquid/sign';
 import { outcomeAssetId } from '@/lib/outcomeMarkets';
 import { queryKeys } from '@/lib/queryKeys';
+import { formatFundingRatePercent } from '@/lib/fundingHistory';
 import type { Instrument } from '@/domain/types';
 import { DEMO_ADDRESS, useHlConnection } from '@/store/hlConnection';
 import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
@@ -228,6 +237,14 @@ function fullWhen(ts: number): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
+/** Token-denominated account delta with enough precision for hourly funding/interest. */
+function historyTokenAmount(value: number, sign: '+' | '-' | 'auto' = 'auto'): string {
+  const absolute = Math.abs(value);
+  const decimals = absolute >= 100 ? 2 : absolute >= 1 ? 4 : 6;
+  const prefix = sign === 'auto' ? (value > 0 ? '+' : value < 0 ? '-' : '') : sign;
+  return `${prefix}${formatPrice(absolute, decimals)}`;
+}
+
 /**
  * Money for the expanded trade breakdown. Sub-$10 amounts (small PnLs and
  * sub-cent fees) get up to 4 dp so the gross − fee = net arithmetic visibly
@@ -327,7 +344,21 @@ export default function AccountScreen() {
   }, [markets?.outcomeEvents]);
 
   const tradable = hasKey && !demo && !!executionIdentity;
-  const [tab, setTab] = useState<'positions' | 'orders' | 'balances' | 'history'>('positions');
+  const [tab, setTab] = useState<
+    'positions' | 'orders' | 'balances' | 'history' | 'funding' | 'interest'
+  >('positions');
+  const {
+    data: fundingHistory,
+    isLoading: fundingHistoryLoading,
+    isError: fundingHistoryError,
+    refetch: refetchFundingHistory,
+  } = useHlUserFunding(tab === 'funding');
+  const {
+    data: interestHistory,
+    isLoading: interestHistoryLoading,
+    isError: interestHistoryError,
+    refetch: refetchInterestHistory,
+  } = useHlBorrowLendInterest(tab === 'interest');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   // Long-lived sheets store identifiers only. Account state refreshes every 5s;
   // retaining a position snapshot here could close or protect a stale size/mark.
@@ -1231,6 +1262,18 @@ export default function AccountScreen() {
               active={tab === 'history'}
               onPress={() => setTab('history')}
             />
+            <TabButton
+              label="Funding"
+              count={fundingHistory?.length}
+              active={tab === 'funding'}
+              onPress={() => setTab('funding')}
+            />
+            <TabButton
+              label="Interest"
+              count={interestHistory?.length}
+              active={tab === 'interest'}
+              onPress={() => setTab('interest')}
+            />
           </ScrollView>
         </GlassSurface>
 
@@ -1312,24 +1355,68 @@ export default function AccountScreen() {
               </AppText>
             </View>
           )
-        ) : (fills?.length ?? 0) === 0 ? (
-          <View style={styles.noPositions}>
-            <AppText variant="body" muted>
-              No trade history
-            </AppText>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {fills!.map((f) => (
-              <FillCard
-                key={f.key}
-                f={f}
-                instrument={instrumentForCoin(f.coin)}
-                symbol={symbolForCoin(f.coin)}
-                hidden={privacyMode}
-                expanded={expanded.has('fill:' + f.key)}
-                onToggle={() => toggleExpand('fill:' + f.key)}
+        ) : tab === 'history' ? (
+          (fills?.length ?? 0) === 0 ? (
+            <View style={styles.noPositions}>
+              <AppText variant="body" muted>
+                No trade history
+              </AppText>
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {fills!.map((f) => (
+                <FillCard
+                  key={f.key}
+                  f={f}
+                  instrument={instrumentForCoin(f.coin)}
+                  symbol={symbolForCoin(f.coin)}
+                  hidden={privacyMode}
+                  expanded={expanded.has('fill:' + f.key)}
+                  onToggle={() => toggleExpand('fill:' + f.key)}
+                />
+              ))}
+            </View>
+          )
+        ) : tab === 'funding' ? (
+          fundingHistoryLoading && !fundingHistory ? (
+            <HistoryLoading />
+          ) : fundingHistoryError ? (
+            <HistoryError label="funding history" onRetry={() => refetchFundingHistory()} />
+          ) : (fundingHistory?.length ?? 0) === 0 ? (
+            <HistoryEmpty
+              title="No recent funding payments"
+              detail="Funding settlements appear here after a perp position crosses an hourly interval."
+            />
+          ) : (
+            <View style={styles.historyList}>
+              <HistoryIntro
+                icon="swap-vertical-outline"
+                title="Funding history"
+                detail="Positive payments were received; negative payments were paid."
               />
+              {fundingHistory!.map((row) => (
+                <FundingHistoryCard key={row.key} row={row} hidden={privacyMode} />
+              ))}
+            </View>
+          )
+        ) : interestHistoryLoading && !interestHistory ? (
+          <HistoryLoading />
+        ) : interestHistoryError ? (
+          <HistoryError label="interest history" onRetry={() => refetchInterestHistory()} />
+        ) : (interestHistory?.length ?? 0) === 0 ? (
+          <HistoryEmpty
+            title="No interest history"
+            detail="Portfolio-margin borrow charges and supply earnings will appear here each hour."
+          />
+        ) : (
+          <View style={styles.historyList}>
+            <HistoryIntro
+              icon="time-outline"
+              title="Interest history"
+              detail="Borrow interest is paid; idle supplied balances can earn interest."
+            />
+            {interestHistory!.map((row) => (
+              <InterestHistoryCard key={row.key} row={row} hidden={privacyMode} />
             ))}
           </View>
         )}
@@ -1617,7 +1704,7 @@ function TabButton({
   onPress,
 }: {
   label: string;
-  count: number;
+  count?: number;
   active: boolean;
   onPress: () => void;
 }) {
@@ -1626,11 +1713,13 @@ function TabButton({
       <AppText variant="label" color={active ? Colors.text : Colors.textMuted}>
         {label}
       </AppText>
-      <View style={[styles.tabCount, active && styles.tabCountActive]}>
-        <AppText variant="caption" color={active ? Colors.text : Colors.textFaint}>
-          {count}
-        </AppText>
-      </View>
+      {count != null ? (
+        <View style={[styles.tabCount, active && styles.tabCountActive]}>
+          <AppText variant="caption" color={active ? Colors.text : Colors.textFaint}>
+            {count}
+          </AppText>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -2234,6 +2323,161 @@ function FillCardImpl({
   );
 }
 
+function HistoryLoading() {
+  return (
+    <View style={styles.historyState}>
+      <ActivityIndicator color={Colors.accent} />
+      <AppText variant="caption" muted>Loading recent account history…</AppText>
+    </View>
+  );
+}
+
+function HistoryError({ label, onRetry }: { label: string; onRetry: () => void }) {
+  return (
+    <View style={styles.historyState}>
+      <AppText variant="body" muted>{`Couldn’t load ${label}`}</AppText>
+      <Pressable onPress={onRetry} hitSlop={8}>
+        <AppText variant="label" color={Colors.accent}>Retry</AppText>
+      </Pressable>
+    </View>
+  );
+}
+
+function HistoryEmpty({ title, detail }: { title: string; detail: string }) {
+  return (
+    <View style={styles.historyState}>
+      <View style={styles.historyEmptyIcon}>
+        <Ionicons name="receipt-outline" size={22} color={Colors.textFaint} />
+      </View>
+      <AppText variant="body">{title}</AppText>
+      <AppText variant="caption" muted style={styles.historyEmptyDetail}>
+        {detail}
+      </AppText>
+    </View>
+  );
+}
+
+function HistoryIntro({
+  icon,
+  title,
+  detail,
+}: {
+  icon: 'swap-vertical-outline' | 'time-outline';
+  title: string;
+  detail: string;
+}) {
+  return (
+    <View style={styles.historyIntro}>
+      <View style={styles.historyIntroIcon}>
+        <Ionicons name={icon} size={16} color={Colors.accent} />
+      </View>
+      <View style={styles.historyIntroCopy}>
+        <AppText variant="label">{title}</AppText>
+        <AppText variant="caption" muted>{detail}</AppText>
+      </View>
+    </View>
+  );
+}
+
+const FundingHistoryCard = memo(function FundingHistoryCard({
+  row,
+  hidden,
+}: {
+  row: HlUserFunding;
+  hidden: boolean;
+}) {
+  const side = row.signedSize >= 0 ? 'Long' : 'Short';
+  const sideColor = row.signedSize >= 0 ? Colors.up : Colors.down;
+  const paymentColor = row.payment > 0 ? Colors.up : row.payment < 0 ? Colors.down : Colors.textMuted;
+  const symbol = cleanCoin(row.coin);
+  return (
+    <View style={styles.historyCard}>
+      <View style={styles.historyCardTop}>
+        <View style={styles.historyMarket}>
+          <View style={styles.historyTitleRow}>
+            <AppText style={styles.historySymbol}>{symbol}</AppText>
+            <View style={[styles.historySideBadge, { backgroundColor: sideColor + '18' }]}>
+              <AppText variant="caption" color={sideColor}>{side}</AppText>
+            </View>
+          </View>
+          <AppText variant="caption" muted numeric>{fullWhen(row.timestamp)}</AppText>
+        </View>
+        <View style={styles.historyPayment}>
+          <AppText variant="caption" muted>Payment</AppText>
+          <AppText numeric color={paymentColor} style={styles.historyPaymentValue}>
+            {hidden ? `${MASK} USDC` : `${historyTokenAmount(row.payment)} USDC`}
+          </AppText>
+        </View>
+      </View>
+      <View style={styles.historyMetaRow}>
+        <View style={styles.historyMetaCell}>
+          <AppText variant="caption" muted>Size</AppText>
+          <AppText variant="label" numeric numberOfLines={1}>
+            {hidden ? `${MASK} ${symbol}` : `${qty(Math.abs(row.signedSize))} ${symbol}`}
+          </AppText>
+        </View>
+        <View style={styles.historyMetaCell}>
+          <AppText variant="caption" muted>Rate</AppText>
+          <AppText variant="label" numeric>{formatFundingRatePercent(row.rate)}</AppText>
+        </View>
+        <View style={[styles.historyMetaCell, styles.historyMetaRight]}>
+          <AppText variant="caption" muted>Interval</AppText>
+          <AppText variant="label" numeric>
+            {row.sampleCount && row.sampleCount > 1 ? `${row.sampleCount}h grouped` : 'Hourly'}
+          </AppText>
+        </View>
+      </View>
+    </View>
+  );
+});
+
+const InterestHistoryCard = memo(function InterestHistoryCard({
+  row,
+  hidden,
+}: {
+  row: HlBorrowLendInterest;
+  hidden: boolean;
+}) {
+  const paid = row.paid > 0;
+  const earned = row.earned > 0;
+  return (
+    <View style={styles.historyCard}>
+      <View style={styles.interestHead}>
+        <View style={styles.interestAssetIcon}>
+          <AppText variant="label">{row.token.slice(0, 1)}</AppText>
+        </View>
+        <View style={styles.interestAssetCopy}>
+          <AppText style={styles.historySymbol}>{row.token}</AppText>
+          <AppText variant="caption" muted numeric>{fullWhen(row.timestamp)}</AppText>
+        </View>
+      </View>
+      <View style={styles.interestValues}>
+        <View style={styles.interestValueCell}>
+          <AppText variant="caption" muted>Paid</AppText>
+          <AppText
+            numeric
+            color={paid ? Colors.down : Colors.textFaint}
+            style={styles.interestValue}>
+            {hidden ? MASK : paid ? historyTokenAmount(row.paid, '-') : '—'}
+          </AppText>
+          <AppText variant="caption" color={Colors.textFaint}>{row.token}</AppText>
+        </View>
+        <View style={styles.interestValueDivider} />
+        <View style={styles.interestValueCell}>
+          <AppText variant="caption" muted>Earned</AppText>
+          <AppText
+            numeric
+            color={earned ? Colors.up : Colors.textFaint}
+            style={styles.interestValue}>
+            {hidden ? MASK : earned ? historyTokenAmount(row.earned, '+') : '—'}
+          </AppText>
+          <AppText variant="caption" color={Colors.textFaint}>{row.token}</AppText>
+        </View>
+      </View>
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   scroll: { paddingBottom: Spacing.xxl },
@@ -2354,6 +2598,90 @@ const styles = StyleSheet.create({
   },
   tabCountActive: { backgroundColor: 'rgba(41,98,255,0.28)' },
   noPositions: { padding: Spacing.xl, alignItems: 'center' },
+
+  historyList: { paddingTop: Spacing.sm, gap: Spacing.sm },
+  historyState: {
+    minHeight: 190,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+  },
+  historyEmptyIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    marginBottom: Spacing.xs,
+  },
+  historyEmptyDetail: { maxWidth: 300, textAlign: 'center', lineHeight: 16 },
+  historyIntro: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: 2,
+    paddingHorizontal: 2,
+  },
+  historyIntroIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.accentSoft,
+  },
+  historyIntroCopy: { flex: 1, gap: 2 },
+  historyCard: {
+    marginHorizontal: Spacing.lg,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.075)',
+    backgroundColor: 'rgba(17,23,31,0.72)',
+    gap: Spacing.md,
+  },
+  historyCardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
+  historyMarket: { flex: 1, minWidth: 0, gap: 4 },
+  historyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  historySymbol: { color: Colors.text, fontSize: 17, lineHeight: 21, fontWeight: '700' },
+  historySideBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+  },
+  historyPayment: { flex: 1.2, minWidth: 0, alignItems: 'flex-end', gap: 3 },
+  historyPaymentValue: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  historyMetaRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingTop: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+  },
+  historyMetaCell: { flex: 1, minWidth: 0, gap: 3 },
+  historyMetaRight: { alignItems: 'flex-end' },
+  interestHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  interestAssetIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  interestAssetCopy: { flex: 1, gap: 3 },
+  interestValues: {
+    flexDirection: 'row',
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    paddingVertical: Spacing.sm,
+  },
+  interestValueCell: { flex: 1, alignItems: 'center', gap: 2 },
+  interestValueDivider: { width: StyleSheet.hairlineWidth, backgroundColor: Colors.border },
+  interestValue: { fontSize: 16, lineHeight: 21, fontWeight: '700' },
 
   // Rows mirror the main watchlist (SymbolRow): full-width hairline, logo 40,
   // 16/700 symbol, 16/600 value, 13px muted sub.
