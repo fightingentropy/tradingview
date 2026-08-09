@@ -1882,7 +1882,7 @@ export function TradeTicket({
         {/* Above-keyboard bar: decimal-pads have no Done key, so this is the only
             way to dismiss. Steppers nudge the focused field. */}
         {Platform.OS === 'ios' && !result ? (
-          <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor="#0B0E13">
+          <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor={Colors.background}>
             <View style={styles.accessory}>
               <View style={styles.steppers}>
                 <Pressable onPress={() => nudge(-1)} hitSlop={8} style={styles.stepBtn}>

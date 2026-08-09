@@ -132,7 +132,7 @@ export default function MarketsScreen() {
     // consumes the safe area — a second inset here is what left the big gap.
     <Screen edges={[]}>
       <View style={styles.searchWrap}>
-        <Ionicons name="search" size={18} color={Colors.textMuted} />
+        <Ionicons name="search" size={20} color={Colors.textMuted} />
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -144,7 +144,7 @@ export default function MarketsScreen() {
         />
         {search ? (
           <Pressable hitSlop={8} onPress={() => setSearch('')} accessibilityLabel="Clear search">
-            <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+            <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
           </Pressable>
         ) : null}
       </View>
@@ -195,32 +195,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    margin: Spacing.lg,
-    marginBottom: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    height: 40,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    height: 48,
     borderRadius: Radius.md,
     backgroundColor: Colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
   },
-  input: { flex: 1, color: Colors.text, fontSize: 16, fontWeight: '500' },
+  input: { flex: 1, color: Colors.text, fontSize: 17, lineHeight: 22, fontWeight: '500' },
   chips: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
+    paddingBottom: Spacing.md,
     gap: Spacing.sm,
   },
   chipScroller: { flex: 1 },
   chipGroup: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingRight: Spacing.sm },
   chip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 8,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.045)',
   },
-  chipActive: { backgroundColor: Colors.surfaceAlt },
-  chipLabel: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
+  chipActive: {
+    backgroundColor: Colors.accentSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(120,144,255,0.24)',
+  },
+  chipLabel: { fontSize: 14, lineHeight: 18, fontWeight: '600', color: Colors.textMuted },
   chipLabelActive: { color: Colors.text },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

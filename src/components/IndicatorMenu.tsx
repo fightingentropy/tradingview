@@ -4,6 +4,7 @@ import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui/AppText';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors, Indicators, Radius, Spacing } from '@/constants/theme';
 import { SMA_OPTIONS, useChartSettings } from '@/store/chartSettings';
 
@@ -66,7 +67,7 @@ export function IndicatorMenu() {
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-        <View style={[styles.card, { bottom: insets.bottom + 56 }]}>
+        <GlassSurface style={[styles.card, { bottom: insets.bottom + 62 }]}>
           <AppText variant="caption" muted style={styles.cardLabel}>
             INDICATORS
           </AppText>
@@ -89,7 +90,7 @@ export function IndicatorMenu() {
               ) : null}
             </Pressable>
           ))}
-        </View>
+        </GlassSurface>
       </Modal>
     </>
   );
@@ -97,8 +98,8 @@ export function IndicatorMenu() {
 
 const styles = StyleSheet.create({
   trigger: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -120,11 +121,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: Spacing.sm,
     minWidth: 184,
-    backgroundColor: Colors.surfaceAlt,
-    borderRadius: Radius.md,
+    borderRadius: Radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
-    paddingVertical: Spacing.xs,
+    paddingVertical: 7,
     // Float above the chart toolbar like a popover.
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -143,7 +143,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.md,
     paddingHorizontal: Spacing.md,
-    paddingVertical: 10,
+    minHeight: 48,
+    paddingVertical: 11,
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
   rowLabel: { flex: 1 },

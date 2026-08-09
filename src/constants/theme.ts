@@ -1,22 +1,20 @@
-/**
- * Dark, TradingView-style design tokens. The app is dark-only for now.
- */
+/** Dark, low-contrast design tokens. The app is intentionally dark-only. */
 import { Platform } from 'react-native';
 
 export const Colors = {
-  background: '#000000',
-  surface: '#141A22',
-  surfaceAlt: '#1C2530',
-  surfacePress: '#222C39',
-  border: '#1B212B',
-  text: '#EAECEF',
-  textMuted: '#8A929E',
-  textFaint: '#5A626E',
-  up: '#2EBD85',
-  down: '#F6465D',
-  accent: '#2962FF',
-  accentSoft: '#16243F',
-  warning: '#F0B90B',
+  background: '#05070A',
+  surface: '#0D1117',
+  surfaceAlt: '#151B24',
+  surfacePress: '#1B2430',
+  border: 'rgba(255, 255, 255, 0.08)',
+  text: '#F4F7FB',
+  textMuted: '#9DA7B5',
+  textFaint: '#687383',
+  up: '#32D7A0',
+  down: '#FF6077',
+  accent: '#7890FF',
+  accentSoft: 'rgba(120, 144, 255, 0.16)',
+  warning: '#F4C55B',
 } as const;
 
 /**
@@ -25,17 +23,17 @@ export const Colors = {
  * leaving the trading palette above intact for charts and market data.
  */
 export const NewsColors = {
-  background: '#000000',
-  surface: '#080808',
-  surfaceRaised: '#10100F',
-  chip: '#171716',
-  selected: '#F6F6F2',
-  onSelected: '#000000',
-  text: '#F1F1EC',
-  textMuted: '#98989A',
-  textFaint: '#626264',
-  border: 'rgba(255, 255, 255, 0.105)',
-  controlBorder: 'rgba(255, 255, 255, 0.36)',
+  background: Colors.background,
+  surface: Colors.surface,
+  surfaceRaised: Colors.surfaceAlt,
+  chip: 'rgba(255, 255, 255, 0.055)',
+  selected: Colors.text,
+  onSelected: Colors.background,
+  text: Colors.text,
+  textMuted: Colors.textMuted,
+  textFaint: Colors.textFaint,
+  border: Colors.border,
+  controlBorder: 'rgba(255, 255, 255, 0.18)',
 } as const;
 
 /** Indicator/overlay line colors, kept distinct from price up/down. */
@@ -52,22 +50,24 @@ export const Spacing = {
   lg: 16,
   xl: 24,
   xxl: 32,
+  xxxl: 48,
 } as const;
 
 export const Radius = {
-  sm: 6,
-  md: 10,
-  lg: 16,
+  sm: 10,
+  md: 14,
+  lg: 20,
+  xl: 28,
   pill: 999,
 } as const;
 
 export const FontSize = {
-  xs: 11,
-  sm: 13,
-  md: 15,
-  lg: 17,
-  xl: 22,
-  xxl: 30,
+  xs: 12,
+  sm: 14,
+  md: 16,
+  lg: 18,
+  xl: 24,
+  xxl: 34,
 } as const;
 
 /** Monospaced/tabular fonts keep streaming numbers from jittering. */

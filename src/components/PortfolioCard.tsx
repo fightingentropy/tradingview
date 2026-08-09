@@ -141,8 +141,8 @@ export function PortfolioCard({ hidden, compact = false }: { hidden: boolean; co
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
-    padding: Spacing.lg,
+    borderRadius: Radius.lg,
+    padding: 18,
     marginBottom: Spacing.md,
     gap: Spacing.sm,
   },

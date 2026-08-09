@@ -11,6 +11,7 @@ import {
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import { VenueBadge } from '@/components/VenueBadge';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import type { AlertDirection, Instrument, PriceAlert } from '@/domain/types';
@@ -137,7 +138,7 @@ function SymbolMenuSheet({
     <Modal visible={!!instrument} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
       {instrument ? (
-        <View style={styles.sheet}>
+        <GlassSurface style={styles.sheet}>
           <View style={styles.handle} />
           <ScrollView
             keyboardShouldPersistTaps="handled"
@@ -281,7 +282,7 @@ function SymbolMenuSheet({
               </Pressable>
             </View>
           </ScrollView>
-        </View>
+        </GlassSurface>
       ) : null}
     </Modal>
   );
@@ -359,9 +360,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     maxHeight: '88%',
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: Radius.lg,
-    borderTopRightRadius: Radius.lg,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
   },
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
-    height: 44,
+    height: 48,
     borderRadius: Radius.md,
     backgroundColor: Colors.background,
     borderWidth: 1,
@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: Spacing.lg,
-    height: 44,
+    height: 48,
     borderRadius: Radius.md,
     backgroundColor: Colors.accent,
   },

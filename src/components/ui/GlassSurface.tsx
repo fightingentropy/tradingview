@@ -13,14 +13,16 @@ type Props = PropsWithChildren<{
   style?: StyleProp<ViewStyle>;
   tintColor?: string;
   interactive?: boolean;
+  effectStyle?: 'regular' | 'clear';
 }>;
 
-/** Native dark Liquid Glass with a restrained lit rim and a solid fallback. */
+/** Native Liquid Glass with a quiet rim and a layered near-black fallback. */
 export function GlassSurface({
   children,
   style,
-  tintColor = 'rgba(0,0,0,0.58)',
+  tintColor = 'rgba(8,11,16,0.54)',
   interactive = false,
+  effectStyle = 'clear',
 }: Props) {
   const content = (
     <>
@@ -33,7 +35,7 @@ export function GlassSurface({
     return (
       <GlassView
         style={[styles.surface, style]}
-        glassEffectStyle="regular"
+        glassEffectStyle={effectStyle}
         colorScheme="dark"
         tintColor={tintColor}
         isInteractive={interactive}>
@@ -49,15 +51,15 @@ const styles = StyleSheet.create({
   surface: {
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.13)',
+    borderColor: 'rgba(255,255,255,0.085)',
   },
-  fallback: { backgroundColor: 'rgba(18,18,20,0.94)' },
+  fallback: { backgroundColor: 'rgba(14,18,24,0.96)' },
   topHighlight: {
     position: 'absolute',
     top: 0,
-    left: 20,
-    right: 20,
+    left: 24,
+    right: 24,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.34)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
 });

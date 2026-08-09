@@ -24,9 +24,9 @@ import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
-// SymbolRow is fixed-height: 40px logo + 13px padding top/bottom + a hairline
+// SymbolRow is fixed-height: 44px logo + 14px padding top/bottom + a hairline
 // bottom border. Kept here so getItemLayout can skip per-row measurement.
-const ROW_HEIGHT = 66 + StyleSheet.hairlineWidth;
+const ROW_HEIGHT = 72 + StyleSheet.hairlineWidth;
 
 // White TradingView glyph as a local SVG data-URI (expo-image renders SVG), so the
 // header mark is the reference's bare white logo with no network dependency.
@@ -40,13 +40,13 @@ function WatchlistHeader({ onMore, onAdd }: { onMore: () => void; onAdd: () => v
   return (
     <View style={styles.header}>
       <Pressable hitSlop={10} style={styles.headerSide} onPress={onMore} accessibilityLabel="Watchlist options">
-        <Ionicons name="ellipsis-horizontal" size={22} color={Colors.text} />
+        <Ionicons name="ellipsis-horizontal" size={24} color={Colors.text} />
       </Pressable>
       <View style={styles.headerCenter}>
         <Image source={TV_MARK} style={styles.headerLogo} contentFit="contain" />
       </View>
       <Pressable hitSlop={10} style={styles.headerSide} onPress={onAdd} accessibilityLabel="Add symbols">
-        <Ionicons name="add" size={28} color={Colors.text} />
+        <Ionicons name="add" size={30} color={Colors.text} />
       </Pressable>
     </View>
   );
@@ -409,16 +409,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 44,
-    paddingHorizontal: Spacing.md,
+    height: 54,
+    paddingHorizontal: Spacing.sm,
   },
-  headerSide: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  headerSide: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  headerLogo: { width: 30, height: 30 },
-  editSide: { height: 44, justifyContent: 'center', paddingHorizontal: Spacing.xs, zIndex: 1 },
+  headerLogo: { width: 34, height: 34 },
+  editSide: { height: 48, justifyContent: 'center', paddingHorizontal: Spacing.sm, zIndex: 1 },
   editSideRight: { marginLeft: 'auto' },
-  editAction: { fontSize: 16, fontWeight: '500' },
-  editDone: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  editAction: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
+  editDone: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: Colors.text },
   editTitleWrap: {
     position: 'absolute',
     top: 0,
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  editTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  editTitle: { fontSize: 18, lineHeight: 23, fontWeight: '700', color: Colors.text },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   listWrap: { flex: 1 },
   retry: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg },

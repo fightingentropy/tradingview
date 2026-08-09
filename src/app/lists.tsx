@@ -89,7 +89,10 @@ export default function ListsScreen() {
             </Pressable>
           );
           return (
-            <Reanimated.View key={l.id} layout={LinearTransition.duration(220)}>
+            <Reanimated.View
+              key={l.id}
+              layout={LinearTransition.duration(220)}
+              style={styles.rowShell}>
               {canDelete ? (
                 <ReanimatedSwipeable
                   friction={2}
@@ -122,7 +125,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
+    height: 56,
     paddingHorizontal: Spacing.md,
   },
   back: { flexDirection: 'row', alignItems: 'center', maxWidth: 160, zIndex: 1 },
@@ -136,18 +139,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: { fontSize: 17, fontWeight: '700', color: Colors.text },
+  title: { fontSize: 20, lineHeight: 25, fontWeight: '700', color: Colors.text },
   add: { marginLeft: 'auto', width: 36, alignItems: 'flex-end', zIndex: 1 },
-  listContent: { paddingTop: Spacing.sm },
-  row: {
+  listContent: {
     paddingHorizontal: Spacing.lg,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    // Opaque so the row slides cleanly over the red Delete action when swiped.
-    backgroundColor: Colors.background,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xxl,
+    gap: 10,
   },
-  rowActive: { backgroundColor: '#E8EAED' },
+  rowShell: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+  },
+  row: {
+    minHeight: 76,
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    // Opaque so the row slides cleanly over the red Delete action when swiped.
+    backgroundColor: Colors.surface,
+  },
+  rowActive: { backgroundColor: Colors.accentSoft },
   deleteAction: {
     width: 88,
     backgroundColor: Colors.down,
@@ -157,8 +170,8 @@ const styles = StyleSheet.create({
   },
   deleteLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
   rowPressed: { backgroundColor: Colors.surface },
-  name: { fontSize: 20, fontWeight: '700', color: Colors.text },
-  nameActive: { color: '#0B0E11' },
-  preview: { fontSize: 15, color: Colors.textMuted, marginTop: 4 },
-  previewActive: { color: '#4A515C' },
+  name: { fontSize: 20, lineHeight: 25, fontWeight: '700', color: Colors.text },
+  nameActive: { color: Colors.text },
+  preview: { fontSize: 14, lineHeight: 19, color: Colors.textMuted, marginTop: 4 },
+  previewActive: { color: Colors.textMuted },
 });

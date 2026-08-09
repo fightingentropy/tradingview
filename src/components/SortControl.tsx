@@ -59,7 +59,7 @@ export function SortControl({
       accessibilityRole="button"
       accessibilityLabel={m.a11y}>
       {LIQUID_GLASS ? (
-        <GlassView style={[styles.pill, rim]} glassEffectStyle="regular" colorScheme="dark">
+        <GlassView style={[styles.pill, rim]} glassEffectStyle="clear" colorScheme="dark">
           {inner}
         </GlassView>
       ) : (
@@ -75,16 +75,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     // Faint top-edge highlight reads as the lit rim of glass (matches WatchlistMenu).
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.09)',
   },
   // Used only when Liquid Glass isn't available — a translucent material.
-  fallback: { backgroundColor: 'rgba(255,255,255,0.07)' },
+  fallback: { backgroundColor: Colors.surfaceAlt },
   inner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    minHeight: 36,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
   },
   label: { fontSize: 13, fontWeight: '700' },
 });

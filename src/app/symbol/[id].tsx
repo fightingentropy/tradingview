@@ -1092,7 +1092,7 @@ function GlassTradeButton({ side, onPress }: { side: 'buy' | 'sell'; onPress: ()
     return (
       <GlassView
         style={surfaceStyle}
-        glassEffectStyle="regular"
+        glassEffectStyle="clear"
         colorScheme="dark"
         tintColor={color + '3D'}
         isInteractive>
@@ -1113,20 +1113,23 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.xs, rowGap: 2 },
   detailTabs: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    padding: 4,
+    gap: 4,
+    borderRadius: Radius.md,
+    backgroundColor: 'rgba(255,255,255,0.045)',
   },
   detailTab: {
-    minWidth: 76,
+    flex: 1,
+    minHeight: 38,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: Spacing.md,
-    paddingVertical: 10,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    paddingVertical: 8,
+    borderRadius: Radius.sm,
   },
-  detailTabActive: { borderBottomColor: Colors.accent },
+  detailTabActive: { backgroundColor: Colors.accentSoft },
   chartArea: { flex: 1, marginTop: Spacing.sm },
   positionFallback: {
     position: 'absolute',
@@ -1144,10 +1147,10 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   positionFallbackPressed: { backgroundColor: Colors.surfacePress },
-  controls: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.sm },
+  controls: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md },
   typeToggle: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1156,7 +1159,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xs,
   },
   tradeBtn: {
     flex: 1,
@@ -1166,7 +1170,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
-  tradeBtnFallback: { backgroundColor: 'rgba(20,26,34,0.92)' },
+  tradeBtnFallback: { backgroundColor: Colors.surfaceAlt },
   tradeBtnPressable: {
     flex: 1,
     minHeight: 56,
@@ -1182,8 +1186,14 @@ const styles = StyleSheet.create({
     left: 22,
     right: 22,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.48)',
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
   tradeBtnContent: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  tradeBtnLabel: { color: Colors.text, fontSize: 16, fontWeight: '700', letterSpacing: 0.2 },
+  tradeBtnLabel: {
+    color: Colors.text,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
 });

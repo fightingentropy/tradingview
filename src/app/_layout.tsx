@@ -20,7 +20,7 @@ const navTheme = {
   colors: {
     ...DarkTheme.colors,
     background: Colors.background,
-    card: Colors.background,
+    card: Colors.surface,
     text: Colors.text,
     border: Colors.border,
     primary: Colors.accent,
@@ -72,6 +72,7 @@ export default function RootLayout() {
                 screenOptions={{
                   headerStyle: { backgroundColor: Colors.background },
                   headerTintColor: Colors.text,
+                  headerTitleStyle: { fontSize: 20, fontWeight: '700', color: Colors.text },
                   headerShadowVisible: false,
                   headerBackButtonDisplayMode: 'minimal',
                   contentStyle: { backgroundColor: Colors.background },
@@ -114,14 +115,15 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
   },
-  fallbackTitle: { color: Colors.text, fontSize: 18, fontWeight: '700' },
-  fallbackMsg: { color: Colors.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  fallbackTitle: { color: Colors.text, fontSize: 24, lineHeight: 30, fontWeight: '700' },
+  fallbackMsg: { color: Colors.textMuted, fontSize: 15, lineHeight: 22, textAlign: 'center' },
   fallbackBtn: {
     marginTop: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
+    minHeight: 48,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
     backgroundColor: Colors.surfaceAlt,
   },
-  fallbackBtnText: { color: Colors.accent, fontSize: 15, fontWeight: '600' },
+  fallbackBtnText: { color: Colors.text, fontSize: 16, fontWeight: '700' },
 });

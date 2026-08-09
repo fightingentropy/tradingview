@@ -179,7 +179,7 @@ export default function NewsScreen() {
                   <Ionicons
                     name={filter.icon}
                     size={13}
-                    color={active ? NewsColors.onSelected : NewsColors.textMuted}
+                    color={active ? Colors.text : NewsColors.textMuted}
                   />
                 ) : null}
                 <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
@@ -291,13 +291,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
-    paddingTop: 10,
-    paddingBottom: 14,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
     minWidth: '100%',
   },
   chip: {
-    minHeight: 36,
-    paddingHorizontal: 14,
+    minHeight: 38,
+    paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -308,15 +308,15 @@ const styles = StyleSheet.create({
     backgroundColor: NewsColors.chip,
   },
   chipActive: {
-    borderColor: NewsColors.selected,
-    backgroundColor: NewsColors.selected,
+    borderColor: 'rgba(120,144,255,0.26)',
+    backgroundColor: Colors.accentSoft,
   },
-  chipLabel: { color: NewsColors.textMuted, fontSize: 13, fontWeight: '600' },
-  chipLabelActive: { color: NewsColors.onSelected },
+  chipLabel: { color: NewsColors.textMuted, fontSize: 14, lineHeight: 18, fontWeight: '600' },
+  chipLabelActive: { color: Colors.text },
   calendarButton: {
     width: 42,
     height: 42,
-    borderRadius: 21,
+    borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
@@ -341,12 +341,13 @@ const styles = StyleSheet.create({
     borderColor: NewsColors.controlBorder,
     marginBottom: 4,
   },
-  stateTitle: { color: NewsColors.text, fontSize: 20, textAlign: 'center' },
+  stateTitle: { color: NewsColors.text, fontSize: 22, lineHeight: 28, textAlign: 'center' },
   stateBody: {
     maxWidth: 430,
     color: NewsColors.textMuted,
     textAlign: 'center',
-    lineHeight: 21,
+    fontSize: 15,
+    lineHeight: 22,
     fontWeight: '400',
   },
   privacyRow: {

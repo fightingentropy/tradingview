@@ -154,7 +154,7 @@ export function WatchlistMenu({
         accessibilityLabel="Dismiss menu"
       />
       {LIQUID_GLASS ? (
-        <GlassView style={cardStyle} glassEffectStyle="regular" colorScheme="dark">
+        <GlassView style={cardStyle} glassEffectStyle="clear" colorScheme="dark">
           {content}
         </GlassView>
       ) : (
@@ -170,12 +170,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: Spacing.sm,
     width: 256,
-    borderRadius: 18,
+    borderRadius: 22,
     paddingVertical: 6,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     // A faint top-edge highlight reads as the lit rim of glass.
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.09)',
     shadowColor: '#000',
     shadowOpacity: 0.5,
     shadowRadius: 24,
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     elevation: 16,
   },
   // Fallback (no Liquid Glass): a near-opaque dark material.
-  cardSolid: { backgroundColor: 'rgba(28,34,43,0.97)' },
+  cardSolid: { backgroundColor: 'rgba(14,18,24,0.98)' },
   header: {
     fontSize: 13,
     color: Colors.textMuted,
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 46,
+    height: 50,
     paddingHorizontal: Spacing.lg,
   },
   rowPressed: { backgroundColor: 'rgba(255,255,255,0.10)' },

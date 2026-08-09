@@ -40,9 +40,11 @@ const styles = StyleSheet.create({
   },
   item: {
     flex: 1,
+    minHeight: 36,
     alignItems: 'center',
-    paddingVertical: 6,
+    justifyContent: 'center',
+    paddingVertical: 7,
     borderRadius: Radius.sm,
   },
-  itemActive: { backgroundColor: Colors.surfaceAlt },
+  itemActive: { backgroundColor: Colors.accentSoft },
 });

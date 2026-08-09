@@ -360,21 +360,21 @@ function NetworkBadge({ network }: { network: HlNetwork }) {
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 18 },
+  card: { borderRadius: Radius.lg },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 58,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 13,
+    minHeight: 66,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
   },
   actionRow: {
-    minHeight: 58,
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: 18,
   },
   rowPressed: { backgroundColor: 'rgba(255,255,255,0.065)' },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },

@@ -292,7 +292,7 @@ export function MarginSheet({
         </SheetSurface>
 
         {Platform.OS === 'ios' ? (
-          <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor="#0B0E13">
+          <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor={Colors.background}>
             <View style={styles.accessory}>
               {mode === 'add' ? (
                 <Pressable onPress={setMax} hitSlop={8} style={styles.accBtn} disabled={cap <= 0}>

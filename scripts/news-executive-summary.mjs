@@ -4,22 +4,36 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const NEWS_EXECUTIVE_SUMMARY_INTERVAL_MS = 60 * 60_000;
 export const NEWS_EXECUTIVE_SUMMARY_MODEL = 'gpt-5.6-sol';
 export const NEWS_EXECUTIVE_SUMMARY_REASONING_EFFORT = 'xhigh';
 export const NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION = 2;
+export const NEWS_EXECUTIVE_SUMMARY_TIME_ZONE = 'America/New_York';
+export const NEWS_EXECUTIVE_SUMMARY_SCHEDULE = Object.freeze([
+  Object.freeze({ id: 'open', hour: 9, minute: 35 }),
+  Object.freeze({ id: 'close', hour: 16, minute: 5 }),
+]);
 
 const MAX_ANALYSIS_ITEMS = 180;
 const MAX_ITEM_TEXT_LENGTH = 1_600;
-const CONTEXT_WINDOW_MS = 6 * 60 * 60_000;
+const CONTEXT_WINDOW_MS = 72 * 60 * 60_000;
 const CODEX_TIMEOUT_MS = 55 * 60_000;
-const RETRY_INTERVAL_MS = 15 * 60_000;
 const sourceTypes = new Set(['x', 'telegram', 'digg', 'paste']);
+const weekdays = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
 const pulseLabels = new Set(['risk-on', 'risk-off', 'mixed', 'calm', 'event-driven']);
 const changeLabels = new Set(['new', 'changed', 'unchanged']);
 const confidenceLabels = new Set(['confirmed', 'reported', 'disputed', 'speculative']);
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const schemaPath = path.join(scriptDirectory, 'news-executive-summary.schema.json');
+const scheduleClock = new Intl.DateTimeFormat('en-US', {
+  timeZone: NEWS_EXECUTIVE_SUMMARY_TIME_ZONE,
+  weekday: 'short',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
 const defaultStateDirectory = path.join(
   os.homedir(),
   'Library',
@@ -151,11 +165,27 @@ export function normalizeExecutiveSummary(value) {
   };
 }
 
+export function executiveSummaryScheduleSlot(now = Date.now()) {
+  const timestamp = now instanceof Date ? now.getTime() : Number(now);
+  if (!Number.isFinite(timestamp)) return undefined;
+  const clock = Object.fromEntries(
+    scheduleClock.formatToParts(new Date(timestamp)).map(({ type, value }) => [type, value]),
+  );
+  if (!weekdays.has(clock.weekday)) return undefined;
+  const minuteOfDay = Number(clock.hour) * 60 + Number(clock.minute);
+  const slot = NEWS_EXECUTIVE_SUMMARY_SCHEDULE.findLast(
+    ({ hour, minute }) => minuteOfDay >= hour * 60 + minute,
+  );
+  return slot ? `${clock.year}-${clock.month}-${clock.day}:${slot.id}` : undefined;
+}
+
 export function shouldGenerateExecutiveSummary(summary, now = Date.now()) {
+  const currentSlot = executiveSummaryScheduleSlot(now);
+  if (!currentSlot) return false;
   if (!summary) return true;
   if (summary.formatVersion !== NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION) return true;
   const generatedAt = Date.parse(summary.generatedAt);
-  return !Number.isFinite(generatedAt) || now - generatedAt >= NEWS_EXECUTIVE_SUMMARY_INTERVAL_MS;
+  return !Number.isFinite(generatedAt) || executiveSummaryScheduleSlot(generatedAt) !== currentSlot;
 }
 
 export function selectExecutiveSummaryItems(items, now = Date.now()) {
@@ -332,14 +362,26 @@ export class NewsExecutiveSummaryService {
   constructor({ stateDirectory = defaultStateDirectory } = {}) {
     this.stateDirectory = stateDirectory;
     this.summaryPath = path.join(stateDirectory, 'executive-summary.json');
+    this.attemptPath = path.join(stateDirectory, 'executive-summary-attempt.json');
     this.inFlight = undefined;
     this.lastError = undefined;
     this.lastAttemptAt = undefined;
+    this.lastAttemptSlot = undefined;
     mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
     try {
       this.summary = normalizeExecutiveSummary(JSON.parse(readFileSync(this.summaryPath, 'utf8')));
     } catch {
       this.summary = undefined;
+    }
+    try {
+      const attempt = JSON.parse(readFileSync(this.attemptPath, 'utf8'));
+      const attemptedAt = Date.parse(attempt.attemptedAt);
+      if (typeof attempt.slot === 'string' && Number.isFinite(attemptedAt)) {
+        this.lastAttemptSlot = attempt.slot;
+        this.lastAttemptAt = attemptedAt;
+      }
+    } catch {
+      // The first scheduled run creates the attempt marker.
     }
   }
 
@@ -353,7 +395,9 @@ export class NewsExecutiveSummaryService {
       generatedAt: this.summary?.generatedAt ?? null,
       lastError: this.lastError ?? null,
       lastAttemptAt: this.lastAttemptAt ? new Date(this.lastAttemptAt).toISOString() : null,
-      intervalMs: NEWS_EXECUTIVE_SUMMARY_INTERVAL_MS,
+      lastAttemptSlot: this.lastAttemptSlot ?? null,
+      schedule: NEWS_EXECUTIVE_SUMMARY_SCHEDULE,
+      timeZone: NEWS_EXECUTIVE_SUMMARY_TIME_ZONE,
       model: NEWS_EXECUTIVE_SUMMARY_MODEL,
       reasoningEffort: NEWS_EXECUTIVE_SUMMARY_REASONING_EFFORT,
     };
@@ -362,12 +406,18 @@ export class NewsExecutiveSummaryService {
   async refresh(items, { force = false, now = Date.now() } = {}) {
     if (this.inFlight) return this.inFlight;
     if (!force && !shouldGenerateExecutiveSummary(this.summary, now)) return this.summary;
-    if (!force && this.lastAttemptAt && now - this.lastAttemptAt < RETRY_INTERVAL_MS) {
-      return this.summary;
-    }
+    const scheduledSlot = executiveSummaryScheduleSlot(now);
+    if (!force && this.lastAttemptSlot === scheduledSlot) return this.summary;
     const analysisItems = selectExecutiveSummaryItems(items, now);
     if (analysisItems.length === 0) return this.summary;
     this.lastAttemptAt = now;
+    this.lastAttemptSlot = scheduledSlot ?? `forced:${new Date(now).toISOString()}`;
+    const attemptTemporaryPath = `${this.attemptPath}.${process.pid}.tmp`;
+    writeFileSync(attemptTemporaryPath, `${JSON.stringify({
+      slot: this.lastAttemptSlot,
+      attemptedAt: new Date(now).toISOString(),
+    }, null, 2)}\n`, { mode: 0o600 });
+    renameSync(attemptTemporaryPath, this.attemptPath);
 
     this.inFlight = (async () => {
       const outputPath = path.join(this.stateDirectory, `executive-summary-output-${process.pid}.json`);

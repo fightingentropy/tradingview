@@ -133,15 +133,17 @@ The included bridge:
   Upstream pulls are cached independently: X refreshes hourly, Telegram every five minutes,
   Digg hourly, and Paste hourly. Each scheduler tick detects newly published items and publishes an
   HMAC-authenticated snapshot to the relay without re-fetching sources that are still fresh.
-- Builds a new executive pulse once per hour from up to six hours of recent source context. The
+- Builds a new executive pulse at 09:35 and 16:05 `America/New_York`, Monday through Friday,
+  from up to 72 hours of recent source context. The
   format is deliberately terse: a nine-word headline, a two-sentence lead, exactly three ranked
   developments with change and confidence labels, optional secondary signals, and two watch items.
   It
   invokes the Mac mini's authenticated Codex CLI in an ephemeral, read-only session with
   `gpt-5.6-sol`, `xhigh` reasoning, web search disabled, and a strict JSON output schema.
-- Persists the last valid pulse under `~/Library/Application Support/TradingView News/` and keeps
-  serving it if a later Codex run fails. Failed runs retry after 15 minutes without interrupting
-  the raw feed or relay publication. Summary runs have a 55-minute guard and never block the
+- Persists the last valid pulse and each scheduled attempt under
+  `~/Library/Application Support/TradingView News/`, keeping the prior pulse if a later Codex run
+  fails. Each slot is attempted at most once, including across service restarts. Summary runs have
+  a 55-minute guard and never block the
   one-minute source scheduler while Codex is reasoning.
 - Persists push tokens and the seen-item watermark in the user's Application
   Support directory with user-only permissions.

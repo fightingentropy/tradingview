@@ -247,7 +247,7 @@ const resolvedIdx = new Map<string, number>();
 function SymbolLogoImpl({
   instrument,
   coin,
-  size = 40,
+  size = 44,
 }: {
   /** Full catalog instrument (markets/positions). */
   instrument?: Instrument;

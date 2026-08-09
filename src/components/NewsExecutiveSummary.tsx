@@ -66,7 +66,7 @@ const confidenceColor: Record<NewsConfidence, string> = {
 
 function StatusBadge({ label, color }: { label: string; color: string }) {
   return (
-    <View style={[styles.statusBadge, { borderColor: color }]}>
+    <View style={styles.statusBadge}>
       <View style={[styles.statusDot, { backgroundColor: color }]} />
       <AppText style={[styles.statusText, { color }]}>{label}</AppText>
     </View>
@@ -116,80 +116,111 @@ export function NewsExecutiveSummaryView({
       </View>
 
       <View style={styles.sectionHeading}>
-        <Ionicons name="newspaper-outline" size={17} color={NewsColors.textMuted} />
+        <View style={styles.sectionMarker} />
         <AppText style={styles.sectionTitle}>Top developments</AppText>
-        <AppText variant="caption" style={styles.sectionCount}>
-          {String(summary.bullets.length).padStart(2, '0')}
+        <AppText style={styles.sectionCount}>
+          {summary.bullets.length} {summary.bullets.length === 1 ? 'story' : 'stories'}
         </AppText>
       </View>
 
       <View style={styles.bulletList}>
         {summary.bullets.map((bullet, index) => {
           const isExpanded = expanded === index;
+          const uniqueSources = bullet.sources.filter(
+            (source, sourceIndex, sources) =>
+              sources.findIndex((candidate) => candidate.source === source.source) === sourceIndex,
+          );
           return (
-            <View key={`${summary.id}:${index}`} style={[styles.bulletCard, isExpanded && styles.bulletCardExpanded]}>
-              <Pressable
-                onPress={() => setExpanded(isExpanded ? null : index)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: isExpanded }}
-                accessibilityLabel={`${bullet.headline}. ${isExpanded ? 'Collapse' : 'Expand'} evidence`}
-                style={({ pressed }) => [styles.bulletButton, pressed && styles.pressed]}>
-                <View style={styles.cardMeta}>
-                  <AppText style={styles.cardNumber}>{String(index + 1).padStart(2, '0')}</AppText>
-                  <StatusBadge label={changeLabel[bullet.change]} color={changeColor[bullet.change]} />
-                  <StatusBadge label={confidenceLabel[bullet.confidence]} color={confidenceColor[bullet.confidence]} />
-                  <View style={styles.sourceIcons}>
-                    {bullet.sources.map((source) => (
-                      <View key={source.itemKey} style={styles.sourceIconShell}>
-                        <NewsSourceIcon source={source.source} size={16} />
-                      </View>
-                    ))}
-                  </View>
-                </View>
+            <View key={`${summary.id}:${index}`} style={styles.bulletItem}>
+              <View style={styles.bulletRail}>
+                <AppText style={styles.cardNumber}>{String(index + 1).padStart(2, '0')}</AppText>
+                <View style={[styles.railNode, { backgroundColor: changeColor[bullet.change] }]} />
+                {index < summary.bullets.length - 1 ? <View style={styles.railLine} /> : null}
+              </View>
 
-                <View style={styles.cardCopy}>
+              <View
+                style={[
+                  styles.bulletColumn,
+                  index === summary.bullets.length - 1 && styles.bulletColumnLast,
+                ]}>
+                <Pressable
+                  onPress={() => setExpanded(isExpanded ? null : index)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: isExpanded }}
+                  accessibilityLabel={`${bullet.headline}. ${isExpanded ? 'Collapse' : 'Expand'} evidence`}
+                  style={({ pressed }) => [styles.bulletButton, pressed && styles.pressed]}>
+                  <View style={styles.cardMeta}>
+                    <View style={styles.statusGroup}>
+                      <StatusBadge label={changeLabel[bullet.change]} color={changeColor[bullet.change]} />
+                      <View style={styles.metaDivider} />
+                      <StatusBadge label={confidenceLabel[bullet.confidence]} color={confidenceColor[bullet.confidence]} />
+                    </View>
+                    <View style={styles.sourceMeta}>
+                      <View style={styles.sourceIcons}>
+                        {uniqueSources.slice(0, 3).map((source, sourceIndex) => (
+                          <View
+                            key={source.source}
+                            style={[
+                              styles.sourceIconShell,
+                              sourceIndex > 0 && styles.sourceIconOverlap,
+                              { zIndex: uniqueSources.length - sourceIndex },
+                            ]}>
+                            <NewsSourceIcon source={source.source} size={16} />
+                          </View>
+                        ))}
+                      </View>
+                      <AppText style={styles.sourceCount}>
+                        {bullet.sources.length} {bullet.sources.length === 1 ? 'ref' : 'refs'}
+                      </AppText>
+                    </View>
+                  </View>
+
                   <AppText style={styles.bulletHeadline}>{bullet.headline}</AppText>
                   <AppText style={styles.bulletSummary}>{bullet.summary}</AppText>
                   <View style={styles.impactRow}>
-                    <Ionicons name="trending-up-outline" size={14} color={NewsColors.textMuted} />
-                    <AppText style={styles.impactText}>{bullet.marketImpact}</AppText>
+                    <View style={styles.impactCopy}>
+                      <View style={styles.impactHeading}>
+                        <Ionicons name="trending-up-outline" size={15} color={Colors.accent} />
+                        <AppText style={styles.impactLabel}>MARKET EFFECT</AppText>
+                      </View>
+                      <AppText style={styles.impactText}>{bullet.marketImpact}</AppText>
+                    </View>
                   </View>
-                </View>
 
-                <View style={styles.expandHint}>
-                  <AppText style={styles.expandHintText}>{isExpanded ? 'Hide evidence' : 'View evidence'}</AppText>
-                  <Ionicons
-                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                    size={14}
-                    color={NewsColors.textMuted}
-                  />
-                </View>
-              </Pressable>
-
-              {isExpanded ? (
-                <View style={styles.expandedBody}>
-                  <View style={styles.divider} />
-                  <AppText style={styles.evidenceLabel}>EVIDENCE</AppText>
-                  <AppText style={styles.details}>{bullet.details}</AppText>
-                  <View style={styles.sourceDetails}>
-                    {bullet.sources.map((source) => (
-                      <Pressable
-                        key={`detail:${source.itemKey}`}
-                        onPress={() => void Linking.openURL(source.url)}
-                        accessibilityRole="link"
-                        accessibilityLabel={`Open ${source.author} source`}
-                        style={({ pressed }) => [styles.sourceDetailRow, pressed && styles.pressed]}>
-                        <NewsSourceIcon source={source.source} size={17} />
-                        <View style={styles.sourceDetailCopy}>
-                          <AppText style={styles.sourceDetailAuthor} numberOfLines={1}>{source.author}</AppText>
-                          <AppText variant="caption" numberOfLines={1}>{source.title}</AppText>
-                        </View>
-                        <Ionicons name="open-outline" size={13} color={NewsColors.textMuted} />
-                      </Pressable>
-                    ))}
+                  <View style={styles.expandHint}>
+                    <AppText style={styles.expandHintText}>Evidence</AppText>
+                    <Ionicons
+                      name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={14}
+                      color={NewsColors.textFaint}
+                    />
                   </View>
-                </View>
-              ) : null}
+                </Pressable>
+
+                {isExpanded ? (
+                  <View style={styles.expandedBody}>
+                    <AppText style={styles.evidenceLabel}>EVIDENCE NOTE</AppText>
+                    <AppText style={styles.details}>{bullet.details}</AppText>
+                    <View style={styles.sourceDetails}>
+                      {bullet.sources.map((source) => (
+                        <Pressable
+                          key={`detail:${source.itemKey}`}
+                          onPress={() => void Linking.openURL(source.url)}
+                          accessibilityRole="link"
+                          accessibilityLabel={`Open ${source.author} source`}
+                          style={({ pressed }) => [styles.sourceDetailRow, pressed && styles.pressed]}>
+                          <NewsSourceIcon source={source.source} size={17} />
+                          <View style={styles.sourceDetailCopy}>
+                            <AppText style={styles.sourceDetailAuthor} numberOfLines={1}>{source.author}</AppText>
+                            <AppText variant="caption" numberOfLines={1}>{source.title}</AppText>
+                          </View>
+                          <Ionicons name="open-outline" size={13} color={NewsColors.textMuted} />
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+              </View>
             </View>
           );
         })}
@@ -239,7 +270,7 @@ export function NewsExecutiveSummaryView({
 
       <View style={styles.footer}>
         <AppText variant="caption" style={styles.footerText}>
-          {signalCount} source items scanned · refreshed hourly
+          {signalCount} source items scanned · weekdays at 09:35 & 16:05 ET
         </AppText>
         <AppText variant="caption" style={styles.footerText}>{summary.noiseSummary}</AppText>
       </View>
@@ -248,7 +279,7 @@ export function NewsExecutiveSummaryView({
 }
 
 const styles = StyleSheet.create({
-  content: { padding: Spacing.lg, paddingBottom: 48, gap: 22 },
+  content: { padding: Spacing.lg, paddingBottom: 56, gap: 24 },
   topline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   kickerBadge: {
     minHeight: 26,
@@ -264,21 +295,21 @@ const styles = StyleSheet.create({
   updatedAt: { color: NewsColors.textFaint },
   hero: {
     gap: 13,
-    padding: 20,
+    padding: 22,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: NewsColors.border,
-    borderRadius: 24,
+    borderRadius: Radius.lg,
     backgroundColor: NewsColors.surface,
   },
   headline: {
     color: NewsColors.text,
-    fontSize: 27,
-    lineHeight: 31,
+    fontSize: 30,
+    lineHeight: 35,
     fontWeight: '700',
     letterSpacing: -0.65,
   },
-  overview: { color: NewsColors.textMuted, fontSize: 14, lineHeight: 20, fontWeight: '400' },
+  overview: { color: NewsColors.textMuted, fontSize: 15, lineHeight: 22, fontWeight: '400' },
   marketRead: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -303,80 +334,106 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '600',
   },
-  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  sectionTitle: { color: NewsColors.text, fontSize: 17, fontWeight: '700' },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sectionMarker: { width: 3, height: 22, borderRadius: 2, backgroundColor: Colors.accent },
+  sectionTitle: { color: NewsColors.text, fontSize: 20, lineHeight: 24, fontWeight: '700' },
   sectionCount: {
     marginLeft: 'auto',
     color: NewsColors.textFaint,
+    fontSize: 11,
+    fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
-  bulletList: { gap: 12 },
-  bulletCard: {
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NewsColors.border,
-    borderRadius: 22,
-    backgroundColor: NewsColors.surface,
+  bulletList: { gap: 0 },
+  bulletItem: { flexDirection: 'row', gap: 14 },
+  bulletRail: { width: 25, alignItems: 'center', paddingTop: 19 },
+  railNode: {
+    width: 6,
+    height: 6,
+    marginTop: 9,
+    borderRadius: 3,
   },
-  bulletCardExpanded: {
-    borderColor: NewsColors.controlBorder,
-    backgroundColor: NewsColors.surfaceRaised,
+  railLine: {
+    width: StyleSheet.hairlineWidth,
+    flex: 1,
+    marginTop: 6,
+    backgroundColor: 'rgba(120, 144, 255, 0.22)',
   },
-  bulletButton: { gap: 12, padding: Spacing.lg },
+  bulletColumn: {
+    flex: 1,
+    minWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: NewsColors.border,
+  },
+  bulletColumnLast: { borderBottomWidth: 0 },
+  bulletButton: { gap: 11, paddingTop: 18, paddingBottom: 20, paddingRight: 2 },
   pressed: { opacity: 0.7 },
-  cardMeta: { minHeight: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardMeta: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   cardNumber: {
-    marginRight: 1,
     color: NewsColors.textFaint,
-    fontSize: 10,
+    fontSize: 11,
+    lineHeight: 13,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
+  statusGroup: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: Radius.pill,
-    backgroundColor: 'transparent',
+    gap: 5,
   },
   statusDot: { width: 4, height: 4, borderRadius: 2 },
-  statusText: { fontSize: 9, lineHeight: 10, fontWeight: '800' },
-  sourceIcons: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 },
-  sourceIconShell: { opacity: 0.82 },
-  cardCopy: { gap: 5 },
+  statusText: { fontSize: 10, lineHeight: 13, fontWeight: '700', letterSpacing: 0.2 },
+  metaDivider: { width: 1, height: 10, backgroundColor: NewsColors.border },
+  sourceMeta: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  sourceIcons: { flexDirection: 'row', alignItems: 'center' },
+  sourceIconShell: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: NewsColors.background,
+    backgroundColor: NewsColors.surfaceRaised,
+  },
+  sourceIconOverlap: { marginLeft: -7 },
+  sourceCount: { color: NewsColors.textFaint, fontSize: 10, lineHeight: 13, fontWeight: '600' },
   bulletHeadline: {
     color: NewsColors.text,
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 18,
+    lineHeight: 23,
     fontWeight: '700',
-    letterSpacing: -0.15,
+    letterSpacing: -0.28,
   },
-  bulletSummary: { color: NewsColors.textMuted, fontSize: 13, lineHeight: 18, fontWeight: '400' },
+  bulletSummary: { color: NewsColors.textMuted, fontSize: 14, lineHeight: 21, fontWeight: '400' },
   impactRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginTop: 4,
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: NewsColors.chip,
+    marginTop: 2,
+    paddingLeft: 14,
+    paddingVertical: 3,
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(120, 144, 255, 0.52)',
   },
+  impactCopy: { gap: 5 },
+  impactHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  impactLabel: { color: Colors.accent, fontSize: 9, lineHeight: 12, fontWeight: '800', letterSpacing: 0.65 },
   impactText: {
-    flex: 1,
     color: NewsColors.text,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     fontWeight: '600',
   },
-  expandHint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 3 },
-  expandHintText: { color: NewsColors.textMuted, fontSize: 10, fontWeight: '600' },
-  expandedBody: { gap: 10, padding: Spacing.lg, paddingTop: 0 },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: NewsColors.border },
+  expandHint: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, marginTop: 1 },
+  expandHintText: { color: NewsColors.textFaint, fontSize: 10, fontWeight: '600' },
+  expandedBody: {
+    gap: 10,
+    marginBottom: 18,
+    padding: 14,
+    borderRadius: Radius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
   evidenceLabel: {
-    color: NewsColors.textFaint,
+    color: Colors.accent,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.75,

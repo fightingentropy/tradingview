@@ -49,19 +49,24 @@ export function WatchlistTabs() {
 const styles = StyleSheet.create({
   scroll: { flexGrow: 0, flexShrink: 0 },
   container: {
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
+    gap: 6,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     alignItems: 'center',
   },
   pill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 9,
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 18,
     backgroundColor: 'transparent',
   },
-  // Neutral grey selected pill, like the TradingView app's tab bar.
-  pillActive: { backgroundColor: '#2C2C2E' },
-  tabText: { fontSize: 17, fontWeight: '600' },
+  pillActive: {
+    backgroundColor: Colors.accentSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(120,144,255,0.26)',
+  },
+  tabText: { fontSize: 15, lineHeight: 19, fontWeight: '600' },
   addPill: { paddingHorizontal: 10 },
 });

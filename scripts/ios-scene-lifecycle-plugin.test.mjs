@@ -28,7 +28,7 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 }
 `;
 
-test('adds an idempotent iOS 27 scene lifecycle to the Expo 56 AppDelegate', () => {
+test('adds an idempotent iOS 27 scene lifecycle to the Expo AppDelegate', () => {
   const updated = plugin.applySceneLifecycleToAppDelegate(legacyAppDelegate);
 
   assert.match(updated, /internal import ExpoModulesCore/);

@@ -3,7 +3,9 @@
     "name": "TradingView",
     "slug": "tradingview",
     "version": "1.0.0",
-    "platforms": ["ios"],
+    "platforms": [
+      "ios"
+    ],
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "tradingview",
@@ -20,7 +22,7 @@
     "android": {
       "package": "com.tradingview.app",
       "adaptiveIcon": {
-        "backgroundColor": "#131722",
+        "backgroundColor": "#05070A",
         "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false
@@ -30,7 +32,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0B0E13",
+          "backgroundColor": "#05070A",
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
@@ -45,7 +47,10 @@
       ],
       "expo-secure-store",
       "expo-background-task",
-      "./plugins/with-ios-scene-lifecycle.cjs"
+      "./plugins/with-ios-scene-lifecycle.cjs",
+      "expo-font",
+      "expo-image",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

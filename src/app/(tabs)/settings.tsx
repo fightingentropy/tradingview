@@ -8,7 +8,7 @@ import { GlassSurface } from '@/components/ui/GlassSurface';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import {
   ALL_NEWS_NOTIFICATION_SOURCE_IDS,
   NEWS_NOTIFICATION_SOURCES,
@@ -31,7 +31,7 @@ function StatusRow({ label, detail }: { label: string; detail: string }) {
     <View style={styles.row}>
       <View style={styles.rowLeft}>
         <View style={styles.statusIcon}>
-          <Ionicons name="checkmark" size={11} color="#050506" />
+          <Ionicons name="checkmark" size={12} color={Colors.background} />
         </View>
         <AppText variant="body">{label}</AppText>
       </View>
@@ -373,33 +373,34 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xxl,
-    gap: 10,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xxxl,
+    gap: 12,
   },
   sectionLabel: {
-    marginTop: Spacing.lg,
-    marginLeft: 6,
-    color: 'rgba(235,235,245,0.46)',
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 1.35,
+    marginTop: Spacing.xl,
+    marginLeft: 8,
+    color: Colors.textFaint,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    letterSpacing: 1.1,
   },
-  card: { borderRadius: 18 },
+  card: { borderRadius: Radius.lg },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 66,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 13,
+    minHeight: 72,
+    paddingHorizontal: 18,
+    paddingVertical: 15,
   },
   actionRow: {
-    minHeight: 58,
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: 18,
   },
   rowPressed: { backgroundColor: 'rgba(255,255,255,0.065)' },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
@@ -412,7 +413,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.82)',
+    backgroundColor: Colors.text,
   },
   emptyIcon: {
     width: 32,

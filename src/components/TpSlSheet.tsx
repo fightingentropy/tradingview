@@ -414,7 +414,7 @@ export function TpSlSheet({
         </SheetSurface>
 
         {Platform.OS === 'ios' ? (
-          <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor="#0B0E13">
+          <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor={Colors.background}>
             <View style={styles.accessory}>
               <View />
               <Pressable onPress={() => Keyboard.dismiss()} hitSlop={8} style={styles.doneBtn}>

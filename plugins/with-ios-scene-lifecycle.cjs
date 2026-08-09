@@ -148,7 +148,7 @@ function applySceneLifecycleToAppDelegate(contents) {
   }
 
   if (!contents.includes(LEGACY_WINDOW_START)) {
-    throw new Error('Could not find the Expo SDK 56 window-start block in AppDelegate.swift');
+    throw new Error('Could not find the Expo window-start block in AppDelegate.swift');
   }
   if (!contents.includes('\nclass ReactNativeDelegate: ExpoReactNativeFactoryDelegate')) {
     throw new Error('Could not find ReactNativeDelegate in AppDelegate.swift');

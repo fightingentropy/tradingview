@@ -62,7 +62,7 @@ function AddRowImpl({
 }) {
   return (
     <View style={styles.row}>
-      <SymbolLogo instrument={instrument} size={36} />
+      <SymbolLogo instrument={instrument} size={42} />
       <View style={styles.mid}>
         <AppText style={styles.symbol} numberOfLines={1}>
           {instrument.symbol}
@@ -155,7 +155,7 @@ export default function AddSymbolsScreen() {
     <Screen>
       <View style={styles.searchRow}>
         <View style={styles.searchWrap}>
-          <Ionicons name="search" size={16} color={Colors.textMuted} />
+          <Ionicons name="search" size={20} color={Colors.textMuted} />
           <TextInput
             value={search}
             onChangeText={setSearch}
@@ -169,7 +169,7 @@ export default function AddSymbolsScreen() {
           />
           {search ? (
             <Pressable hitSlop={8} onPress={() => setSearch('')} accessibilityLabel="Clear search">
-              <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+              <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
             </Pressable>
           ) : null}
         </View>
@@ -180,6 +180,7 @@ export default function AddSymbolsScreen() {
 
       <ScrollView
         horizontal
+        style={styles.tabScroller}
         contentContainerStyle={styles.tabs}
         showsHorizontalScrollIndicator={false}>
         {FILTERS.map((f) => {
@@ -224,21 +225,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.md,
   },
   searchWrap: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    height: 40,
+    paddingHorizontal: Spacing.lg,
+    height: 48,
     borderRadius: Radius.md,
     backgroundColor: Colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
   },
-  input: { flex: 1, color: Colors.text, fontSize: 16 },
-  close: { fontSize: 16, color: Colors.text, fontWeight: '500' },
+  input: { flex: 1, color: Colors.text, fontSize: 17, lineHeight: 22 },
+  close: { fontSize: 16, lineHeight: 21, color: Colors.text, fontWeight: '600' },
+  tabScroller: { flexGrow: 0, flexShrink: 0 },
   tabs: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,15 +252,18 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.lg,
   },
   tab: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 8,
     borderRadius: Radius.pill,
   },
-  tabActive: { backgroundColor: Colors.surfaceAlt },
-  tabLabel: { fontSize: 14, color: Colors.textMuted, fontWeight: '600' },
+  tabActive: { backgroundColor: Colors.accentSoft },
+  tabLabel: { fontSize: 14, lineHeight: 18, color: Colors.textMuted, fontWeight: '600' },
   tabLabelActive: { color: Colors.text },
   addingTo: {
     fontSize: 12,
+    lineHeight: 16,
     color: Colors.textFaint,
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.sm,
@@ -265,16 +272,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    paddingVertical: 11,
+    minHeight: 72,
+    paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },
   mid: { flex: 1, marginLeft: Spacing.md, paddingRight: Spacing.sm },
-  symbol: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  name: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
+  symbol: { fontSize: 17, lineHeight: 21, fontWeight: '700', color: Colors.text },
+  name: { fontSize: 13, lineHeight: 17, color: Colors.textMuted, marginTop: 2 },
   meta: { alignItems: 'flex-end', marginRight: Spacing.lg, maxWidth: 130 },
-  venue: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  type: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  addBtn: { width: 30, alignItems: 'center', justifyContent: 'center' },
+  venue: { fontSize: 14, lineHeight: 18, fontWeight: '600', color: Colors.text },
+  type: { fontSize: 12, lineHeight: 16, color: Colors.textMuted, marginTop: 2 },
+  addBtn: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

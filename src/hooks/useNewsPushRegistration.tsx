@@ -49,7 +49,7 @@ export function NewsPushRegistration() {
   }, [enabled]);
 
   useEffect(() => {
-    // Expo's notification-response APIs are Android/iOS-only in SDK 56. The
+    // Expo's notification-response APIs are Android/iOS-only. The
     // exported functions still exist on web but throw when their native emitter
     // capability is absent, which used to crash the web app during mount.
     if (Platform.OS === 'web') return;

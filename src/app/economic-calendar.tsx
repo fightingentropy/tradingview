@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
-import { NewsColors, Radius, Spacing } from '@/constants/theme';
+import { Colors, NewsColors, Radius, Spacing } from '@/constants/theme';
 import { useEconomicCalendar } from '@/data/useEconomicCalendar';
 import {
   DEFAULT_ECONOMIC_CALENDAR_IMPORTANCES,
@@ -285,7 +285,7 @@ function CalendarFilters({
                 name={allCountriesSelected ? 'checkmark-circle' : 'ellipse-outline'}
                 size={20}
                 color={
-                  allCountriesSelected ? '#1596DF' : NewsColors.textMuted
+                  allCountriesSelected ? Colors.accent : NewsColors.textMuted
                 }
               />
               <AppText style={styles.allCountriesText}>All countries</AppText>
@@ -312,7 +312,7 @@ function CalendarFilters({
                       {country.name}
                     </AppText>
                     {selected ? (
-                      <Ionicons name="checkmark" size={16} color="#1596DF" />
+                      <Ionicons name="checkmark" size={16} color={Colors.accent} />
                     ) : null}
                   </Pressable>
                 );
@@ -434,7 +434,7 @@ export default function EconomicCalendarScreen() {
             <Ionicons
               name="filter"
               size={21}
-              color={activeFilterCount > 0 ? '#1596DF' : NewsColors.textMuted}
+              color={activeFilterCount > 0 ? Colors.accent : NewsColors.textMuted}
             />
             {activeFilterCount > 0 ? (
               <View style={styles.filterBadge}>
@@ -586,8 +586,9 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: NewsColors.text,
-    fontSize: 19,
-    fontWeight: '600',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
     textAlign: 'center',
   },
   headerActions: {
@@ -606,8 +607,8 @@ const styles = StyleSheet.create({
     borderColor: NewsColors.border,
   },
   headerButtonSelected: {
-    borderColor: '#1596DF',
-    backgroundColor: '#071722',
+    borderColor: 'rgba(120,144,255,0.42)',
+    backgroundColor: Colors.accentSoft,
   },
   filterBadge: {
     position: 'absolute',
@@ -619,7 +620,7 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1596DF',
+    backgroundColor: Colors.accent,
   },
   filterBadgeText: {
     color: '#FFFFFF',
@@ -629,7 +630,8 @@ const styles = StyleSheet.create({
   },
   month: {
     color: NewsColors.textMuted,
-    fontSize: 18,
+    fontSize: 19,
+    lineHeight: 24,
     fontWeight: '600',
     textAlign: 'center',
     marginTop: 4,
@@ -650,7 +652,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  daySelected: { borderColor: NewsColors.selected },
+  daySelected: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accentSoft,
+  },
   dayDisabled: { opacity: 0.34 },
   dayNumber: {
     color: NewsColors.text,
@@ -693,7 +698,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#24282E',
   },
-  impactBarActive: { backgroundColor: '#1596DF' },
+  impactBarActive: { backgroundColor: Colors.accent },
   eventTitle: {
     flex: 1,
     color: NewsColors.text,
@@ -732,7 +737,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: NewsColors.selected,
+    backgroundColor: Colors.accent,
   },
   nowText: {
     color: NewsColors.onSelected,
@@ -744,7 +749,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderTopWidth: 1,
     borderStyle: 'dashed',
-    borderColor: NewsColors.selected,
+    borderColor: Colors.accent,
   },
   center: {
     flex: 1,
@@ -889,8 +894,8 @@ const styles = StyleSheet.create({
     backgroundColor: NewsColors.chip,
   },
   filterOptionSelected: {
-    borderColor: 'rgba(21, 150, 223, 0.72)',
-    backgroundColor: '#071722',
+    borderColor: 'rgba(120,144,255,0.54)',
+    backgroundColor: Colors.accentSoft,
   },
   countryFlag: { fontSize: 18 },
   countryName: {
@@ -956,7 +961,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: Radius.pill,
-    backgroundColor: NewsColors.selected,
+    backgroundColor: Colors.accent,
   },
   applyButtonText: {
     color: NewsColors.onSelected,
