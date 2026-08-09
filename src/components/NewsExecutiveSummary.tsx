@@ -94,13 +94,15 @@ export function NewsExecutiveSummaryView({
       }>
       <View style={styles.hero}>
         <View style={styles.topline}>
-          <View style={[
-            styles.kickerBadge,
-            { borderColor: `${pulseColor[summary.pulse.label]}80` },
-          ]}>
-            <View style={[styles.liveDot, { backgroundColor: pulseColor[summary.pulse.label] }]} />
-            <AppText style={[styles.kicker, { color: pulseColor[summary.pulse.label] }]}>
-              {pulseLabel[summary.pulse.label].toUpperCase()}
+          <View style={styles.kickerBadge}>
+            <View
+              style={[
+                styles.liveDot,
+                { backgroundColor: pulseColor[summary.pulse.label] },
+              ]}
+            />
+            <AppText style={styles.kicker}>
+              {pulseLabel[summary.pulse.label]}
             </AppText>
           </View>
           <AppText variant="caption" style={styles.updatedAt}>
@@ -282,16 +284,24 @@ const styles = StyleSheet.create({
   content: { padding: Spacing.lg, paddingBottom: 56, gap: 24 },
   topline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   kickerBadge: {
-    minHeight: 26,
+    minHeight: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 9,
-    borderWidth: 1,
+    gap: 5,
+    paddingHorizontal: 7,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NewsColors.border,
     borderRadius: Radius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
   },
-  liveDot: { width: 6, height: 6, borderRadius: 3 },
-  kicker: { fontSize: 10, fontWeight: '800', letterSpacing: 0.85 },
+  liveDot: { width: 4, height: 4, borderRadius: 2, opacity: 0.55 },
+  kicker: {
+    color: NewsColors.textFaint,
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   updatedAt: { color: NewsColors.textFaint },
   hero: {
     gap: 13,
