@@ -145,6 +145,9 @@ The included bridge:
   fails. Each slot is attempted at most once, including across service restarts. Summary runs have
   a 55-minute guard and never block the
   one-minute source scheduler while Codex is reasoning.
+- The relay independently enforces the same weekday market slots. It discards pre-open and weekend
+  pulses, keeps the first valid pulse published for each slot, and will not let a stale publisher
+  replace it with another summary from the same slot. Raw source snapshots continue ingesting.
 - Persists push tokens and the seen-item watermark in the user's Application
   Support directory with user-only permissions.
 

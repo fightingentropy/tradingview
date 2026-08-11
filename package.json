@@ -69,6 +69,7 @@
     "test:trade-ticket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/trade-ticket.test.mjs",
     "test:news-refresh": "node --test scripts/news-refresh-policy.test.mjs",
     "test:news-summary": "node --test scripts/news-executive-summary.test.mjs",
+    "test:news-relay": "tsx --test worker/news-relay.test.ts",
     "test:economic-calendar": "node --test scripts/economic-calendar.test.mjs",
     "test:ios-scene": "node --test scripts/ios-scene-lifecycle-plugin.test.mjs",
     "test:trading": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/account-risk.test.mjs scripts/chart-crosshair.test.mjs scripts/execution-estimate.test.mjs scripts/trade-preflight.test.mjs scripts/trade-ticket.test.mjs && npm run verify:signing && npm run verify:identity",
@@ -78,7 +79,7 @@
     "lint": "expo lint",
     "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit && npm run typecheck:worker",
     "typecheck:worker": "wrangler types worker/worker-configuration.d.ts && node node_modules/@typescript/native/bin/tsc -p worker/tsconfig.json",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs && npm run test:news-relay",
     "check": "npm run lint && npm run typecheck && npm test && npm run verify:signing && npm run verify:identity",
     "verify:signing": "npx tsx scripts/verify-hl-signing.mts",
     "verify:identity": "npx tsx scripts/verify-trading-identity.mts"

@@ -20,6 +20,22 @@ const MAX_FEED_ITEMS = 200;
 const MAX_PUSH_TOKENS = 25;
 const MAX_SEEN_ITEMS = 1_000;
 const MAX_INGEST_BODY_BYTES = 2_000_000;
+const EXECUTIVE_SUMMARY_TIME_ZONE = 'America/New_York';
+const EXECUTIVE_SUMMARY_SCHEDULE = [
+  { id: 'open', hour: 9, minute: 35 },
+  { id: 'close', hour: 16, minute: 5 },
+] as const;
+const executiveSummaryWeekdays = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+const executiveSummaryClock = new Intl.DateTimeFormat('en-US', {
+  timeZone: EXECUTIVE_SUMMARY_TIME_ZONE,
+  weekday: 'short',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -122,6 +138,48 @@ function asString(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed ? trimmed.slice(0, maxLength) : undefined;
+}
+
+export function executiveSummaryScheduleSlot(
+  value: string | number | Date,
+): string | undefined {
+  const timestamp = value instanceof Date
+    ? value.getTime()
+    : typeof value === 'string'
+      ? Date.parse(value)
+      : value;
+  if (!Number.isFinite(timestamp)) return undefined;
+  const clock = Object.fromEntries(
+    executiveSummaryClock
+      .formatToParts(new Date(timestamp))
+      .map(({ type, value: partValue }) => [type, partValue]),
+  );
+  if (!executiveSummaryWeekdays.has(clock.weekday)) return undefined;
+
+  const minuteOfDay = Number(clock.hour) * 60 + Number(clock.minute);
+  let slotID: string | undefined;
+  for (const slot of EXECUTIVE_SUMMARY_SCHEDULE) {
+    if (minuteOfDay >= slot.hour * 60 + slot.minute) slotID = slot.id;
+  }
+  return slotID ? `${clock.year}-${clock.month}-${clock.day}:${slotID}` : undefined;
+}
+
+export function selectScheduledExecutiveSummary<T extends { generatedAt: string }>(
+  incoming: T | undefined,
+  previous: T | undefined,
+): T | undefined {
+  const incomingSlot = incoming
+    ? executiveSummaryScheduleSlot(incoming.generatedAt)
+    : undefined;
+  const previousSlot = previous
+    ? executiveSummaryScheduleSlot(previous.generatedAt)
+    : undefined;
+  if (!incoming || !incomingSlot) return previous && previousSlot ? previous : undefined;
+  if (!previous || !previousSlot) return incoming;
+  if (incomingSlot === previousSlot) return previous;
+  return Date.parse(incoming.generatedAt) > Date.parse(previous.generatedAt)
+    ? incoming
+    : previous;
 }
 
 function asHttpsUrl(value: unknown): string | undefined {
@@ -272,6 +330,7 @@ function normalizeExecutiveSummary(value: unknown): NewsExecutiveSummary | undef
     !id || !generatedAt || !windowStart || !windowEnd || !headline || !overview ||
     !pulseLabel || !validPulseLabels.includes(pulseLabel as (typeof validPulseLabels)[number]) ||
     !pulseSummary || !Number.isFinite(Date.parse(generatedAt)) ||
+    !executiveSummaryScheduleSlot(generatedAt) ||
     !Number.isFinite(Date.parse(windowStart)) || !Number.isFinite(Date.parse(windowEnd)) ||
     !Array.isArray(summary.bullets)
   ) {
@@ -615,9 +674,19 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
     env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json'),
     env.NEWS_RELAY_KV.get<unknown>(SEEN_ITEMS_KEY, 'json'),
   ]);
-  if (!snapshot.executiveSummary && previous?.executiveSummary) {
-    snapshot.executiveSummary = previous.executiveSummary;
-  }
+  const incomingSummarySlot = snapshot.executiveSummary
+    ? executiveSummaryScheduleSlot(snapshot.executiveSummary.generatedAt)
+    : undefined;
+  const previousSummarySlot = previous?.executiveSummary
+    ? executiveSummaryScheduleSlot(previous.executiveSummary.generatedAt)
+    : undefined;
+  snapshot.executiveSummary = selectScheduledExecutiveSummary(
+    snapshot.executiveSummary,
+    previous?.executiveSummary,
+  );
+  const storedSummarySlot = snapshot.executiveSummary
+    ? executiveSummaryScheduleSlot(snapshot.executiveSummary.generatedAt)
+    : undefined;
   const storedSeen = normalizeNewsNotificationSeenKeys(storedSeenKeys);
   const isSeenStateInitialized = storedSeen.length > 0;
   const previousKeys = previous?.items.map(newsNotificationItemKey) ?? [];
@@ -641,8 +710,20 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
       console.error(JSON.stringify({ event: 'push_failed', message: String(error) }));
     }),
   );
-  console.log(JSON.stringify({ event: 'ingest', items: snapshot.items.length, fresh: fresh.length }));
-  return json({ ok: true, items: snapshot.items.length, fresh: fresh.length });
+  console.log(JSON.stringify({
+    event: 'ingest',
+    items: snapshot.items.length,
+    fresh: fresh.length,
+    incomingSummarySlot: incomingSummarySlot ?? null,
+    previousSummarySlot: previousSummarySlot ?? null,
+    storedSummarySlot: storedSummarySlot ?? null,
+  }));
+  return json({
+    ok: true,
+    items: snapshot.items.length,
+    fresh: fresh.length,
+    summarySlot: storedSummarySlot ?? null,
+  });
 }
 
 export default {
