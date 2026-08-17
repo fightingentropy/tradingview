@@ -5,6 +5,7 @@
 import { toNum } from '@/lib/format';
 import {
   deriveModeAwareAccountMetrics,
+  deriveSignedSpotEquity,
   deriveSpendableSpotUsdc,
   type HlAccountMode,
   type HlCollateralBalance,
@@ -94,10 +95,10 @@ export interface HlPosition {
   funding: number;
 }
 
-/** A token balance in the spot wallet (separate from perp collateral). */
+/** A signed token balance on Hyperliquid's spot/unified balance surface. */
 export interface HlSpotBalance {
   coin: string;
-  /** Total balance in token units. */
+  /** Total balance in token units; negative means borrowed. */
   total: number;
   /** Amount reserved (e.g. resting spot orders). */
   hold: number;
@@ -126,11 +127,11 @@ export interface HlAccount {
   /** Summed unrealized PnL across positions. */
   unrealizedPnl: number;
   positions: HlPosition[];
-  /** Spot wallet token balances (non-zero), richest first. */
+  /** Non-zero spot/unified balances, largest absolute USD value first. */
   spotBalances: HlSpotBalance[];
   /** False when the tolerant spot-balance request failed; trading callers must fail closed. */
   spotBalancesLoaded: boolean;
-  /** Total USD value of the spot wallet (all tokens, incl. USDC reserved as margin). */
+  /** Signed USD value of all spot/unified balances, including borrow liabilities. */
   spotValue: number;
   /** Freely-available USDC in the spot wallet (total − hold). */
   availableUsdc: number;
@@ -474,12 +475,16 @@ function spotPrices([meta, ctxs]: [SpotMeta, SpotCtx[]]): SpotPrices {
   for (const u of meta.universe) {
     const [base, quote] = u.tokens;
     if (quote !== 0) continue; // only USDC-quoted pairs give a USD price
-    const px = midByCoin[u.name] ?? midByCoin[`@${u.index}`];
+    const px =
+      markByCoin[u.name] ||
+      markByCoin[`@${u.index}`] ||
+      midByCoin[u.name] ||
+      midByCoin[`@${u.index}`];
     if (px) byToken[base] = px;
   }
   const byCoin: Record<string, number> = {};
   for (const coin of Object.keys(midByCoin)) {
-    const px = coin.startsWith('#') ? markByCoin[coin] || midByCoin[coin] : midByCoin[coin];
+    const px = markByCoin[coin] || midByCoin[coin];
     if (px) byCoin[coin] = px;
   }
   return { byToken, byCoin };
@@ -521,25 +526,30 @@ async function fetchSpotBalances(
               : (price.byToken[b.token] ?? 0);
         return { coin: b.coin, total, hold, available: total - hold, usdValue: total * px };
       })
-      .filter((b) => b.total > 1e-8)
-      .sort((a, b) => b.usdValue - a.usdValue);
+      // Portfolio Margin represents borrows as negative balances. Keep liabilities
+      // visible and sort by absolute size so they cannot silently disappear below dust.
+      .filter((b) => Math.abs(b.total) > 1e-8)
+      .sort((a, b) => Math.abs(b.usdValue) - Math.abs(a.usdValue));
+    const collateralBalances = state.balances.map((b) => ({
+      token: b.token,
+      total: n(b.total),
+      hold: n(b.hold),
+      usdPrice:
+        b.coin === 'USDC'
+          ? 1
+          : b.coin.startsWith('+')
+            ? (price.byCoin[`#${b.coin.slice(1)}`] ?? 0)
+            : (price.byToken[b.token] ?? 0),
+    }));
     const usdc = state.balances.find((b) => b.coin === 'USDC');
     const usdcTotal = n(usdc?.total);
     const usdcAvailable = usdcTotal - n(usdc?.hold);
     return {
       balances,
-      collateralBalances: state.balances.map((b) => ({
-        token: b.token,
-        total: n(b.total),
-        hold: n(b.hold),
-        usdPrice:
-          b.coin === 'USDC'
-            ? 1
-            : b.coin.startsWith('+')
-              ? (price.byCoin[`#${b.coin.slice(1)}`] ?? 0)
-              : (price.byToken[b.token] ?? 0),
-      })),
-      value: balances.reduce((s, b) => s + b.usdValue, 0),
+      collateralBalances,
+      // Hyperliquid's Portfolio Value is the signed mark value of all balances.
+      // In particular, a negative borrow must reduce equity rather than be omitted.
+      value: deriveSignedSpotEquity(collateralBalances),
       usdcTotal,
       usdcAvailable,
       loaded: true,

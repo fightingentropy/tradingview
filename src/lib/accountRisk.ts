@@ -21,6 +21,21 @@ export interface HlCollateralBalance {
   usdPrice: number;
 }
 
+/**
+ * Mark-to-market value of the spot balance surface.
+ *
+ * Portfolio Margin can report borrowed assets as negative balances. Those liabilities
+ * must stay signed: dropping or clamping them makes opening a short look like new equity.
+ */
+export function deriveSignedSpotEquity(
+  balances: readonly Pick<HlCollateralBalance, 'total' | 'usdPrice'>[],
+): number {
+  return balances.reduce((equity, balance) => {
+    if (!Number.isFinite(balance.total) || !Number.isFinite(balance.usdPrice)) return equity;
+    return equity + balance.total * balance.usdPrice;
+  }, 0);
+}
+
 export interface ModeAwareAccountMetrics {
   /** Capital that can currently be deployed, in USD. */
   freeCollateral: number;

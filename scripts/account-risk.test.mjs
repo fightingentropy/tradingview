@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildAccountRiskSummary,
   deriveModeAwareAccountMetrics,
+  deriveSignedSpotEquity,
   deriveSpendableSpotUsdc,
   isProtectiveStop,
 } from '../src/lib/accountRisk.ts';
@@ -27,6 +28,16 @@ const long = {
 };
 
 const short = { ...long, coin: 'BTC', dex: 'default', side: 'short', markPx: 100, liquidationPx: 125 };
+
+test('subtracts Portfolio Margin borrow liabilities from signed spot equity', () => {
+  assert.equal(
+    deriveSignedSpotEquity([
+      { total: 176_776.37, usdPrice: 1 },
+      { total: -3_644.25, usdPrice: 1 },
+    ]),
+    173_132.12,
+  );
+});
 
 function order(overrides = {}) {
   return {

@@ -1073,7 +1073,7 @@ export default function AccountScreen() {
   const visibleBalances = useMemo(
     () =>
       (account?.spotBalances ?? []).filter(
-        (b) => !hideSmallBalances || b.usdValue >= SMALL_BALANCE_USD,
+        (b) => !hideSmallBalances || Math.abs(b.usdValue) >= SMALL_BALANCE_USD,
       ),
     [account, hideSmallBalances],
   );
@@ -2036,7 +2036,7 @@ function SpotCardImpl({
   onChart: () => void;
 }) {
   // Derived per-token price; USDC ≈ $1, others off the spot mid.
-  const price = b.total > 1e-9 ? b.usdValue / b.total : 0;
+  const price = Math.abs(b.total) > 1e-9 ? b.usdValue / b.total : 0;
   const m = (s: string) => (hidden ? MASK : s);
   const coinAmt = (v: number) => `${tokenAmt(v)} ${symbol}`;
   return (
@@ -2054,7 +2054,10 @@ function SpotCardImpl({
             {hidden ? `${MASK} ${symbol}` : coinAmt(b.total)}
           </AppText>
         </View>
-        <AppText style={styles.spotValue} numeric numberOfLines={1}>
+        <AppText
+          style={[styles.spotValue, b.usdValue < 0 && styles.spotLiability]}
+          numeric
+          numberOfLines={1}>
           {m(usd(b.usdValue))}
         </AppText>
         <Ionicons
@@ -2798,6 +2801,7 @@ const styles = StyleSheet.create({
   pnl: { fontSize: 16, fontWeight: '600' },
   roe: { fontSize: 13, fontWeight: '500' },
   spotValue: { fontSize: 16, fontWeight: '600', color: Colors.text, marginLeft: Spacing.sm },
+  spotLiability: { color: Colors.down },
   chevron: { marginLeft: Spacing.sm },
   quickActions: {
     flexDirection: 'row',
