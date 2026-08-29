@@ -57,7 +57,8 @@
   "scripts": {
     "start": "expo start",
     "web": "expo start --web",
-    "web:export": "expo export --platform web && node scripts/prepare-sites-build.mjs",
+    "web:export": "expo export --platform web && node scripts/prepare-cloudflare-build.mjs",
+    "web:deploy": "npm run web:export && wrangler deploy --config wrangler.web.jsonc",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",

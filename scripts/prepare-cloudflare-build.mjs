@@ -3,8 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 const workerSource = `const SITE_ORIGIN_PLACEHOLDER = 'https://site-origin.invalid';
 
 const DYNAMIC_ROUTES = [
-  { pattern: /^\\/symbol\\/[^/]+\\/?$/, asset: '/symbol/[id].html' },
-  { pattern: /^\\/outcomes\\/[^/]+\\/?$/, asset: '/outcomes/[id].html' },
+  { pattern: /^\\/symbol\\/[^/]+\\/?$/, asset: '/symbol/%5Bid%5D.html' },
+  { pattern: /^\\/outcomes\\/[^/]+\\/?$/, asset: '/outcomes/%5Bid%5D.html' },
 ];
 
 function assetRequest(request, pathname) {
@@ -71,7 +71,12 @@ export default {
 };
 `;
 
+const assetsIgnore = `server/
+.openai/
+`;
+
 await mkdir('dist/server', { recursive: true });
 await writeFile('dist/server/index.js', workerSource);
+await writeFile('dist/.assetsignore', assetsIgnore);
 
-console.log('Prepared dist/server/index.js for Sites hosting.');
+console.log('Prepared the Expo export for Cloudflare Workers.');
