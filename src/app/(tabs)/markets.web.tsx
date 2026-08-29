@@ -106,9 +106,9 @@ export default function WebMarketsScreen() {
     <div className="web-content-stack">
       <section className="web-page-intro">
         <div>
-          <span className="web-section-kicker">DISCOVER</span>
-          <h2>Every market, one quiet surface.</h2>
-          <p>Live crypto, equities, indices, commodities and spot markets—sorted around what matters now.</p>
+          <span className="web-section-kicker">MARKETS</span>
+          <h2>Market explorer</h2>
+          <p>Live crypto, equities, indices, commodities and spot markets.</p>
         </div>
         <div className="web-source-pills" aria-label="Market data sources">
           <span><i className="web-live-dot" /> Hyperliquid</span>

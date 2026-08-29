@@ -40,7 +40,7 @@ export default function WebEconomicCalendarScreen() {
   return (
     <div className="web-content-stack">
       <section className="web-calendar-header">
-        <div><Link href="/news" className="web-back-link"><Ionicons name="arrow-back" size={15} color="currentColor" /> News pulse</Link><span className="web-section-kicker">ECONOMIC CALENDAR</span><h2>Events that can move the tape.</h2><p>Major releases and central-bank events, ordered in your local time.</p></div>
+        <div><Link href="/news" className="web-back-link"><Ionicons name="arrow-back" size={15} color="currentColor" /> News</Link><span className="web-section-kicker">ECONOMIC CALENDAR</span><h2>Macro events</h2><p>Major releases and central-bank events in local time.</p></div>
         <div className="web-calendar-actions"><button type="button" onClick={() => setSelectedDate(new Date())}>Today</button><button type="button" onClick={() => void refetch()} aria-label="Refresh calendar"><Ionicons name="refresh" size={16} color="currentColor" /></button></div>
       </section>
 

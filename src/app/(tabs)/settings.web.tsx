@@ -49,9 +49,9 @@ export default function WebSettingsScreen() {
   return (
     <div className="web-settings-layout">
       <section className="web-settings-intro">
-        <span className="web-section-kicker">YOUR WORKSPACE</span>
-        <h2>Quiet defaults. Useful detail.</h2>
-        <p>Choose what the web workspace shows. Preferences stay on this browser.</p>
+        <span className="web-section-kicker">SETTINGS</span>
+        <h2>Workspace</h2>
+        <p>Display, chart and local data preferences for this browser.</p>
       </section>
 
       <div className="web-settings-grid">

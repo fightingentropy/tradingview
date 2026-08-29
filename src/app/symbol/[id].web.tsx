@@ -51,7 +51,7 @@ export default function WebSymbolScreen() {
     <div className="web-content-stack">
       <section className="web-symbol-page-header">
         <div>
-          <Link href="/" className="web-back-link"><Ionicons name="arrow-back" size={15} color="currentColor" /> Watchlist</Link>
+          <Link href="/" className="web-back-link"><Ionicons name="arrow-back" size={15} color="currentColor" /> Trade</Link>
           <div className="web-symbol-title"><WebSymbolMark symbol={instrument.symbol} large /><div><div><h2>{instrument.symbol}</h2><span className="web-venue-pill">{instrument.venue}</span></div><p>{instrument.name}</p></div></div>
         </div>
         <div className="web-symbol-actions">
@@ -85,7 +85,7 @@ export default function WebSymbolScreen() {
 
           <section className="web-alert-builder web-panel">
             <span className="web-section-kicker">PRICE ALERT</span>
-            <h3>Watch the next move.</h3>
+            <h3>Create alert</h3>
             <p>Save a local alert when {instrument.symbol} moves either way from {formatPrice(last, decimals)}.</p>
             <label><span>Move threshold</span><div><input type="number" min="0.1" step="0.1" value={alertPct} onChange={(event) => setAlertPct(event.target.value)} /><em>%</em></div></label>
             <button type="button" onClick={saveAlert} disabled={!last}>{alertSaved ? <><Ionicons name="checkmark" size={16} color="currentColor" /> Saved</> : <><Ionicons name="notifications-outline" size={16} color="currentColor" /> Create alert</>}</button>

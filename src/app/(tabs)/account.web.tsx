@@ -39,8 +39,8 @@ function PortfolioLine({ values }: { values: { t: number; v: number }[] }) {
     <svg className="web-portfolio-chart" viewBox="0 0 900 240" preserveAspectRatio="none" role="img" aria-label="Portfolio value history">
       {[0.25, 0.5, 0.75].map((value) => <line key={value} x1="0" x2="900" y1={240 * value} y2={240 * value} className="web-chart-grid" />)}
       <path d={`${path} L 900 240 L 0 240 Z`} fill="url(#portfolioFill)" />
-      <path d={path} fill="none" stroke="#8396ff" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-      <defs><linearGradient id="portfolioFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#8396ff" stopOpacity="0.22" /><stop offset="100%" stopColor="#8396ff" stopOpacity="0" /></linearGradient></defs>
+      <path d={path} fill="none" stroke="#50e3ab" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+      <defs><linearGradient id="portfolioFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#50e3ab" stopOpacity="0.18" /><stop offset="100%" stopColor="#50e3ab" stopOpacity="0" /></linearGradient></defs>
     </svg>
   );
 }
@@ -77,9 +77,9 @@ export default function WebAccountScreen() {
       <div className="web-account-connect-layout">
         <section className="web-connect-card web-panel">
           <span className="web-setup-icon"><Ionicons name="wallet-outline" size={23} color="currentColor" /></span>
-          <span className="web-section-kicker">READ-ONLY FIRST</span>
-          <h2>Bring your portfolio into focus.</h2>
-          <p>Enter a public Hyperliquid address to see live equity, positions and risk. No wallet signature or private key is needed.</p>
+          <span className="web-section-kicker">READ-ONLY PORTFOLIO</span>
+          <h2>Connect an account</h2>
+          <p>Enter a public Hyperliquid address to load equity, positions and risk. No signing key is used.</p>
           <label className={`web-address-field${inputError ? ' has-error' : ''}`}>
             <span>Public account address</span>
             <div><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="0x…" spellCheck={false} /><button type="button" onClick={connect}>Connect</button></div>

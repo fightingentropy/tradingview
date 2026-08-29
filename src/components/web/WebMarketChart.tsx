@@ -1,14 +1,21 @@
-import { useId, useMemo, useState, type PointerEvent } from 'react';
+import { useMemo, useState, type PointerEvent } from 'react';
 
 import type { Candle } from '@/domain/types';
 import { formatCandleStamp, formatPrice } from '@/lib/format';
 
 const WIDTH = 1000;
-const HEIGHT = 360;
-const PAD_X = 16;
-const PAD_Y = 22;
+const HEIGHT = 390;
+const PAD_X = 10;
+const PAD_Y = 24;
 
-type Point = { x: number; y: number; candle: Candle };
+type Bar = {
+  candle: Candle;
+  x: number;
+  highY: number;
+  lowY: number;
+  openY: number;
+  closeY: number;
+};
 
 export function WebMarketChart({
   candles,
@@ -19,12 +26,12 @@ export function WebMarketChart({
   decimals: number;
   loading?: boolean;
 }) {
-  const gradientId = useId().replace(/:/g, '');
   const [hovered, setHovered] = useState<number | null>(null);
 
   const geometry = useMemo(() => {
-    const shown = candles.slice(-140);
+    const shown = candles.slice(-96);
     if (shown.length < 2) return null;
+
     let min = Infinity;
     let max = -Infinity;
     for (const candle of shown) {
@@ -32,27 +39,31 @@ export function WebMarketChart({
       max = Math.max(max, candle.h);
     }
     const span = max - min || Math.abs(max) * 0.01 || 1;
-    min -= span * 0.08;
-    max += span * 0.08;
-    const innerW = WIDTH - PAD_X * 2;
-    const innerH = HEIGHT - PAD_Y * 2;
-    const points: Point[] = shown.map((candle, index) => ({
-      x: PAD_X + (index / (shown.length - 1)) * innerW,
-      y: PAD_Y + ((max - candle.c) / (max - min)) * innerH,
+    min -= span * 0.05;
+    max += span * 0.05;
+
+    const innerWidth = WIDTH - PAD_X * 2;
+    const innerHeight = HEIGHT - PAD_Y * 2;
+    const step = innerWidth / shown.length;
+    const candleWidth = Math.max(2.2, Math.min(8, step * 0.68));
+    const yFor = (value: number) => PAD_Y + ((max - value) / (max - min)) * innerHeight;
+    const bars: Bar[] = shown.map((candle, index) => ({
       candle,
+      x: PAD_X + step * index + step / 2,
+      highY: yFor(candle.h),
+      lowY: yFor(candle.l),
+      openY: yFor(candle.o),
+      closeY: yFor(candle.c),
     }));
-    const line = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
-    const area = `${line} L ${points[points.length - 1].x.toFixed(2)} ${HEIGHT - PAD_Y} L ${points[0].x.toFixed(2)} ${HEIGHT - PAD_Y} Z`;
-    const open = shown[0].c;
-    const close = shown[shown.length - 1].c;
-    return { points, line, area, min, max, positive: close >= open };
+
+    return { bars, candleWidth, min, max, lastY: bars[bars.length - 1].closeY };
   }, [candles]);
 
   const onPointerMove = (event: PointerEvent<SVGSVGElement>) => {
     if (!geometry) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const relative = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    setHovered(Math.round(relative * (geometry.points.length - 1)));
+    setHovered(Math.min(geometry.bars.length - 1, Math.floor(relative * geometry.bars.length)));
   };
 
   if (!geometry) {
@@ -64,51 +75,49 @@ export function WebMarketChart({
     );
   }
 
-  const active = hovered == null ? geometry.points[geometry.points.length - 1] : geometry.points[hovered];
-  const stroke = geometry.positive ? '#62e6b5' : '#ff7388';
+  const active = hovered == null ? geometry.bars[geometry.bars.length - 1] : geometry.bars[hovered];
+  const activeColor = active.candle.c >= active.candle.o ? '#50e3ab' : '#ff5572';
 
   return (
     <div className="web-chart-wrap">
       <div className="web-chart-hover-readout" aria-live="polite">
-        <span>{formatCandleStamp(active.candle.t, 'time')}</span>
-        <strong>{formatPrice(active.candle.c, decimals)}</strong>
+        <strong>{formatCandleStamp(active.candle.t, 'time')}</strong>
+        <span>O <b>{formatPrice(active.candle.o, decimals)}</b></span>
+        <span>H <b>{formatPrice(active.candle.h, decimals)}</b></span>
+        <span>L <b>{formatPrice(active.candle.l, decimals)}</b></span>
+        <span>C <b className={active.candle.c >= active.candle.o ? 'is-up' : 'is-down'}>{formatPrice(active.candle.c, decimals)}</b></span>
       </div>
       <svg
         className="web-chart"
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         preserveAspectRatio="none"
         role="img"
-        aria-label="Live market price chart"
+        aria-label="Live candlestick market chart"
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHovered(null)}>
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={stroke} stopOpacity="0.24" />
-            <stop offset="92%" stopColor={stroke} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[0.18, 0.42, 0.66, 0.9].map((ratio) => (
-          <line
-            key={ratio}
-            x1="0"
-            x2={WIDTH}
-            y1={HEIGHT * ratio}
-            y2={HEIGHT * ratio}
-            className="web-chart-grid"
-          />
+        {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
+          <line key={`h-${ratio}`} x1="0" x2={WIDTH} y1={HEIGHT * ratio} y2={HEIGHT * ratio} className="web-chart-grid" />
         ))}
-        <path d={geometry.area} fill={`url(#${gradientId})`} />
-        <path d={geometry.line} fill="none" stroke={stroke} strokeWidth="2.4" vectorEffect="non-scaling-stroke" />
+        {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
+          <line key={`v-${ratio}`} x1={WIDTH * ratio} x2={WIDTH * ratio} y1="0" y2={HEIGHT} className="web-chart-grid" />
+        ))}
+        {geometry.bars.map((bar, index) => {
+          const color = bar.candle.c >= bar.candle.o ? '#50e3ab' : '#ff5572';
+          const top = Math.min(bar.openY, bar.closeY);
+          const height = Math.max(1.5, Math.abs(bar.closeY - bar.openY));
+          return (
+            <g key={`${bar.candle.t}-${index}`} opacity={hovered == null || hovered === index ? 1 : 0.72}>
+              <line x1={bar.x} x2={bar.x} y1={bar.highY} y2={bar.lowY} stroke={color} className="web-chart-wick" />
+              <rect x={bar.x - geometry.candleWidth / 2} y={top} width={geometry.candleWidth} height={height} fill={color} rx="0.6" />
+            </g>
+          );
+        })}
+        <line x1="0" x2={WIDTH} y1={geometry.lastY} y2={geometry.lastY} className="web-chart-last-line" />
         {hovered != null ? (
           <>
-            <line
-              x1={active.x}
-              x2={active.x}
-              y1="0"
-              y2={HEIGHT}
-              className="web-chart-crosshair"
-            />
-            <circle cx={active.x} cy={active.y} r="5" fill="#090c10" stroke={stroke} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+            <line x1={active.x} x2={active.x} y1="0" y2={HEIGHT} className="web-chart-crosshair" />
+            <line x1="0" x2={WIDTH} y1={active.closeY} y2={active.closeY} className="web-chart-crosshair" />
+            <circle cx={active.x} cy={active.closeY} r="4" fill="#0e1013" stroke={activeColor} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
           </>
         ) : null}
       </svg>

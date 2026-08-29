@@ -65,9 +65,9 @@ export default function WebNewsScreen() {
     <div className="web-content-stack">
       <section className="web-page-intro web-news-intro">
         <div>
-          <span className="web-section-kicker">SIGNAL, NOT SCROLL</span>
-          <h2>A calmer read on what moved.</h2>
-          <p>Your private market pulse, raw sources, and the economic calendar in one focused view.</p>
+          <span className="web-section-kicker">NEWS</span>
+          <h2>Market intelligence</h2>
+          <p>Curated sources, summaries and the economic calendar.</p>
         </div>
         <Link href="/economic-calendar" className="web-primary-button">
           <Ionicons name="calendar-outline" size={16} color="currentColor" /> Economic calendar
@@ -90,7 +90,7 @@ export default function WebNewsScreen() {
       {!isNewsFeedConfigured ? (
         <section className="web-news-setup web-panel">
           <span className="web-setup-icon"><Ionicons name="sparkles" size={22} color="currentColor" /></span>
-          <div><span className="web-section-kicker">PRIVATE PULSE</span><h3>News is ready to connect.</h3><p>Point the web build at the protected news relay to bring over the same curated sources as the iPhone app.</p></div>
+          <div><span className="web-section-kicker">NEWS RELAY</span><h3>News relay offline</h3><p>Connect the protected relay to load the same curated sources as the iPhone app.</p></div>
           <Link href="/settings" className="web-quiet-button">Open settings <Ionicons name="arrow-forward" size={15} color="currentColor" /></Link>
         </section>
       ) : isLoading ? (
