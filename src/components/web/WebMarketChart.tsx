@@ -15,6 +15,7 @@ type Bar = {
   lowY: number;
   openY: number;
   closeY: number;
+  volumeHeight: number;
 };
 
 export function WebMarketChart({
@@ -47,6 +48,7 @@ export function WebMarketChart({
     const step = innerWidth / shown.length;
     const candleWidth = Math.max(2.2, Math.min(8, step * 0.68));
     const yFor = (value: number) => PAD_Y + ((max - value) / (max - min)) * innerHeight;
+    const maxVolume = Math.max(1, ...shown.map((candle) => candle.v));
     const bars: Bar[] = shown.map((candle, index) => ({
       candle,
       x: PAD_X + step * index + step / 2,
@@ -54,9 +56,21 @@ export function WebMarketChart({
       lowY: yFor(candle.l),
       openY: yFor(candle.o),
       closeY: yFor(candle.c),
+      volumeHeight: Math.max(1, (candle.v / maxVolume) * (HEIGHT * 0.14)),
     }));
 
-    return { bars, candleWidth, min, max, lastY: bars[bars.length - 1].closeY };
+    let rollingClose = 0;
+    const maPoints: string[] = [];
+    for (let index = 0; index < shown.length; index += 1) {
+      rollingClose += shown[index].c;
+      if (index >= 20) rollingClose -= shown[index - 20].c;
+      if (index >= 19) {
+        const prefix = maPoints.length ? 'L' : 'M';
+        maPoints.push(`${prefix}${bars[index].x.toFixed(2)},${yFor(rollingClose / 20).toFixed(2)}`);
+      }
+    }
+
+    return { bars, candleWidth, min, max, lastY: bars[bars.length - 1].closeY, maPath: maPoints.join(' ') };
   }, [candles]);
 
   const onPointerMove = (event: PointerEvent<SVGSVGElement>) => {
@@ -103,6 +117,20 @@ export function WebMarketChart({
         ))}
         {geometry.bars.map((bar, index) => {
           const color = bar.candle.c >= bar.candle.o ? '#50e3ab' : '#ff5572';
+          return (
+            <rect
+              className="web-chart-volume"
+              fill={color}
+              height={bar.volumeHeight}
+              key={`volume-${bar.candle.t}-${index}`}
+              width={Math.max(2, geometry.candleWidth * 0.9)}
+              x={bar.x - (geometry.candleWidth * 0.9) / 2}
+              y={HEIGHT - bar.volumeHeight}
+            />
+          );
+        })}
+        {geometry.bars.map((bar, index) => {
+          const color = bar.candle.c >= bar.candle.o ? '#50e3ab' : '#ff5572';
           const top = Math.min(bar.openY, bar.closeY);
           const height = Math.max(1.5, Math.abs(bar.closeY - bar.openY));
           return (
@@ -112,6 +140,7 @@ export function WebMarketChart({
             </g>
           );
         })}
+        {geometry.maPath ? <path d={geometry.maPath} className="web-chart-ma" /> : null}
         <line x1="0" x2={WIDTH} y1={geometry.lastY} y2={geometry.lastY} className="web-chart-last-line" />
         {hovered != null ? (
           <>

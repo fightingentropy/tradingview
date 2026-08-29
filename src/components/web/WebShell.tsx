@@ -1,31 +1,21 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Link, usePathname } from 'expo-router';
-import { useMemo, type PropsWithChildren } from 'react';
-
-import { useLivePriceFeed } from '@/data/useLivePriceFeed';
-import { useMarkets } from '@/data/useMarkets';
-import type { Instrument, Quote } from '@/domain/types';
-import { formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
-import { useLivePrice } from '@/store/livePrices';
+import type { PropsWithChildren } from 'react';
 
 type NavItem = {
   href: '/' | '/markets' | '/news' | '/account';
   label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  activeIcon: keyof typeof Ionicons.glyphMap;
+  glyph: string;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/', label: 'Trade', icon: 'pulse-outline', activeIcon: 'pulse' },
-  { href: '/markets', label: 'Markets', icon: 'stats-chart-outline', activeIcon: 'stats-chart' },
-  { href: '/news', label: 'News', icon: 'newspaper-outline', activeIcon: 'newspaper' },
-  { href: '/account', label: 'Portfolio', icon: 'wallet-outline', activeIcon: 'wallet' },
+  { href: '/', label: 'Trade', glyph: '⌁' },
+  { href: '/markets', label: 'Markets', glyph: '▥' },
+  { href: '/news', label: 'News', glyph: '▤' },
+  { href: '/account', label: 'Portfolio', glyph: '▱' },
 ];
 
-const TICKER_SYMBOLS = ['BTC', 'ETH', 'SOL', 'HYPE'];
-
 function BrandMark() {
-  return <span className="web-brand-mark" aria-hidden="true">TV</span>;
+  return <span className="web-xyz-wordmark" aria-hidden="true">[XYZ]</span>;
 }
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
@@ -35,45 +25,20 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
       href={item.href}
       className={`web-nav-link${active ? ' is-active' : ''}`}
       aria-current={active ? 'page' : undefined}>
-      <Ionicons name={active ? item.activeIcon : item.icon} size={16} color="currentColor" />
+      <span className="web-nav-icon" aria-hidden="true">{item.glyph}</span>
       <span>{item.label}</span>
-    </Link>
-  );
-}
-
-function MarketTicker({ instrument, quote }: { instrument: Instrument; quote?: Quote }) {
-  const streamed = useLivePrice(instrument.coinKey);
-  const last = streamed ?? quote?.last;
-  const move = quote?.change24hPct;
-
-  return (
-    <Link href={{ pathname: '/symbol/[id]', params: { id: instrument.id } }} className="web-ticker-item">
-      <strong>{instrument.symbol}</strong>
-      <span>{formatPrice(last, priceDecimalsFor(instrument.priceDecimals, last))}</span>
-      <em className={move == null ? '' : move >= 0 ? 'is-up' : 'is-down'}>{formatPercent(move)}</em>
     </Link>
   );
 }
 
 export function WebShell({ children }: PropsWithChildren) {
   const pathname = usePathname();
-  const { data } = useMarkets();
-  const tickerInstruments = useMemo(
-    () => TICKER_SYMBOLS.map((symbol) => (
-      data?.instruments.find((instrument) => instrument.symbol === symbol && instrument.assetClass === 'crypto-perp')
-      ?? data?.instruments.find((instrument) => instrument.symbol === symbol)
-    )).filter((instrument): instrument is Instrument => instrument !== undefined),
-    [data?.instruments],
-  );
-
-  useLivePriceFeed(tickerInstruments);
 
   return (
     <div className="web-app-shell">
       <header className="web-topbar">
         <Link href="/" className="web-brand" aria-label="TradingView terminal home">
           <BrandMark />
-          <span className="web-brand-name">TradingView</span>
         </Link>
 
         <nav className="web-primary-nav" aria-label="Primary navigation">
@@ -81,36 +46,18 @@ export function WebShell({ children }: PropsWithChildren) {
         </nav>
 
         <div className="web-topbar-actions">
-          <span className="web-data-status"><i className="web-live-dot" /> Markets live</span>
-          <Link href="/markets" className="web-search-link" aria-label="Search markets">
-            <Ionicons name="search" size={15} color="currentColor" />
-            <span>Search</span>
-            <kbd>/</kbd>
-          </Link>
+          <Link href="/account" className="web-connect-button">Connect</Link>
           <Link
             href="/settings"
             className={`web-icon-button${pathname.startsWith('/settings') ? ' is-active' : ''}`}
             aria-label="Settings">
-            <Ionicons name="settings-outline" size={16} color="currentColor" />
-          </Link>
-          <Link href="/account" className="web-account-link">
-            <span className="web-account-orb">EH</span>
-            <span>Account</span>
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.09A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.17.38.4.72.7 1 .3.27.69.42 1.1.4H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z" />
+            </svg>
           </Link>
         </div>
       </header>
-
-      <div className="web-market-ticker" aria-label="Live market ticker">
-        <span className="web-ticker-label"><i className="web-live-dot" /> Live</span>
-        <div className="web-ticker-track">
-          {tickerInstruments.length
-            ? tickerInstruments.map((instrument) => (
-                <MarketTicker key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} />
-              ))
-            : TICKER_SYMBOLS.map((symbol) => <span className="web-ticker-placeholder" key={symbol}>{symbol} <i>—</i></span>)}
-        </div>
-        <span className="web-feed-note">HL + XYZ + CBOE</span>
-      </div>
 
       <div className="web-main-column">
         <main className="web-page">{children}</main>
