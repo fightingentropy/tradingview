@@ -4,7 +4,8 @@
     "slug": "tradingview",
     "version": "1.0.0",
     "platforms": [
-      "ios"
+      "ios",
+      "web"
     ],
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -26,6 +27,12 @@
         "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png",
+      "name": "TradingView",
+      "shortName": "TradingView"
     },
     "plugins": [
       "expo-router",

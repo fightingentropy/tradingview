@@ -1,0 +1,98 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Link, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
+
+import { WebMarketChart } from '@/components/web/WebMarketChart';
+import { WebSymbolMark } from '@/components/web/WebSymbolMark';
+import { useCandles } from '@/data/useCandles';
+import { useLivePriceFeed } from '@/data/useLivePriceFeed';
+import { useAllMarkets } from '@/data/useMarkets';
+import { resolveRange, type RangeKey } from '@/domain/ranges';
+import { formatCompact, formatFundingApr, formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
+import { useAlerts } from '@/store/alerts';
+import { useLivePrice } from '@/store/livePrices';
+import { useWatchlists } from '@/store/watchlists';
+
+const WEB_RANGES: RangeKey[] = ['1D', '1W', '1M', '3M', '1Y'];
+
+export default function WebSymbolScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { data, isLoading, isError, refetch } = useAllMarkets();
+  const instrument = id ? data?.byId[id] : undefined;
+  const quote = id ? data?.quotes[id] : undefined;
+  const [range, setRange] = useState<RangeKey>('1D');
+  const [alertPct, setAlertPct] = useState('5');
+  const [alertSaved, setAlertSaved] = useState(false);
+  const resolved = resolveRange(range);
+  const { data: candles, isLoading: chartLoading } = useCandles(instrument, resolved.interval, resolved.fetch);
+  useLivePriceFeed(instrument ? [instrument] : []);
+  const streamed = useLivePrice(instrument?.coinKey);
+  const last = streamed ?? quote?.last;
+  const activeId = useWatchlists((state) => state.activeId);
+  const watched = useWatchlists((state) => state.lists.find((list) => list.id === state.activeId)?.symbolIds.includes(id ?? '') ?? false);
+  const toggle = useWatchlists((state) => state.toggle);
+  const addAlert = useAlerts((state) => state.add);
+
+  const saveAlert = () => {
+    const pct = Number(alertPct);
+    if (!instrument || !last || !Number.isFinite(pct) || pct <= 0) return;
+    addAlert({ instrumentId: instrument.id, symbol: instrument.symbol, pct, direction: 'both', anchorPrice: last });
+    setAlertSaved(true);
+    window.setTimeout(() => setAlertSaved(false), 1800);
+  };
+
+  if (isLoading) return <section className="web-state-card"><div className="web-chart-empty is-loading"><span /><p>Loading market</p></div></section>;
+  if (isError) return <section className="web-state-card"><Ionicons name="cloud-offline-outline" size={23} color="currentColor" /><h2>Market unavailable</h2><p>The market catalog could not be loaded.</p><button type="button" onClick={() => void refetch()}>Retry</button></section>;
+  if (!instrument) return <section className="web-state-card"><Ionicons name="search-outline" size={23} color="currentColor" /><h2>Market not found</h2><p>This symbol is no longer in the live catalog.</p><Link href="/markets" className="web-primary-button">Browse markets</Link></section>;
+
+  const decimals = priceDecimalsFor(instrument.priceDecimals, last);
+
+  return (
+    <div className="web-content-stack">
+      <section className="web-symbol-page-header">
+        <div>
+          <Link href="/" className="web-back-link"><Ionicons name="arrow-back" size={15} color="currentColor" /> Watchlist</Link>
+          <div className="web-symbol-title"><WebSymbolMark symbol={instrument.symbol} large /><div><div><h2>{instrument.symbol}</h2><span className="web-venue-pill">{instrument.venue}</span></div><p>{instrument.name}</p></div></div>
+        </div>
+        <div className="web-symbol-actions">
+          <button className={`web-quiet-button${watched ? ' is-selected' : ''}`} type="button" onClick={() => toggle(activeId, instrument.id)}><Ionicons name={watched ? 'bookmark' : 'bookmark-outline'} size={15} color="currentColor" /> {watched ? 'Watching' : 'Add to watchlist'}</button>
+        </div>
+      </section>
+
+      <div className="web-symbol-layout">
+        <section className="web-symbol-chart-panel web-panel">
+          <div className="web-symbol-quote">
+            <div><span>LAST PRICE</span><strong>{formatPrice(last, decimals)}</strong><em className={(quote?.change24hPct ?? 0) >= 0 ? 'is-up' : 'is-down'}>{formatPercent(quote?.change24hPct)} today</em></div>
+            <div className="web-mini-tabs">{WEB_RANGES.map((item) => <button key={item} type="button" className={range === item ? 'is-active' : ''} onClick={() => setRange(item)}>{item}</button>)}</div>
+          </div>
+          <div className="web-symbol-chart-wrap"><WebMarketChart candles={candles ?? []} decimals={decimals} loading={chartLoading} /></div>
+          <div className="web-symbol-stats">
+            <div><span>24H VOLUME</span><strong>{quote?.dayVolume == null ? '—' : `$${formatCompact(quote.dayVolume)}`}</strong></div>
+            <div><span>PREVIOUS CLOSE</span><strong>{formatPrice(quote?.prevClose, decimals)}</strong></div>
+            <div><span>FUNDING APR</span><strong>{formatFundingApr(quote?.funding)}</strong></div>
+            <div><span>QUOTE</span><strong>{instrument.quoteCurrency ?? 'USD'}</strong></div>
+          </div>
+        </section>
+
+        <aside className="web-symbol-side">
+          <section className="web-market-info web-panel">
+            <span className="web-section-kicker">MARKET INFO</span>
+            <div><span>Asset class</span><strong>{instrument.assetClass.replace('-', ' ')}</strong></div>
+            <div><span>Venue</span><strong>{instrument.venue}</strong></div>
+            <div><span>Provider</span><strong>{instrument.source === 'hyperliquid' ? 'Hyperliquid' : 'Cboe'}</strong></div>
+            <div><span>Feed</span><strong className="is-up">{instrument.source === 'cboe' ? 'Delayed' : 'Live'}</strong></div>
+          </section>
+
+          <section className="web-alert-builder web-panel">
+            <span className="web-section-kicker">PRICE ALERT</span>
+            <h3>Watch the next move.</h3>
+            <p>Save a local alert when {instrument.symbol} moves either way from {formatPrice(last, decimals)}.</p>
+            <label><span>Move threshold</span><div><input type="number" min="0.1" step="0.1" value={alertPct} onChange={(event) => setAlertPct(event.target.value)} /><em>%</em></div></label>
+            <button type="button" onClick={saveAlert} disabled={!last}>{alertSaved ? <><Ionicons name="checkmark" size={16} color="currentColor" /> Saved</> : <><Ionicons name="notifications-outline" size={16} color="currentColor" /> Create alert</>}</button>
+            <small>Browser alerts are stored locally. Background delivery remains on iPhone.</small>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
