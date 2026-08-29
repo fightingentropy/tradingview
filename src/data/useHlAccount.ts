@@ -4,10 +4,12 @@ import {
   fetchHlAccount,
   fetchLegalCheck,
   fetchHlPortfolio,
+  fetchHistoricalOrders,
   fetchOpenOrders,
   fetchUserFills,
   type HlAccount,
   type HlFill,
+  type HlHistoricalOrder,
   type HlLegalCheck,
   type HlOpenOrder,
   type HlPortfolio,
@@ -116,6 +118,20 @@ export function useHlOpenOrders() {
     enabled: !!account,
     refetchInterval: 8_000,
     staleTime: 6_000,
+  });
+}
+
+/** Recent final order states for the resolved master account. Read-only. */
+export function useHlHistoricalOrders(enabled = true) {
+  const network = useHlConnection((s) => s.network);
+  const { data: account } = useTradingAddress();
+
+  return useQuery<HlHistoricalOrder[]>({
+    queryKey: queryKeys.hlHistoricalOrders(network, account ?? ''),
+    queryFn: () => fetchHistoricalOrders(account as string, network),
+    enabled: enabled && !!account,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
   });
 }
 

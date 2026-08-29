@@ -1,6 +1,7 @@
 import { Link } from 'expo-router';
 import { useMemo, useState } from 'react';
 
+import { WebAccountDock } from '@/components/web/WebAccountDock';
 import { WebMarketChart } from '@/components/web/WebMarketChart';
 import { WebSymbolMark } from '@/components/web/WebSymbolMark';
 import { useCandles } from '@/data/useCandles';
@@ -11,8 +12,6 @@ import type { CandleInterval, Instrument, Quote } from '@/domain/types';
 import { formatCompact, formatFundingApr, formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
 import { useLivePrice } from '@/store/livePrices';
 import { useWatchlists } from '@/store/watchlists';
-
-type DeskTab = 'overview' | 'gainers' | 'losers';
 
 const CHART_INTERVALS: { label: string; value: CandleInterval }[] = [
   { label: '5m', value: '5m' },
@@ -40,24 +39,6 @@ function QuickMarket({
       <strong>{instrument.symbol}-{instrument.quoteCurrency ?? 'USDC'}</strong>
       <em className={move == null ? '' : move >= 0 ? 'is-up' : 'is-down'}>{formatPercent(move)}</em>
       <span>{formatPrice(last, priceDecimalsFor(instrument.priceDecimals, last))}</span>
-    </button>
-  );
-}
-
-function DeskRow({ instrument, quote, onSelect }: { instrument: Instrument; quote?: Quote; onSelect: () => void }) {
-  const streamed = useLivePrice(instrument.coinKey);
-  const last = streamed ?? quote?.last;
-  const move = quote?.change24hPct;
-  return (
-    <button className="web-desk-row" type="button" onClick={onSelect}>
-      <span className="web-desk-market">
-        <WebSymbolMark symbol={instrument.symbol} />
-        <span><strong>{instrument.symbol}</strong><small>{instrument.name}</small></span>
-      </span>
-      <b>{formatPrice(last, priceDecimalsFor(instrument.priceDecimals, last))}</b>
-      <b className={move == null ? '' : move >= 0 ? 'is-up' : 'is-down'}>{formatPercent(move)}</b>
-      <b>{quote?.dayVolume == null ? '—' : `$${formatCompact(quote.dayVolume)}`}</b>
-      <b>{formatFundingApr(quote?.funding)}</b>
     </button>
   );
 }
@@ -156,7 +137,6 @@ export default function WebWatchlistScreen() {
   const { data, isError, refetch } = useMarkets();
   const instruments = useInstrumentsByIds(activeList?.symbolIds ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [deskTab, setDeskTab] = useState<DeskTab>('overview');
   const [chartInterval, setChartInterval] = useState<CandleInterval>('5m');
 
   const quickInstruments = useMemo(
@@ -179,15 +159,6 @@ export default function WebWatchlistScreen() {
   const last = streamed ?? quote?.last;
   const decimals = selected ? priceDecimalsFor(selected.priceDecimals, last) : 2;
   const { data: candles, isLoading: chartLoading } = useCandles(selected, chartInterval, 180);
-
-  const deskRows = useMemo(() => {
-    if (!data) return [];
-    const rows = [...instruments];
-    if (deskTab === 'overview') rows.sort((left, right) => (data.quotes[right.id]?.dayVolume ?? -1) - (data.quotes[left.id]?.dayVolume ?? -1));
-    if (deskTab === 'gainers') rows.sort((left, right) => (data.quotes[right.id]?.change24hPct ?? -Infinity) - (data.quotes[left.id]?.change24hPct ?? -Infinity));
-    if (deskTab === 'losers') rows.sort((left, right) => (data.quotes[left.id]?.change24hPct ?? Infinity) - (data.quotes[right.id]?.change24hPct ?? Infinity));
-    return rows.slice(0, 4);
-  }, [data, deskTab, instruments]);
 
   if (isError) {
     return (
@@ -238,18 +209,7 @@ export default function WebWatchlistScreen() {
             </div>
             <div className="web-xyz-chart-card"><WebMarketChart candles={candles ?? []} decimals={decimals} loading={chartLoading} /></div>
           </div>
-          <section className="web-terminal-dock web-panel">
-            <div className="web-dock-tabs">
-              {(['overview', 'gainers', 'losers'] as const).map((tab) => (
-                <button key={tab} type="button" className={deskTab === tab ? 'is-active' : ''} onClick={() => setDeskTab(tab)}>{tab === 'overview' ? 'Market Overview' : tab[0].toUpperCase() + tab.slice(1)}</button>
-              ))}
-              <Link href="/account">Positions</Link><Link href="/account">Open Orders</Link><span>LIVE DATA · VIEW ONLY</span>
-            </div>
-            <div className="web-desk-table">
-              <div className="web-desk-head"><span>Market</span><span>Last price</span><span>24h</span><span>Volume</span><span>Funding APR</span></div>
-              {deskRows.map((instrument) => <DeskRow key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} onSelect={() => setSelectedId(instrument.id)} />)}
-            </div>
-          </section>
+          <WebAccountDock />
         </section>
 
         <OrderBookPanel instrument={selected} mark={last} decimals={decimals} />

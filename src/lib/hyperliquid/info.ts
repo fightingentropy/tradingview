@@ -1062,6 +1062,79 @@ export async function fetchOpenOrders(address: string, network: HlNetwork = 'mai
   return [...byOid.values()].sort((a, b) => b.timestamp - a.timestamp);
 }
 
+// ---- Order history --------------------------------------------------------
+
+export interface HlHistoricalOrder {
+  oid: number;
+  coin: string;
+  side: 'buy' | 'sell';
+  limitPx: number;
+  /** Remaining size at the reported status transition. */
+  size: number;
+  origSize: number;
+  orderType: string;
+  reduceOnly: boolean;
+  isTrigger: boolean;
+  triggerPx: number | null;
+  timestamp: number;
+  status: string;
+  statusTimestamp: number;
+}
+
+interface RawHistoricalOrder {
+  order: {
+    coin: string;
+    side: 'B' | 'A';
+    limitPx: string;
+    sz: string;
+    oid: number;
+    timestamp: number;
+    isTrigger?: boolean;
+    triggerPx?: string | null;
+    reduceOnly?: boolean;
+    orderType?: string;
+    origSz: string;
+  };
+  status: string;
+  statusTimestamp: number;
+}
+
+/**
+ * Most recent completed and live orders for an account. Hyperliquid can return
+ * more than one status transition for the same oid; the newest transition is
+ * retained so the dock reads as an order list rather than an event log.
+ */
+export async function fetchHistoricalOrders(
+  address: string,
+  network: HlNetwork = 'mainnet',
+  limit = 60,
+): Promise<HlHistoricalOrder[]> {
+  const raw = await infoRequest<RawHistoricalOrder[]>(network, { type: 'historicalOrders', user: address });
+  const sorted = [...(raw ?? [])].sort((a, b) => b.statusTimestamp - a.statusTimestamp);
+  const byOid = new Map<number, HlHistoricalOrder>();
+  for (const item of sorted) {
+    if (byOid.has(item.order.oid)) continue;
+    const triggerPx = item.order.triggerPx == null ? null : toNum(item.order.triggerPx);
+    byOid.set(item.order.oid, {
+      oid: item.order.oid,
+      coin: item.order.coin,
+      side: item.order.side === 'B' ? 'buy' : 'sell',
+      limitPx: n(item.order.limitPx),
+      size: n(item.order.sz),
+      origSize: n(item.order.origSz),
+      orderType: item.order.orderType || 'Limit',
+      reduceOnly: !!item.order.reduceOnly,
+      isTrigger: !!item.order.isTrigger,
+      triggerPx: triggerPx && triggerPx > 0 ? triggerPx : null,
+      timestamp: item.order.timestamp,
+      status: item.status,
+      statusTimestamp: item.statusTimestamp,
+    });
+    if (byOid.size >= limit) break;
+  }
+  return [...byOid.values()];
+}
+
 // ---- Order book ------------------------------------------------------------
 
 export interface HlBookLevel {

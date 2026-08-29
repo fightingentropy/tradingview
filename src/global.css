@@ -2065,45 +2065,138 @@ input {
 .web-dock-tabs button:hover { color: var(--web-text); background: #15191d; }
 .web-dock-tabs button.is-active { color: var(--web-text); background: #15191d; }
 .web-dock-tabs button.is-active::after { position: absolute; inset: auto 10px 0; height: 2px; background: var(--web-accent); content: ''; }
-.web-dock-tabs > span { margin-left: auto; align-self: center; padding: 0 12px; color: var(--web-faint); font: 560 7px var(--font-mono); letter-spacing: 0.08em; }
+.web-dock-tabs button > span { margin-left: 5px; color: var(--web-faint); font: 560 8px var(--font-mono); }
 
-.web-desk-table { min-width: 640px; }
-.web-desk-head,
-.web-desk-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) repeat(4, minmax(110px, 0.8fr));
-  align-items: center;
+.web-account-dock-status {
+  display: flex;
+  margin-left: auto;
+  align-items: flex-end;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
   padding: 0 12px;
+  color: var(--web-faint);
+  text-decoration: none;
 }
 
-.web-desk-head {
-  height: 25px;
+.web-account-dock-status strong { color: var(--web-muted); font: 550 8px var(--font-mono); }
+.web-account-dock-status span { font: 560 7px var(--font-mono); letter-spacing: 0.08em; }
+.web-account-dock-status:hover strong { color: var(--web-text); }
+
+.web-account-dock-scroll {
+  height: calc(100% - 43px);
+  min-width: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #333940 transparent;
+}
+
+.web-account-dock-grid { min-width: 720px; }
+.web-account-dock-head,
+.web-account-dock-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  padding: 0 13px;
+}
+
+.web-account-dock-grid.is-balances .web-account-dock-head,
+.web-account-dock-grid.is-balances .web-account-dock-row {
+  grid-template-columns: minmax(150px, 1.35fr) repeat(4, minmax(90px, 0.8fr));
+}
+
+.web-account-dock-grid.is-positions .web-account-dock-head,
+.web-account-dock-grid.is-positions .web-account-dock-row,
+.web-account-dock-grid.is-orders .web-account-dock-head,
+.web-account-dock-grid.is-orders .web-account-dock-row {
+  grid-template-columns: minmax(145px, 1.25fr) repeat(5, minmax(82px, 0.78fr));
+}
+
+.web-account-dock-grid.is-history { min-width: 820px; }
+.web-account-dock-grid.is-history .web-account-dock-head,
+.web-account-dock-grid.is-history .web-account-dock-row {
+  grid-template-columns: minmax(135px, 1.2fr) repeat(6, minmax(78px, 0.78fr));
+}
+
+.web-account-dock-head {
+  height: 31px;
   border-bottom: 1px solid var(--web-line);
+  background: #14171a;
   color: var(--web-faint);
   font: 560 7px var(--font-mono);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
-.web-desk-head > :not(:first-child),
-.web-desk-row > :not(:first-child) { text-align: right; }
+.web-account-dock-head > :not(:first-child),
+.web-account-dock-row > :not(:first-child) { text-align: right; }
 
-.web-desk-row {
-  width: 100%;
-  min-height: 36px;
-  border: 0;
+.web-account-dock-row {
+  min-height: 39px;
   border-bottom: 1px solid #20242a;
-  background: transparent;
   color: var(--web-text);
-  cursor: pointer;
-  text-align: left;
+  font: 520 8px var(--font-mono);
 }
 
-.web-desk-row:hover { background: #171b20; }
-.web-desk-row > span { display: flex; align-items: baseline; gap: 8px; }
-.web-desk-row strong { font: 610 9px var(--font-mono); }
-.web-desk-row small { overflow: hidden; color: var(--web-faint); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.web-desk-row b { font: 520 8px var(--font-mono); }
+.web-account-dock-row:hover { background: #171b20; }
+.web-account-dock-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-account-dock-row b { font-weight: 620; text-transform: capitalize; }
+
+.web-account-dock-market {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.web-account-dock-market > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.web-account-dock-market strong { overflow: hidden; color: var(--web-text); font: 610 9px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.web-account-dock-market small { overflow: hidden; color: var(--web-faint); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.web-account-dock-market:hover strong { color: var(--web-accent); }
+
+.web-account-dock-empty {
+  display: flex;
+  min-width: 620px;
+  height: 150px;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  color: var(--web-faint);
+  text-align: center;
+}
+
+.web-account-dock-empty > div { display: flex; flex-direction: column; gap: 5px; }
+.web-account-dock-empty strong { color: #c8ccd1; font-size: 10px; font-weight: 560; }
+.web-account-dock-empty span { font-size: 8px; }
+.web-account-dock-empty > a,
+.web-account-dock-empty > button {
+  min-height: 28px;
+  padding: 0 11px;
+  border: 1px solid #3a4047;
+  border-radius: 3px;
+  color: var(--web-text);
+  background: #20242a;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 620;
+  line-height: 27px;
+  text-decoration: none;
+}
+
+.web-account-dock-empty > a:hover,
+.web-account-dock-empty > button:hover { border-color: rgba(80, 227, 171, 0.45); color: var(--web-accent); }
+
+.web-account-dock-loading { display: flex; flex-direction: column; }
+.web-account-dock-loading span {
+  display: block;
+  height: 39px;
+  border-bottom: 1px solid #20242a;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.025), transparent);
+  background-size: 220% 100%;
+  animation: web-shimmer 1.6s infinite;
+}
 
 .web-state-card {
   min-height: calc(100vh - 115px);
@@ -3053,6 +3146,12 @@ input {
   color: var(--web-text);
 }
 
+.web-xyz-center .web-account-dock-status {
+  margin-left: auto;
+  align-items: flex-end;
+  padding-inline: 12px;
+}
+
 .web-xyz-center .web-dock-tabs button.is-active {
   color: var(--web-accent);
   background: transparent;
@@ -3060,15 +3159,6 @@ input {
 
 .web-xyz-center .web-dock-tabs button.is-active::after {
   inset-inline: 12px;
-}
-
-.web-xyz-center .web-desk-head {
-  height: 31px;
-  background: #14171a;
-}
-
-.web-xyz-center .web-desk-row {
-  min-height: 36px;
 }
 
 .web-xyz-orderbook,
