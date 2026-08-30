@@ -7,6 +7,8 @@ export const queryKeys = {
   instruments: () => ['instruments'] as const,
   newsFeed: (source: NewsSourceFilter) => ['news-feed', source] as const,
   economicCalendar: (dateKey: string) => ['economic-calendar', dateKey] as const,
+  economicCalendarRange: (fromDateKey: string, toDateKey: string) =>
+    ['economic-calendar-range', fromDateKey, toDateKey] as const,
   candles: (id: string, interval: CandleInterval, count: number) =>
     ['candles', id, interval, count] as const,
   // Hyperliquid account state. The first segment is a stable prefix so invalidating

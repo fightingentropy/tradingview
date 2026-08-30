@@ -8,6 +8,7 @@ import {
   economicCalendarDateFromKey,
   economicCalendarDateKey,
   economicCalendarDayRange,
+  economicCalendarRange,
   economicCalendarEventDescriptor,
   filterEconomicCalendarEvents,
   formatEconomicCalendarValue,
@@ -58,6 +59,18 @@ test('keeps local date keys and returns a one-day local range', () => {
   assert.equal(
     (Date.parse(range.to) - Date.parse(range.from)) / (60 * 60 * 1000),
     24,
+  );
+});
+
+test('returns an inclusive multi-day calendar range', () => {
+  const range = economicCalendarRange('2026-07-27', '2026-08-02');
+  assert.equal(
+    (Date.parse(range.to) - Date.parse(range.from)) / (24 * 60 * 60 * 1000),
+    7,
+  );
+  assert.throws(
+    () => economicCalendarRange('2026-08-02', '2026-07-27'),
+    /range end/,
   );
 });
 

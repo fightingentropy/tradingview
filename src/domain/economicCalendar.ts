@@ -167,16 +167,27 @@ export function economicCalendarDateFromKey(dateKey: string): Date {
 }
 
 export function economicCalendarDayRange(dateKey: string): { from: string; to: string } {
-  const selectedDate = economicCalendarDateFromKey(dateKey);
+  return economicCalendarRange(dateKey, dateKey);
+}
+
+export function economicCalendarRange(
+  fromDateKey: string,
+  toDateKey: string,
+): { from: string; to: string } {
+  const selectedDate = economicCalendarDateFromKey(fromDateKey);
+  const selectedEndDate = economicCalendarDateFromKey(toDateKey);
+  if (selectedEndDate.getTime() < selectedDate.getTime()) {
+    throw new Error('Economic calendar range end must be on or after the start');
+  }
   const from = new Date(
     selectedDate.getFullYear(),
     selectedDate.getMonth(),
     selectedDate.getDate(),
   );
   const to = new Date(
-    selectedDate.getFullYear(),
-    selectedDate.getMonth(),
-    selectedDate.getDate() + 1,
+    selectedEndDate.getFullYear(),
+    selectedEndDate.getMonth(),
+    selectedEndDate.getDate() + 1,
   );
   return { from: from.toISOString(), to: to.toISOString() };
 }

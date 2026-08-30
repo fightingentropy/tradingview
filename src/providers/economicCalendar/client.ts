@@ -1,6 +1,6 @@
 import {
   ECONOMIC_CALENDAR_COUNTRIES,
-  economicCalendarDayRange,
+  economicCalendarRange,
   parseEconomicCalendarEvents,
   type EconomicCalendarEvent,
 } from '@/domain/economicCalendar';
@@ -11,7 +11,14 @@ const ECONOMIC_CALENDAR_URL =
 const MAJOR_ECONOMIES = ECONOMIC_CALENDAR_COUNTRIES.map((country) => country.code).join(',');
 
 export async function loadEconomicCalendar(dateKey: string): Promise<EconomicCalendarEvent[]> {
-  const { from, to } = economicCalendarDayRange(dateKey);
+  return loadEconomicCalendarRange(dateKey, dateKey);
+}
+
+export async function loadEconomicCalendarRange(
+  fromDateKey: string,
+  toDateKey: string,
+): Promise<EconomicCalendarEvent[]> {
+  const { from, to } = economicCalendarRange(fromDateKey, toDateKey);
   const url = new URL(ECONOMIC_CALENDAR_URL);
   url.searchParams.set('from', from);
   url.searchParams.set('to', to);
