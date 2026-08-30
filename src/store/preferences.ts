@@ -12,6 +12,9 @@ export const SMALL_BALANCE_USD = 1;
  * Global display preferences, persisted across sessions.
  */
 interface PreferencesState {
+  /** Show the CLOB depth panel beside the web trading chart. On by default. */
+  showClobOrderBook: boolean;
+  setShowClobOrderBook: (value: boolean) => void;
   /** Add the opt-in Hyperliquid Outcomes destination to bottom navigation. */
   showOutcomeMarkets: boolean;
   setShowOutcomeMarkets: (value: boolean) => void;
@@ -44,6 +47,8 @@ interface PreferencesState {
 export const usePreferences = create<PreferencesState>()(
   persist(
     (set) => ({
+      showClobOrderBook: true,
+      setShowClobOrderBook: (value) => set({ showClobOrderBook: value }),
       showOutcomeMarkets: false,
       setShowOutcomeMarkets: (value) => set({ showOutcomeMarkets: value }),
       hideSmallBalances: true,

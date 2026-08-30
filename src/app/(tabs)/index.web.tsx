@@ -11,6 +11,7 @@ import { useOrderBook } from '@/data/useOrderBook';
 import type { CandleInterval, Instrument, Quote } from '@/domain/types';
 import { formatCompact, formatFundingApr, formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
 import { useLivePrice } from '@/store/livePrices';
+import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
 const CHART_INTERVALS: { label: string; value: CandleInterval }[] = [
@@ -134,6 +135,7 @@ function ReadOnlyTicket({ instrument, mark, decimals }: { instrument?: Instrumen
 
 export default function WebWatchlistScreen() {
   const activeList = useWatchlists((state) => state.lists.find((list) => list.id === state.activeId) ?? state.lists[0]);
+  const showClobOrderBook = usePreferences((state) => state.showClobOrderBook);
   const { data, isError, refetch } = useMarkets();
   const instruments = useInstrumentsByIds(activeList?.symbolIds ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -188,7 +190,7 @@ export default function WebWatchlistScreen() {
         <div><strong className={(quote?.funding ?? 0) >= 0 ? 'is-up' : 'is-down'}>{formatFundingApr(quote?.funding)}</strong><span>Funding APR</span></div>
       </section>
 
-      <div className="web-xyz-workspace">
+      <div className={`web-xyz-workspace${showClobOrderBook ? '' : ' is-orderbook-hidden'}`}>
         <section className="web-xyz-center">
           <div className="web-xyz-quickbar">
             {quickInstruments.map((instrument) => (
@@ -212,7 +214,7 @@ export default function WebWatchlistScreen() {
           <WebAccountDock />
         </section>
 
-        <OrderBookPanel instrument={selected} mark={last} decimals={decimals} />
+        {showClobOrderBook ? <OrderBookPanel instrument={selected} mark={last} decimals={decimals} /> : null}
         <ReadOnlyTicket instrument={selected} mark={last} decimals={decimals} />
       </div>
     </div>

@@ -26,6 +26,8 @@ function SettingRow({ icon, title, detail, children }: { icon: keyof typeof Ioni
 }
 
 export default function WebSettingsScreen() {
+  const showClobOrderBook = usePreferences((state) => state.showClobOrderBook);
+  const setShowClobOrderBook = usePreferences((state) => state.setShowClobOrderBook);
   const privacy = usePreferences((state) => state.privacyMode);
   const setPrivacy = usePreferences((state) => state.setPrivacyMode);
   const hideSmall = usePreferences((state) => state.hideSmallBalances);
@@ -47,17 +49,20 @@ export default function WebSettingsScreen() {
   };
 
   return (
-    <div className="web-settings-layout">
+    <div className="web-settings-layout web-xyz-settings-page">
       <section className="web-settings-intro">
-        <span className="web-section-kicker">SETTINGS</span>
-        <h2>Workspace</h2>
-        <p>Display, chart and local data preferences for this browser.</p>
+        <div>
+          <h2>Settings</h2>
+          <p>Workspace, chart and local data preferences for this browser.</p>
+        </div>
+        <span className="web-xyz-settings-save"><i /> Saved locally</span>
       </section>
 
       <div className="web-settings-grid">
         <section>
-          <div className="web-settings-section-title"><span>Display</span><small>4 preferences</small></div>
+          <div className="web-settings-section-title"><span>Workspace</span><small>5 preferences</small></div>
           <div className="web-settings-card web-panel">
+            <SettingRow icon="grid-outline" title="CLOB order book" detail="Show live bid and ask depth beside the trading chart."><WebSwitch checked={showClobOrderBook} onChange={setShowClobOrderBook} label="Show CLOB order book" /></SettingRow>
             <SettingRow icon="eye-off-outline" title="Privacy mode" detail="Mask portfolio balances and position amounts."><WebSwitch checked={privacy} onChange={setPrivacy} label="Privacy mode" /></SettingRow>
             <SettingRow icon="layers-outline" title="Hide small balances" detail="Keep spot balances worth less than $1 out of the portfolio."><WebSwitch checked={hideSmall} onChange={setHideSmall} label="Hide small balances" /></SettingRow>
             <SettingRow icon="radio-button-on-outline" title="Outcome markets" detail="Include view-only Hyperliquid outcome contracts."><WebSwitch checked={showOutcomes} onChange={setShowOutcomes} label="Show outcome markets" /></SettingRow>
