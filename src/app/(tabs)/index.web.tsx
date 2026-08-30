@@ -5,9 +5,11 @@ import { useMemo, useState } from 'react';
 import { WebAccountDock } from '@/components/web/WebAccountDock';
 import { WebMarketChart } from '@/components/web/WebMarketChart';
 import { WebSymbolMark } from '@/components/web/WebSymbolMark';
+import { useActiveAsset } from '@/data/useActiveAsset';
 import { useCandles } from '@/data/useCandles';
+import { useHlAccount } from '@/data/useHlAccount';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
-import { useMarkets, useInstrumentsByIds } from '@/data/useMarkets';
+import { useMarkets } from '@/data/useMarkets';
 import { useOrderBook } from '@/data/useOrderBook';
 import type { CandleInterval, Instrument, Quote } from '@/domain/types';
 import {
@@ -15,61 +17,46 @@ import {
   formatFundingApr,
   formatPercent,
   formatPrice,
-  formatSignedPrice,
   priceDecimalsFor,
+  signedUsd,
+  usd,
 } from '@/lib/format';
+import { useHlConnection } from '@/store/hlConnection';
 import { useLivePrice } from '@/store/livePrices';
 import { usePreferences } from '@/store/preferences';
-import { useWatchlists } from '@/store/watchlists';
 
-type TradeCategory = 'favourites' | 'perps' | 'spot' | 'traditional';
+const CHART_INTERVALS: CandleInterval[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
+const QUICK_SYMBOLS = ['HYPE', 'BTC', 'ETH', 'SOL', 'ZEC'];
 
-const CATEGORY_OPTIONS: { id: TradeCategory; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { id: 'favourites', label: 'Favourites', icon: 'star-outline' },
-  { id: 'perps', label: 'Perpetuals', icon: 'pulse-outline' },
-  { id: 'spot', label: 'Spot', icon: 'ellipse-outline' },
-  { id: 'traditional', label: 'Stocks & macro', icon: 'globe-outline' },
-];
-
-function categoryMatches(instrument: Instrument, category: TradeCategory, favouriteIds: Set<string>) {
-  if (instrument.assetClass === 'outcome') return false;
-  if (category === 'favourites') return favouriteIds.has(instrument.id);
-  if (category === 'perps') return instrument.assetClass === 'crypto-perp';
-  if (category === 'spot') return instrument.assetClass === 'crypto-spot';
-  return !instrument.assetClass.startsWith('crypto-');
+function pairLabel(instrument?: Instrument) {
+  return instrument ? `${instrument.symbol}-USD` : '—';
 }
 
-function MarketBrowserRow({
+function shortAddress(address: string) {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+function MarketOption({
   instrument,
   quote,
-  selected,
+  active,
   onSelect,
 }: {
   instrument: Instrument;
   quote?: Quote;
-  selected: boolean;
+  active: boolean;
   onSelect: () => void;
 }) {
   const streamed = useLivePrice(instrument.coinKey);
   const last = streamed ?? quote?.last;
-  const decimals = priceDecimalsFor(instrument.priceDecimals, last);
-  const absolute = last != null && quote?.prevClose != null ? last - quote.prevClose : null;
-  const positive = (quote?.change24hPct ?? 0) >= 0;
-
+  const move = quote?.change24hPct;
   return (
-    <div className={`web-capital-trade-market-row${selected ? ' is-selected' : ''}`} role="row">
-      <button type="button" className="web-capital-trade-market" onClick={onSelect} role="cell">
-        <WebSymbolMark symbol={instrument.symbol} />
-        <span><strong>{instrument.symbol}</strong><small>{instrument.name}</small></span>
-      </button>
-      <span className={positive ? 'is-up' : 'is-down'} role="cell">{formatSignedPrice(absolute, decimals) || '—'}</span>
-      <span className={positive ? 'is-up' : 'is-down'} role="cell">{formatPercent(quote?.change24hPct)}</span>
-      <span className="web-capital-mini-trend" role="cell"><Ionicons name={positive ? 'trending-up' : 'trending-down'} size={22} color="currentColor" /></span>
-      <strong className="web-capital-trade-last" role="cell">{formatPrice(last, decimals)}</strong>
-      <span className="web-capital-trade-volume" role="cell">{quote?.dayVolume == null ? '—' : `$${formatCompact(quote.dayVolume)}`}</span>
-      <Link href={{ pathname: '/symbol/[id]', params: { id: instrument.id } }} className="web-capital-outline-action" role="cell">Chart</Link>
-      <Link href={{ pathname: '/symbol/[id]', params: { id: instrument.id } }} className="web-capital-row-icon" aria-label={`Open ${instrument.symbol}`} role="cell"><Ionicons name="add-circle-outline" size={20} color="currentColor" /></Link>
-    </div>
+    <button className={active ? 'is-active' : ''} type="button" onClick={onSelect}>
+      <WebSymbolMark symbol={instrument.symbol} />
+      <span><strong>{pairLabel(instrument)}</strong><small>{instrument.venue} perpetual</small></span>
+      <b>{formatPrice(last, priceDecimalsFor(instrument.priceDecimals, last))}</b>
+      <em className={move == null ? '' : move >= 0 ? 'is-up' : 'is-down'}>{formatPercent(move)}</em>
+    </button>
   );
 }
 
@@ -80,15 +67,16 @@ function OrderBookPanel({ instrument, mark, decimals }: { instrument?: Instrumen
   const depth = useMemo(() => {
     const cumulative = (levels: NonNullable<typeof book>['bids']) => {
       let total = 0;
-      return levels.slice(0, 9).map((level) => ({ ...level, total: (total += level.size) }));
+      return levels.slice(0, 12).map((level) => ({ ...level, total: (total += level.size) }));
     };
     const asks = cumulative(book?.asks ?? []).reverse();
     const bids = cumulative(book?.bids ?? []);
     const maxTotal = Math.max(1, ...asks.map((level) => level.total), ...bids.map((level) => level.total));
     const bestAsk = book?.asks[0]?.price;
     const bestBid = book?.bids[0]?.price;
-    const spreadPct = bestAsk != null && bestBid ? ((bestAsk - bestBid) / bestBid) * 100 : undefined;
-    return { asks, bids, maxTotal, spreadPct };
+    const spread = bestAsk != null && bestBid != null ? bestAsk - bestBid : undefined;
+    const spreadPct = spread != null && bestBid ? (spread / bestBid) * 100 : undefined;
+    return { asks, bids, maxTotal, spread, spreadPct };
   }, [book]);
 
   const renderLevel = (level: (typeof depth.asks)[number], side: 'ask' | 'bid') => (
@@ -101,54 +89,129 @@ function OrderBookPanel({ instrument, mark, decimals }: { instrument?: Instrumen
   );
 
   return (
-    <aside className="web-xyz-orderbook web-capital-trade-orderbook">
-      <div className="web-xyz-side-head"><strong>Order book</strong><span className="web-book-layout-icon"><i /><i /></span></div>
+    <aside className="web-xyz-orderbook web-hl-orderbook">
+      <div className="web-xyz-side-head">
+        <strong>Order Book</strong>
+        <div><span className="web-hl-book-tick">0.01</span><span className="web-book-layout-icon"><i /><i /></span></div>
+      </div>
       <div className="web-book-labels"><span>Price</span><span>Size</span><span>Total</span></div>
       <div className="web-book-half is-asks">
-        {depth.asks.length ? depth.asks.map((level) => renderLevel(level, 'ask')) : <span className="web-book-empty">{isLoading ? 'Loading…' : 'No asks'}</span>}
+        {depth.asks.length ? depth.asks.map((level) => renderLevel(level, 'ask')) : <span className="web-book-empty">{isLoading ? 'Loading depth…' : 'No ask depth'}</span>}
       </div>
-      <div className="web-book-spread"><strong className="is-up">{formatPrice(mark, decimals)}</strong><span>{depth.spreadPct == null ? '—' : `${depth.spreadPct.toFixed(3)}%`}</span></div>
+      <div className="web-book-spread">
+        <strong className="is-up">{formatPrice(mark, decimals)}</strong>
+        <span>{depth.spread == null ? '—' : formatPrice(depth.spread, decimals)} · {depth.spreadPct == null ? '—' : `${depth.spreadPct.toFixed(3)}%`}</span>
+      </div>
       <div className="web-book-half is-bids">
-        {depth.bids.length ? depth.bids.map((level) => renderLevel(level, 'bid')) : <span className="web-book-empty">{isLoading ? 'Loading…' : 'No bids'}</span>}
+        {depth.bids.length ? depth.bids.map((level) => renderLevel(level, 'bid')) : <span className="web-book-empty">{isLoading ? 'Loading depth…' : 'No bid depth'}</span>}
       </div>
     </aside>
   );
 }
 
-export default function WebWatchlistScreen() {
-  const activeList = useWatchlists((state) => state.lists.find((list) => list.id === state.activeId) ?? state.lists[0]);
-  const favouriteInstruments = useInstrumentsByIds(activeList?.symbolIds ?? []);
+function ReadOnlyTicket({ instrument, mark, decimals }: { instrument?: Instrument; mark?: number; decimals: number }) {
+  const [side, setSide] = useState<'buy' | 'sell'>('buy');
+  const [orderType, setOrderType] = useState<'market' | 'limit'>('market');
+  const [allocation, setAllocation] = useState(0);
+  const address = useHlConnection((state) => state.address);
+  const network = useHlConnection((state) => state.network);
+  const privacy = usePreferences((state) => state.privacyMode);
+  const account = useHlAccount();
+  const coin = instrument?.id.startsWith('hl:') ? instrument.coinKey : undefined;
+  const active = useActiveAsset(coin);
+  const position = account.data?.positions.find((item) => item.coin === coin);
+  const leverage = active.data?.leverage ?? position?.leverage;
+  const isCross = active.data?.isCross ?? position?.leverageType === 'cross';
+  const available = side === 'buy' ? active.data?.availBuy : active.data?.availSell;
+  const maxSize = side === 'buy' ? active.data?.maxSzBuy : active.data?.maxSzSell;
+  const resolvedMark = active.data?.markPx || mark;
+  const signedPositionSize = position ? (position.side === 'long' ? position.size : -position.size) : 0;
+  const orderValue = allocation && maxSize && resolvedMark ? (maxSize * allocation * resolvedMark) / 100 : null;
+  const marginRequired = orderValue && leverage ? orderValue / leverage : null;
+  const marginUsage = account.data && account.data.totalEquity > 0
+    ? (account.data.totalMarginUsed / account.data.totalEquity) * 100
+    : null;
+  const hide = (value: string) => privacy ? '••••••' : value;
+
+  return (
+    <aside className="web-xyz-ticket web-hl-ticket">
+      <div className="web-xyz-ticket-head">
+        <span>Trade</span>
+        {address ? <Link href="/account" className="web-hl-connected"><i />{shortAddress(address)}</Link> : <Link href="/account" className="web-hl-connected">Connect</Link>}
+      </div>
+
+      <div className="web-ticket-controls">
+        <button type="button">{isCross ? 'Cross' : 'Isolated'}</button>
+        <button type="button">{leverage ? `${leverage}x` : '—x'}</button>
+        <button type="button">One-way</button>
+      </div>
+      <div className="web-ticket-tabs">
+        <button type="button" className={orderType === 'market' ? 'is-active' : ''} onClick={() => setOrderType('market')}>Market</button>
+        <button type="button" className={orderType === 'limit' ? 'is-active' : ''} onClick={() => setOrderType('limit')}>Limit</button>
+        <span>Perpetual</span>
+      </div>
+      <div className="web-ticket-side">
+        <button type="button" className={side === 'buy' ? 'is-long' : ''} onClick={() => setSide('buy')}>Buy / Long</button>
+        <button type="button" className={side === 'sell' ? 'is-short' : ''} onClick={() => setSide('sell')}>Sell / Short</button>
+      </div>
+      <div className="web-ticket-balance">
+        <span>Available to trade</span><b>{hide(available == null ? '—' : usd(available))}</b>
+        <span>Current position</span><b>{hide(`${formatPrice(signedPositionSize, 4)} ${instrument?.symbol ?? '—'}`)}</b>
+      </div>
+      <div className="web-ticket-field"><span>Size</span><b>{allocation ? `${formatPrice(((maxSize ?? 0) * allocation) / 100, 4)} ${instrument?.symbol ?? '—'}` : `0.0000 ${instrument?.symbol ?? '—'}`}</b></div>
+      <div className="web-hl-allocation" aria-label="Order size percentage">
+        {[0, 25, 50, 75, 100].map((value) => <button key={value} type="button" className={allocation === value ? 'is-active' : ''} onClick={() => setAllocation(value)}>{value}%</button>)}
+      </div>
+      <label className="web-ticket-check"><i /> Reduce only</label>
+      <label className="web-ticket-check"><i /> Take profit / stop loss</label>
+      <div className="web-ticket-summary">
+        <span>Mark price</span><b>{formatPrice(resolvedMark, decimals)}</b>
+        <span>Order value</span><b>{orderValue == null ? '—' : hide(usd(orderValue))}</b>
+        <span>Margin required</span><b>{marginRequired == null ? '—' : hide(usd(marginRequired))}</b>
+        <span>Max slippage</span><b>0.50%</b>
+      </div>
+      <div className="web-ticket-cta">
+        <Link href="/account">{address ? 'View account' : 'Connect account'}</Link>
+        <p>Read-only workspace · orders are never submitted</p>
+      </div>
+
+      <div className="web-hl-account-summary">
+        <header><strong>Account</strong><span>{network === 'mainnet' ? 'Mainnet' : 'Testnet'}</span></header>
+        <div><span>Equity</span><b>{hide(account.data ? usd(account.data.totalEquity) : '—')}</b></div>
+        <div><span>Unrealized P&amp;L</span><b className={(account.data?.unrealizedPnl ?? 0) >= 0 ? 'is-up' : 'is-down'}>{hide(account.data ? signedUsd(account.data.unrealizedPnl) : '—')}</b></div>
+        <div><span>Free collateral</span><b>{hide(account.data ? usd(account.data.freeCollateral) : '—')}</b></div>
+        <div><span>Margin used</span><b>{hide(account.data ? usd(account.data.totalMarginUsed) : '—')}</b></div>
+        <div><span>Margin usage</span><b>{hide(marginUsage == null ? '—' : `${marginUsage.toFixed(2)}%`)}</b></div>
+      </div>
+    </aside>
+  );
+}
+
+export default function WebTradeScreen() {
   const showClobOrderBook = usePreferences((state) => state.showClobOrderBook);
   const { data, isError, refetch } = useMarkets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [chartInterval, setChartInterval] = useState<CandleInterval>('5m');
-  const [category, setCategory] = useState<TradeCategory>('favourites');
-  const [search, setSearch] = useState('');
+  const [marketMenuOpen, setMarketMenuOpen] = useState(false);
 
-  const favouriteIds = useMemo(() => new Set(favouriteInstruments.map((instrument) => instrument.id)), [favouriteInstruments]);
-  const marketRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const filtered = (data?.instruments ?? []).filter((instrument) => {
-      if (!categoryMatches(instrument, category, favouriteIds)) return false;
-      return !query || `${instrument.symbol} ${instrument.name}`.toLowerCase().includes(query);
-    });
-    return filtered.sort((left, right) => (data?.quotes[right.id]?.dayVolume ?? -1) - (data?.quotes[left.id]?.dayVolume ?? -1)).slice(0, 12);
-  }, [category, data?.instruments, data?.quotes, favouriteIds, search]);
+  const marketOptions = useMemo(() => {
+    const perps = (data?.instruments ?? [])
+      .filter((instrument) => instrument.assetClass === 'crypto-perp')
+      .sort((left, right) => (data?.quotes[right.id]?.dayVolume ?? -1) - (data?.quotes[left.id]?.dayVolume ?? -1));
+    const picked = QUICK_SYMBOLS.map((symbol) => perps.find((instrument) => instrument.symbol === symbol))
+      .filter((instrument): instrument is Instrument => instrument !== undefined);
+    return [...new Map([...picked, ...perps].map((instrument) => [instrument.id, instrument])).values()].slice(0, 9);
+  }, [data?.instruments, data?.quotes]);
 
   const fallbackSelected = data?.instruments.find((instrument) => instrument.symbol === 'HYPE' && instrument.assetClass === 'crypto-perp')
-    ?? favouriteInstruments[0]
-    ?? marketRows[0];
+    ?? marketOptions[0];
   const selected = (selectedId ? data?.instruments.find((instrument) => instrument.id === selectedId) : undefined) ?? fallbackSelected;
   const quote = selected ? data?.quotes[selected.id] : undefined;
   const streamed = useLivePrice(selected?.coinKey);
   const last = streamed ?? quote?.last;
   const decimals = selected ? priceDecimalsFor(selected.priceDecimals, last) : 2;
-  const { data: candles, isLoading: chartLoading } = useCandles(selected, chartInterval, 180);
-  const feedInstruments = useMemo(() => {
-    const all = [...marketRows, ...(selected ? [selected] : [])];
-    return [...new Map(all.map((instrument) => [instrument.id, instrument])).values()];
-  }, [marketRows, selected]);
-  useLivePriceFeed(feedInstruments);
+  const { data: candles, isLoading: chartLoading } = useCandles(selected, chartInterval, 220);
+  useLivePriceFeed(marketOptions);
 
   if (isError) {
     return (
@@ -162,64 +225,61 @@ export default function WebWatchlistScreen() {
   }
 
   return (
-    <div className="web-terminal web-capital-trade-page">
-      <section className={`web-capital-trade-browser${showClobOrderBook ? ' has-orderbook' : ''}`}>
-        <aside className="web-capital-watchlists">
-          <label><Ionicons name="search" size={16} color="currentColor" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" aria-label="Search trade markets" /></label>
-          <header><span>Watchlists</span><button type="button">Edit</button></header>
-          {CATEGORY_OPTIONS.map((option) => (
-            <button key={option.id} type="button" className={category === option.id ? 'is-active' : ''} onClick={() => setCategory(option.id)}>
-              <Ionicons name={option.icon} size={23} color="currentColor" /><span>{option.label}</span>
-            </button>
-          ))}
-          <small>Markets</small>
-          <button type="button" onClick={() => setCategory('perps')}><span className="web-capital-country-dot">₿</span><span>Crypto</span></button>
-          <button type="button" onClick={() => setCategory('traditional')}><span className="web-capital-country-dot">$</span><span>USD markets</span></button>
-        </aside>
+    <div className="web-terminal web-xyz-terminal web-hl-terminal">
+      <section className="web-xyz-marketbar web-hl-marketbar">
+        <div className="web-hl-market-picker">
+          <button type="button" className="web-xyz-market-selector" aria-haspopup="listbox" aria-expanded={marketMenuOpen} onClick={() => setMarketMenuOpen((open) => !open)}>
+            {selected ? <WebSymbolMark symbol={selected.symbol} /> : null}
+            <span><strong>{pairLabel(selected)}</strong><small>{selected?.venue ?? 'Hyperliquid'} perpetual</small></span>
+            <span className="web-market-chevron" aria-hidden="true"><Ionicons name="chevron-down" size={14} color="currentColor" /></span>
+          </button>
+          {marketMenuOpen ? (
+            <div className="web-hl-market-menu" role="listbox" aria-label="Select market">
+              <header><strong>Markets</strong><Link href="/markets">Discover all</Link></header>
+              {marketOptions.map((instrument) => (
+                <MarketOption
+                  key={instrument.id}
+                  instrument={instrument}
+                  quote={data?.quotes[instrument.id]}
+                  active={selected?.id === instrument.id}
+                  onSelect={() => { setSelectedId(instrument.id); setMarketMenuOpen(false); }}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="web-xyz-primary-price"><strong>{formatPrice(last, decimals)}</strong><span>Mark</span></div>
+        <div><strong className={(quote?.change24hPct ?? 0) >= 0 ? 'is-up' : 'is-down'}>{formatPercent(quote?.change24hPct)}</strong><span>24h change</span></div>
+        <div><strong>{quote?.prevClose == null ? '—' : formatPrice(quote.prevClose, decimals)}</strong><span>Prev. close</span></div>
+        <div><strong>{quote?.dayVolume == null ? '—' : `$${formatCompact(quote.dayVolume)}`}</strong><span>24h volume</span></div>
+        <div><strong className={(quote?.funding ?? 0) >= 0 ? 'is-up' : 'is-down'}>{formatFundingApr(quote?.funding)}</strong><span>Funding APR</span></div>
+        <Link href="/markets" className="web-hl-all-markets">All markets <Ionicons name="chevron-forward" size={13} color="currentColor" /></Link>
+      </section>
 
-        <section className="web-capital-trade-table" role="table" aria-label="Trade markets">
-          <div className="web-capital-trade-table-head" role="row">
-            <span role="columnheader">Market</span><span role="columnheader">Today</span><span role="columnheader">Change %</span><span /><span role="columnheader">Last</span><span role="columnheader">Volume</span><span /><span />
+      <div className={`web-xyz-workspace web-hl-workspace${showClobOrderBook ? '' : ' is-orderbook-hidden'}`}>
+        <section className="web-xyz-center web-hl-center">
+          <div className="web-xyz-chart-surface web-hl-chart-surface">
+            <div className="web-hl-chart-toolbar">
+              <strong>Chart</strong>
+              <span className="web-hl-toolbar-divider" />
+              {CHART_INTERVALS.map((interval) => <button key={interval} className={chartInterval === interval ? 'is-active' : ''} type="button" onClick={() => setChartInterval(interval)}>{interval}</button>)}
+              <span className="web-hl-toolbar-divider" />
+              <button type="button"><Ionicons name="stats-chart-outline" size={15} color="currentColor" /> Indicators</button>
+              {selected ? <Link href={{ pathname: '/symbol/[id]', params: { id: selected.id } }}><Ionicons name="expand-outline" size={15} color="currentColor" /> Full chart</Link> : null}
+            </div>
+            <div className="web-hl-chart-identity">
+              <strong>{pairLabel(selected)} · {chartInterval}</strong>
+              <span className={(quote?.change24hPct ?? 0) >= 0 ? 'is-up' : 'is-down'}>{formatPrice(last, decimals)} · {formatPercent(quote?.change24hPct)}</span>
+              <small>Perpetual · {selected?.venue ?? 'Hyperliquid'} · Funding {formatFundingApr(quote?.funding)}</small>
+            </div>
+            <div className="web-xyz-chart-card"><WebMarketChart candles={candles ?? []} decimals={decimals} loading={chartLoading} /></div>
           </div>
-          <div className="web-capital-trade-market-list">
-            {marketRows.map((instrument) => (
-              <MarketBrowserRow key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} selected={selected?.id === instrument.id} onSelect={() => setSelectedId(instrument.id)} />
-            ))}
-            {!marketRows.length ? <div className="web-capital-trade-empty">No markets in this list.</div> : null}
-          </div>
+          <WebAccountDock />
         </section>
 
         {showClobOrderBook ? <OrderBookPanel instrument={selected} mark={last} decimals={decimals} /> : null}
-      </section>
-
-      <section className="web-capital-chart-panel">
-        <div className="web-capital-chart-toolbar">
-          <button type="button" aria-label="Add market"><Ionicons name="add-circle-outline" size={21} color="currentColor" /></button>
-          {(['5m', '1h', '1d'] as CandleInterval[]).map((interval) => <button key={interval} type="button" className={chartInterval === interval ? 'is-active' : ''} onClick={() => setChartInterval(interval)}>{interval}</button>)}
-          <span className="web-capital-toolbar-separator" />
-          <button type="button"><Ionicons name="stats-chart-outline" size={17} color="currentColor" /> Candles</button>
-          <button type="button"><Ionicons name="pulse-outline" size={17} color="currentColor" /> Indicators</button>
-          <button type="button"><Ionicons name="notifications-outline" size={17} color="currentColor" /> Alerts</button>
-          <span className="web-capital-chart-save">Save <Ionicons name="chevron-down" size={12} color="currentColor" /></span>
-          <button type="button" aria-label="Fullscreen"><Ionicons name="scan-outline" size={18} color="currentColor" /></button>
-        </div>
-        <div className="web-capital-chart-body">
-          <aside className="web-capital-drawing-tools" aria-label="Chart tools">
-            {(['add-outline', 'remove-outline', 'git-commit-outline', 'analytics-outline', 'brush-outline', 'text-outline', 'happy-outline', 'resize-outline', 'search-outline'] as const).map((icon) => <button type="button" key={icon}><Ionicons name={icon} size={19} color="currentColor" /></button>)}
-          </aside>
-          <div className="web-capital-chart-canvas">
-            <div className="web-capital-chart-symbol">
-              <strong>{selected?.symbol ?? '—'} · {chartInterval}</strong>
-              <span className={(quote?.change24hPct ?? 0) >= 0 ? 'is-up' : 'is-down'}>{formatPrice(last, decimals)} · {formatPercent(quote?.change24hPct)}</span>
-              <small>{selected?.name ?? 'Select a market'} · Funding {formatFundingApr(quote?.funding)}</small>
-            </div>
-            <WebMarketChart candles={candles ?? []} decimals={decimals} loading={chartLoading} />
-          </div>
-        </div>
-        <div className="web-capital-chart-footer"><span>1D</span><span>5D</span><span>1M</span><span>3M</span><span>6M</span><span>YTD</span><span>1Y</span><span>All</span><em>{Intl.DateTimeFormat().resolvedOptions().timeZone}</em><span>%</span><span>log</span><strong>auto</strong></div>
-      </section>
-
-      <WebAccountDock />
+        <ReadOnlyTicket instrument={selected} mark={last} decimals={decimals} />
+      </div>
     </div>
   );
 }

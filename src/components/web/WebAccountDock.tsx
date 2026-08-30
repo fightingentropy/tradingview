@@ -39,10 +39,10 @@ const TABS: { key: AccountDockTab; label: string }[] = [
   { key: 'tradeHistory', label: 'Trade History' },
 ];
 
-const HEIGHT_STORAGE_KEY = 'tradingview-account-dock-height-v2';
+const HEIGHT_STORAGE_KEY = 'tradingview-account-dock-height-v3';
 const COLLAPSED_HEIGHT = 44;
-const EXPANDED_HEIGHT = 200;
-const DEFAULT_HEIGHT = COLLAPSED_HEIGHT;
+const EXPANDED_HEIGHT = 232;
+const DEFAULT_HEIGHT = EXPANDED_HEIGHT;
 const MIN_HEIGHT = COLLAPSED_HEIGHT;
 
 function clampHeight(value: number) {
@@ -278,7 +278,7 @@ export function WebAccountDock() {
         });
       }
     } catch {
-      // Storage is optional; the Capital-style dock starts collapsed.
+      // Storage is optional; the terminal starts with account activity visible.
     }
     const resize = () => {
       const next = clampHeight(panelHeightRef.current);
