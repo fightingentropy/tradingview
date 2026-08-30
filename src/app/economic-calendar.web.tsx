@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link } from 'expo-router';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { useEconomicCalendarRange } from '@/data/useEconomicCalendar';
@@ -24,6 +23,8 @@ type CalendarRange = {
   from: Date;
   to: Date;
 };
+
+const MAX_CUSTOM_RANGE_DAYS = 45;
 
 const IMPACTS: { value: EconomicCalendarImportance; label: string; className: string }[] = [
   { value: -1, label: 'Low', className: 'is-low' },
@@ -178,6 +179,13 @@ export default function WebEconomicCalendarScreen() {
   const hasValidDraft = draftImportances.length > 0 && draftCountries.length > 0;
   const filtersDirty = !sameSelection(draftCountries, selectedCountries)
     || !sameSelection(draftImportances, selectedImportances);
+  const customRangeValid = Boolean(customFrom && customTo)
+    && customFrom <= customTo
+    && (Date.parse(customTo) - Date.parse(customFrom)) / (24 * 60 * 60 * 1000)
+      < MAX_CUSTOM_RANGE_DAYS;
+  const customMaxTo = customFrom
+    ? economicCalendarDateKey(addDays(economicCalendarDateFromKey(customFrom), MAX_CUSTOM_RANGE_DAYS - 1))
+    : undefined;
 
   const selectPreset = (nextPreset: Exclude<RangePreset, 'custom'>) => {
     const nextRange = rangeForPreset(nextPreset, today);
@@ -189,7 +197,7 @@ export default function WebEconomicCalendarScreen() {
   };
 
   const applyCustomRange = () => {
-    if (!customFrom || !customTo || customFrom > customTo) return;
+    if (!customRangeValid) return;
     setRange({
       from: economicCalendarDateFromKey(customFrom),
       to: economicCalendarDateFromKey(customTo),
@@ -227,7 +235,6 @@ export default function WebEconomicCalendarScreen() {
     <div className="web-xyz-calendar-page">
       <header className="web-xyz-calendar-page-header">
         <div>
-          <Link href="/news" className="web-xyz-calendar-back"><Ionicons name="arrow-back" size={14} color="currentColor" /> News</Link>
           <span className="web-xyz-calendar-live"><i /> Live macro calendar</span>
           <h1>Economic calendar</h1>
           <p>Scheduled releases, central-bank events and consensus data in your local time.</p>
@@ -313,8 +320,9 @@ export default function WebEconomicCalendarScreen() {
               {customOpen ? (
                 <div className="web-xyz-calendar-date-popover">
                   <label><span>From</span><input type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} /></label>
-                  <label><span>To</span><input type="date" min={customFrom} value={customTo} onChange={(event) => setCustomTo(event.target.value)} /></label>
-                  <button type="button" disabled={!customFrom || !customTo || customFrom > customTo} onClick={applyCustomRange}>Apply range</button>
+                  <label><span>To</span><input type="date" min={customFrom} max={customMaxTo} value={customTo} onChange={(event) => setCustomTo(event.target.value)} /></label>
+                  <small>Choose up to {MAX_CUSTOM_RANGE_DAYS} days.</small>
+                  <button type="button" disabled={!customRangeValid} onClick={applyCustomRange}>Apply range</button>
                 </div>
               ) : null}
             </div>

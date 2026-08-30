@@ -6,8 +6,10 @@ import {
 } from '@/domain/economicCalendar';
 
 const OFFICIAL_CALENDAR_URL = 'https://economic-calendar.tradingview.com/events';
+const DEFAULT_CALENDAR_PROXY_URL =
+  'https://tradingview-web.erlinhoxha.workers.dev/api/economic-calendar';
 const ECONOMIC_CALENDAR_URL =
-  process.env.EXPO_PUBLIC_ECONOMIC_CALENDAR_URL?.trim() || OFFICIAL_CALENDAR_URL;
+  process.env.EXPO_PUBLIC_ECONOMIC_CALENDAR_URL?.trim() || DEFAULT_CALENDAR_PROXY_URL;
 const MAJOR_ECONOMIES = ECONOMIC_CALENDAR_COUNTRIES.map((country) => country.code).join(',');
 
 export async function loadEconomicCalendar(dateKey: string): Promise<EconomicCalendarEvent[]> {

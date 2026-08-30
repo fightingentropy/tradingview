@@ -685,7 +685,7 @@ a {
     z-index: 50;
     display: grid;
     height: 68px;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     padding: 5px 8px max(5px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--web-line);
     background: rgba(8, 10, 13, 0.94);
@@ -5210,6 +5210,11 @@ input {
 }
 
 .web-xyz-calendar-date-popover input:focus { border-color: rgba(80, 227, 171, 0.55); }
+
+.web-xyz-calendar-date-popover > small {
+  color: #6b7280;
+  font-size: 8px;
+}
 
 .web-xyz-calendar-date-popover > button {
   min-height: 34px;

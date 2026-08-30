@@ -4,7 +4,7 @@ import { useState, type PropsWithChildren } from 'react';
 import { usePreferences } from '@/store/preferences';
 
 type NavItem = {
-  href: '/' | '/markets' | '/news' | '/account';
+  href: '/' | '/markets' | '/news' | '/economic-calendar' | '/account';
   label: string;
   glyph: string;
 };
@@ -13,6 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Trade', glyph: '⌁' },
   { href: '/markets', label: 'Markets', glyph: '▥' },
   { href: '/news', label: 'News', glyph: '▤' },
+  { href: '/economic-calendar', label: 'Calendar', glyph: '▦' },
   { href: '/account', label: 'Portfolio', glyph: '▱' },
 ];
 
