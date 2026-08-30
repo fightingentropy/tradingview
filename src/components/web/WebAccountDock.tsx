@@ -39,9 +39,11 @@ const TABS: { key: AccountDockTab; label: string }[] = [
   { key: 'tradeHistory', label: 'Trade History' },
 ];
 
-const HEIGHT_STORAGE_KEY = 'tradingview-account-dock-height';
-const DEFAULT_HEIGHT = 220;
-const MIN_HEIGHT = 160;
+const HEIGHT_STORAGE_KEY = 'tradingview-account-dock-height-v2';
+const COLLAPSED_HEIGHT = 44;
+const EXPANDED_HEIGHT = 200;
+const DEFAULT_HEIGHT = COLLAPSED_HEIGHT;
+const MIN_HEIGHT = COLLAPSED_HEIGHT;
 
 function clampHeight(value: number) {
   if (typeof window === 'undefined') return Math.max(MIN_HEIGHT, value);
@@ -276,7 +278,7 @@ export function WebAccountDock() {
         });
       }
     } catch {
-      // Storage is optional; the exact XYZ default remains 220px.
+      // Storage is optional; the Capital-style dock starts collapsed.
     }
     const resize = () => {
       const next = clampHeight(panelHeightRef.current);
@@ -370,9 +372,10 @@ export function WebAccountDock() {
     : key === 'openOrders'
       ? openOrders.data?.length
       : undefined;
+  const collapsed = panelHeight <= COLLAPSED_HEIGHT + 2;
 
   return (
-    <section className="web-terminal-dock web-xyz-trade-panel" style={{ height: panelHeight, flex: `0 0 ${panelHeight}px` }}>
+    <section className={`web-terminal-dock web-xyz-trade-panel${collapsed ? ' is-collapsed' : ''}`} style={{ height: panelHeight, flex: `0 0 ${panelHeight}px` }}>
       <div
         className="web-xyz-dock-resizer"
         role="separator"
@@ -395,7 +398,16 @@ export function WebAccountDock() {
               role="tab"
               aria-selected={tab === item.key}
               className={tab === item.key ? 'is-active' : ''}
-              onClick={() => setTab(item.key)}>
+              onClick={() => {
+                if (collapsed) {
+                  setTab(item.key);
+                  updateHeight(EXPANDED_HEIGHT, true);
+                } else if (tab === item.key) {
+                  updateHeight(COLLAPSED_HEIGHT, true);
+                } else {
+                  setTab(item.key);
+                }
+              }}>
               {item.label}{count ? <span>({count})</span> : null}
             </button>
           );

@@ -233,20 +233,6 @@ export default function WebEconomicCalendarScreen() {
 
   return (
     <div className="web-xyz-calendar-page">
-      <header className="web-xyz-calendar-page-header">
-        <div>
-          <span className="web-xyz-calendar-live"><i /> Live macro calendar</span>
-          <h1>Economic calendar</h1>
-          <p>Scheduled releases, central-bank events and consensus data in your local time.</p>
-        </div>
-        <div className="web-xyz-calendar-page-actions">
-          <span><Ionicons name="time-outline" size={14} color="currentColor" /> {Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
-          <button type="button" onClick={() => void refetch()} disabled={isRefetching}>
-            <Ionicons name="refresh" size={15} color="currentColor" /> {isRefetching ? 'Refreshing' : 'Refresh'}
-          </button>
-        </div>
-      </header>
-
       <div className="web-xyz-calendar-shell">
         <aside className="web-xyz-calendar-filters" aria-label="Calendar filters">
           <div className="web-xyz-calendar-filter-heading"><span>Filters</span><small>{events.length} events</small></div>
@@ -294,7 +280,7 @@ export default function WebEconomicCalendarScreen() {
 
           <div className="web-xyz-calendar-filter-actions">
             <button type="button" className="is-apply" disabled={!hasValidDraft || !filtersDirty} onClick={applyFilters}>
-              Apply filters
+              Apply
             </button>
             <button type="button" className="is-reset" onClick={resetFilters}>Reset filters</button>
           </div>
@@ -326,6 +312,9 @@ export default function WebEconomicCalendarScreen() {
                 </div>
               ) : null}
             </div>
+            <button className="web-xyz-calendar-refresh" type="button" onClick={() => void refetch()} disabled={isRefetching} aria-label="Refresh calendar">
+              <Ionicons name="refresh" size={15} color="currentColor" />
+            </button>
           </div>
 
           <div className="web-xyz-calendar-table" role="table" aria-label="Economic calendar events">

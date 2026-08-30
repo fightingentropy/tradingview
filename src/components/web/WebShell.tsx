@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link, usePathname } from 'expo-router';
+import { Link, usePathname, type Href } from 'expo-router';
 import { useEffect, useState, type PropsWithChildren } from 'react';
 
 import { useHlAccount } from '@/data/useHlAccount';
@@ -8,17 +8,20 @@ import { useHlConnection } from '@/store/hlConnection';
 import { usePreferences } from '@/store/preferences';
 
 type NavItem = {
-  href: '/' | '/markets' | '/news' | '/economic-calendar' | '/account';
+  href: Href;
+  match: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/', label: 'Trade', icon: 'analytics-outline' },
-  { href: '/markets', label: 'Markets', icon: 'compass-outline' },
-  { href: '/news', label: 'News', icon: 'newspaper-outline' },
-  { href: '/economic-calendar', label: 'Calendar', icon: 'calendar-outline' },
-  { href: '/account', label: 'Portfolio', icon: 'briefcase-outline' },
+  { href: '/', match: '/', label: 'Trade', icon: 'analytics-outline' },
+  { href: '/markets', match: '/markets', label: 'Discover', icon: 'git-network-outline' },
+  { href: { pathname: '/symbol/[id]', params: { id: 'hl:perp:BTC' } }, match: '/symbol/', label: 'Charts', icon: 'bar-chart-outline' },
+  { href: '/account', match: '/account', label: 'Portfolio', icon: 'briefcase-outline' },
+  { href: '/news', match: '/news', label: 'News', icon: 'newspaper-outline' },
+  { href: '/economic-calendar', match: '/economic-calendar', label: 'Calendar', icon: 'calendar-outline' },
+  { href: '/settings', match: '/settings', label: 'All alerts', icon: 'notifications-outline' },
 ];
 
 function BrandMark() {
@@ -26,9 +29,9 @@ function BrandMark() {
 }
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const active = item.href === '/'
+  const active = item.match === '/'
     ? pathname === '/'
-    : pathname.startsWith(item.href) || (item.href === '/markets' && pathname.startsWith('/symbol/'));
+    : pathname.startsWith(item.match);
   return (
     <Link
       href={item.href}
@@ -110,32 +113,38 @@ export function WebShell({ children }: PropsWithChildren) {
           <BrandMark />
         </Link>
 
-        <div className="web-workspace-label">
-          <Ionicons name="pulse-outline" size={16} color="currentColor" />
-          <span>Market terminal</span>
-        </div>
+        <span className="web-theme-control" aria-label="Dark theme">
+          <Ionicons name="moon" size={15} color="currentColor" />
+          <i><Ionicons name="sunny-outline" size={15} color="currentColor" /></i>
+        </span>
+        <Link href="/news" className="web-top-utility" aria-label="News"><Ionicons name="mail-outline" size={20} color="currentColor" /></Link>
+        <Link href="/account" className="web-top-utility" aria-label="Portfolio overview"><Ionicons name="pie-chart-outline" size={20} color="currentColor" /></Link>
 
         <div className="web-account-strip" aria-label="Account summary">
+          <span className="web-account-collapse" aria-hidden="true"><Ionicons name="chevron-forward" size={14} color="currentColor" /></span>
           <AccountMetric label="Equity" value={equity} />
           <AccountMetric label="P&L" value={pnl} tone={pnlTone} />
           <AccountMetric label="Available" value={available} />
           <AccountMetric label="Funds" value={funds} />
-          <span className="web-shell-currency">USDC</span>
-          <span className="web-shell-live"><i />{network === 'mainnet' ? 'Live' : 'Testnet'}</span>
+          <span className="web-shell-more" aria-hidden="true"><Ionicons name="ellipsis-vertical" size={17} color="currentColor" /></span>
+          <span className="web-shell-currency">USDC <Ionicons name="chevron-down" size={12} color="currentColor" /></span>
           <Link href="/account" className="web-connect-button">
-            <Ionicons name={address ? 'person-circle-outline' : 'log-in-outline'} size={16} color="currentColor" />
-            {address ? 'Account' : 'Connect'}
+            {address ? (network === 'mainnet' ? 'Live' : 'Testnet') : 'Connect'}
+            <Ionicons name="chevron-down" size={12} color="currentColor" />
           </Link>
         </div>
       </header>
 
       <aside className="web-sidebar">
         <nav className="web-primary-nav" aria-label="Primary navigation">
-          {NAV_ITEMS.map((item) => <NavLink key={item.href} item={item} pathname={pathname} />)}
+          {NAV_ITEMS.map((item) => <NavLink key={item.label} item={item} pathname={pathname} />)}
         </nav>
 
         <div className="web-sidebar-spacer" />
-        <span className="web-rail-status" title={`${network} market data`}><i /><span>Live</span></span>
+        <Link href="/news" className="web-rail-help" aria-label="Get help">
+          <Ionicons name="help-circle-outline" size={21} color="currentColor" />
+          <span>Get Help</span>
+        </Link>
         <button
           type="button"
           className={`web-rail-settings${pathname.startsWith('/settings') || settingsOpen ? ' is-active' : ''}`}
@@ -153,7 +162,7 @@ export function WebShell({ children }: PropsWithChildren) {
       </div>
 
       <nav className="web-mobile-nav" aria-label="Mobile navigation">
-        {NAV_ITEMS.map((item) => <NavLink key={item.href} item={item} pathname={pathname} />)}
+        {NAV_ITEMS.map((item) => <NavLink key={item.label} item={item} pathname={pathname} />)}
       </nav>
 
       {settingsOpen ? (
@@ -166,29 +175,33 @@ export function WebShell({ children }: PropsWithChildren) {
             </header>
             <div className="web-capital-settings-body">
               <nav aria-label="Settings sections">
-                <span className="is-active"><Ionicons name="options-outline" size={19} color="currentColor" /> Platform settings</span>
-                <Link href="/account" onPress={() => setSettingsOpen(false)}><Ionicons name="person-outline" size={19} color="currentColor" /> Account</Link>
-                <Link href="/news" onPress={() => setSettingsOpen(false)}><Ionicons name="notifications-outline" size={19} color="currentColor" /> Intelligence</Link>
-                <Link href="/settings" onPress={() => setSettingsOpen(false)}><Ionicons name="construct-outline" size={19} color="currentColor" /> Advanced</Link>
+                <Link href="/account" onPress={() => setSettingsOpen(false)}><Ionicons name="people-outline" size={20} color="currentColor" /> My account</Link>
+                <Link href="/account" onPress={() => setSettingsOpen(false)}><Ionicons name="person-circle-outline" size={20} color="currentColor" /> Personal details</Link>
+                <Link href="/settings" onPress={() => setSettingsOpen(false)}><Ionicons name="shield-checkmark-outline" size={20} color="currentColor" /> Privacy</Link>
+                <Link href="/news" onPress={() => setSettingsOpen(false)}><Ionicons name="notifications-outline" size={20} color="currentColor" /> Notifications</Link>
+                <span className="is-active"><Ionicons name="options-outline" size={20} color="currentColor" /> Platform settings</span>
               </nav>
 
               <div className="web-capital-settings-content">
-                <div className="web-capital-settings-tabs"><span className="is-active">Workspace</span><span>Data</span></div>
-                <div className="web-capital-settings-heading">
-                  <span>PLATFORM SETTINGS</span>
-                  <h3>Workspace preferences</h3>
-                  <p>Personalise this browser without changing your trading account.</p>
+                <div className="web-capital-settings-section">
+                  <h3>Display settings</h3>
+                  <p>Display preferences apply to the XYZ web terminal.</p>
+                  <div className="web-capital-select-row"><span><small>Theme</small><strong>Dark</strong></span><Ionicons name="chevron-down" size={15} color="currentColor" /></div>
                 </div>
-                <div className="web-capital-settings-list">
-                  <QuickSetting checked={showClobOrderBook} label="CLOB order book" detail="Show live bid and ask depth beside the chart." onChange={() => setShowClobOrderBook(!showClobOrderBook)} />
-                  <QuickSetting checked={privacy} label="Privacy mode" detail="Mask portfolio values throughout the workspace." onChange={() => setPrivacy(!privacy)} />
-                  <QuickSetting checked={hideSmallBalances} label="Hide small balances" detail="Remove balances below $1 from portfolio tables." onChange={() => setHideSmallBalances(!hideSmallBalances)} />
+                <div className="web-capital-settings-section">
+                  <h3>Trading workspace</h3>
+                  <p>Choose what appears around every market chart.</p>
+                  <div className="web-capital-settings-list">
+                    <QuickSetting checked={showClobOrderBook} label="CLOB order book" detail="Show live bid and ask depth in Trade." onChange={() => setShowClobOrderBook(!showClobOrderBook)} />
+                    <QuickSetting checked={privacy} label="Privacy mode" detail="Mask account values throughout the workspace." onChange={() => setPrivacy(!privacy)} />
+                    <QuickSetting checked={hideSmallBalances} label="Hide small balances" detail="Remove balances below $1 from portfolio tables." onChange={() => setHideSmallBalances(!hideSmallBalances)} />
+                  </div>
                 </div>
-                <div className="web-capital-provider-row">
-                  <span><i /><strong>Hyperliquid</strong><small>Market and account provider</small></span>
-                  <em>Live</em>
+                <div className="web-capital-settings-section">
+                  <h3>Chart defaults</h3>
+                  <p>This is applied whenever a new market is opened.</p>
+                  <div className="web-capital-chart-defaults"><span><small>Timeframe</small><strong>5m</strong></span><span><small>Chart type</small><strong>Candles</strong></span></div>
                 </div>
-                <Link href="/settings" className="web-capital-settings-link" onPress={() => setSettingsOpen(false)}>Open all settings <Ionicons name="arrow-forward" size={15} color="currentColor" /></Link>
               </div>
             </div>
           </section>
