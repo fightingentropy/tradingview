@@ -2,9 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link, usePathname, type Href } from 'expo-router';
 import { useEffect, useState, type PropsWithChildren } from 'react';
 
-import { useHlAccount } from '@/data/useHlAccount';
-import { signedUsd, usd } from '@/lib/format';
-import { useHlConnection } from '@/store/hlConnection';
 import { usePreferences } from '@/store/preferences';
 
 type NavItem = {
@@ -42,15 +39,6 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   );
 }
 
-function AccountMetric({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
-  return (
-    <span className="web-shell-metric">
-      <small>{label}</small>
-      <strong className={tone === 'up' ? 'is-up' : tone === 'down' ? 'is-down' : ''}>{value}</strong>
-    </span>
-  );
-}
-
 function QuickSetting({
   checked,
   detail,
@@ -78,8 +66,6 @@ function QuickSetting({
 export function WebShell({ children }: PropsWithChildren) {
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const address = useHlConnection((state) => state.address);
-  const account = useHlAccount();
   const privacy = usePreferences((state) => state.privacyMode);
   const setPrivacy = usePreferences((state) => state.setPrivacyMode);
   const hideSmallBalances = usePreferences((state) => state.hideSmallBalances);
@@ -96,28 +82,12 @@ export function WebShell({ children }: PropsWithChildren) {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [settingsOpen]);
 
-  const hidden = '••••';
-  const unavailable = address && account.isLoading ? '…' : '—';
-  const equity = privacy ? hidden : account.data ? usd(account.data.totalEquity) : unavailable;
-  const pnl = privacy ? hidden : account.data ? signedUsd(account.data.unrealizedPnl) : unavailable;
-  const available = privacy ? hidden : account.data ? usd(account.data.freeCollateral) : unavailable;
-  const funds = privacy ? hidden : account.data ? usd(account.data.withdrawable) : unavailable;
-  const pnlTone = account.data ? (account.data.unrealizedPnl >= 0 ? 'up' : 'down') : undefined;
-
   return (
     <div className="web-app-shell">
       <header className="web-topbar">
         <Link href="/" className="web-brand" aria-label="XYZ terminal home">
           <BrandMark />
         </Link>
-
-        <div className="web-account-strip" aria-label="Account summary">
-          <span className="web-account-collapse" aria-hidden="true"><Ionicons name="chevron-forward" size={14} color="currentColor" /></span>
-          <AccountMetric label="Equity" value={equity} />
-          <AccountMetric label="P&L" value={pnl} tone={pnlTone} />
-          <AccountMetric label="Available" value={available} />
-          <AccountMetric label="Funds" value={funds} />
-        </div>
       </header>
 
       <aside className="web-sidebar">
