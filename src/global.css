@@ -6546,42 +6546,6 @@ body {
 .web-shell-metric small { color: #a0a0a0; font-size: 9px; line-height: 12px; }
 .web-shell-metric strong { color: #fff; font: 500 10px/13px Inter, system-ui, sans-serif; }
 
-.web-shell-more {
-  display: grid;
-  width: 34px;
-  color: #8e8e8e;
-  place-items: center;
-}
-
-.web-shell-currency {
-  min-width: 140px;
-  height: 32px;
-  align-self: center;
-  justify-content: space-between;
-  margin-left: 5px;
-  padding: 0 12px;
-  border: 1px solid #3b3b3b;
-  border-radius: 3px;
-  color: #f4f4f4;
-  background: #1b1b1b;
-  font-size: 12px;
-}
-
-.web-connect-button {
-  min-width: 58px;
-  height: 32px;
-  justify-content: space-between;
-  margin: 0 9px 0 8px;
-  padding: 0 7px;
-  border-color: #4a4a4a;
-  border-radius: 2px;
-  color: #f3f3f3;
-  background: #2b2b2b;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.web-connect-button:hover { color: #fff; background: #343434; }
 .web-shell-live { display: none; }
 
 .web-sidebar {
@@ -7348,7 +7312,6 @@ body {
 }
 
 @media (max-width: 820px) {
-  .web-shell-currency { min-width: 92px; }
   .web-capital-trade-page { height: auto; overflow: visible; }
   .web-capital-trade-browser { display: block; min-height: 480px; }
   .web-capital-watchlists { display: none; }
@@ -7368,9 +7331,7 @@ body {
   .web-topbar { height: 48px; }
   .web-brand { width: 82px; height: 48px; flex-basis: 82px; padding: 0 10px; }
   .web-xyz-wordmark { font-size: 19px; }
-  .web-account-collapse,
-  .web-shell-more,
-  .web-shell-currency { display: none; }
+  .web-account-collapse { display: none; }
   .web-main-column { padding-top: 48px; }
   .web-page { padding: 6px; }
   .web-capital-trade-page,
@@ -7535,20 +7496,6 @@ body {
 .web-hl-market-menu button small { overflow: hidden; color: var(--web-faint); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .web-hl-market-menu button b,
 .web-hl-market-menu button em { font: 500 9px var(--font-mono); font-style: normal; text-align: right; }
-
-.web-hl-all-markets {
-  display: inline-flex;
-  height: 100%;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  padding: 0 17px;
-  color: var(--web-muted);
-  font-size: 9px;
-  white-space: nowrap;
-}
-
-.web-hl-all-markets:hover { color: var(--web-text); background: #151a20; }
 
 .web-hl-workspace {
   grid-template-columns: minmax(500px, 1fr) 286px 330px;
@@ -7752,7 +7699,6 @@ body {
   .web-hl-center { display: flex; }
   .web-hl-ticket { display: none; }
   .web-hl-center { min-height: calc(100vh - 113px); }
-  .web-hl-all-markets { display: none; }
 }
 
 @media (max-width: 700px) {

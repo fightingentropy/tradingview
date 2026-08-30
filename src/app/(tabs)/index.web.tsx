@@ -253,7 +253,6 @@ export default function WebTradeScreen() {
         <div><strong>{quote?.prevClose == null ? '—' : formatPrice(quote.prevClose, decimals)}</strong><span>Prev. close</span></div>
         <div><strong>{quote?.dayVolume == null ? '—' : `$${formatCompact(quote.dayVolume)}`}</strong><span>24h volume</span></div>
         <div><strong className={(quote?.funding ?? 0) >= 0 ? 'is-up' : 'is-down'}>{formatFundingApr(quote?.funding)}</strong><span>Funding APR</span></div>
-        <Link href="/markets" className="web-hl-all-markets">All markets <Ionicons name="chevron-forward" size={13} color="currentColor" /></Link>
       </section>
 
       <div className={`web-xyz-workspace web-hl-workspace${showClobOrderBook ? '' : ' is-orderbook-hidden'}`}>

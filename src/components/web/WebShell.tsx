@@ -79,7 +79,6 @@ export function WebShell({ children }: PropsWithChildren) {
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const address = useHlConnection((state) => state.address);
-  const network = useHlConnection((state) => state.network);
   const account = useHlAccount();
   const privacy = usePreferences((state) => state.privacyMode);
   const setPrivacy = usePreferences((state) => state.setPrivacyMode);
@@ -118,12 +117,6 @@ export function WebShell({ children }: PropsWithChildren) {
           <AccountMetric label="P&L" value={pnl} tone={pnlTone} />
           <AccountMetric label="Available" value={available} />
           <AccountMetric label="Funds" value={funds} />
-          <span className="web-shell-more" aria-hidden="true"><Ionicons name="ellipsis-vertical" size={17} color="currentColor" /></span>
-          <span className="web-shell-currency">USDC <Ionicons name="chevron-down" size={12} color="currentColor" /></span>
-          <Link href="/account" className="web-connect-button">
-            {address ? (network === 'mainnet' ? 'Live' : 'Testnet') : 'Connect'}
-            <Ionicons name="chevron-down" size={12} color="currentColor" />
-          </Link>
         </div>
       </header>
 
