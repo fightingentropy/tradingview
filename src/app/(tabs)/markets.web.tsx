@@ -225,6 +225,14 @@ export default function WebMarketsScreen() {
 
   return (
     <div className="web-xyz-markets-page">
+      <header className="web-capital-page-header">
+        <div>
+          <span className="web-capital-page-kicker">DISCOVER</span>
+          <h1>Markets</h1>
+          <p>Browse live crypto, equity, index, commodity and FX markets.</p>
+        </div>
+        <span className="web-capital-page-status"><i /> {counts.all} instruments live</span>
+      </header>
       <section className="web-xyz-markets-surface" aria-label="Markets">
         <div className="web-xyz-markets-search-header">
           <label className="web-xyz-markets-search">

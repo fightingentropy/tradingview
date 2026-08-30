@@ -5,11 +5,13 @@ import { WebAccountDock } from '@/components/web/WebAccountDock';
 import { WebMarketChart } from '@/components/web/WebMarketChart';
 import { WebSymbolMark } from '@/components/web/WebSymbolMark';
 import { useCandles } from '@/data/useCandles';
+import { useHlAccount } from '@/data/useHlAccount';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useMarkets, useInstrumentsByIds } from '@/data/useMarkets';
 import { useOrderBook } from '@/data/useOrderBook';
 import type { CandleInterval, Instrument, Quote } from '@/domain/types';
-import { formatCompact, formatFundingApr, formatPercent, formatPrice, priceDecimalsFor } from '@/lib/format';
+import { formatCompact, formatFundingApr, formatPercent, formatPrice, priceDecimalsFor, usd } from '@/lib/format';
+import { useHlConnection } from '@/store/hlConnection';
 import { useLivePrice } from '@/store/livePrices';
 import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
@@ -102,6 +104,19 @@ function OrderBookPanel({
 }
 
 function ReadOnlyTicket({ instrument, mark, decimals }: { instrument?: Instrument; mark?: number; decimals: number }) {
+  const address = useHlConnection((state) => state.address);
+  const account = useHlAccount();
+  const privacy = usePreferences((state) => state.privacyMode);
+  const position = account.data?.positions.find((item) => item.coin === instrument?.coinKey);
+  const available = !address ? '—' : account.isLoading ? '…' : account.data ? usd(account.data.freeCollateral) : '—';
+  const currentPosition = !address
+    ? '—'
+    : account.isLoading
+      ? '…'
+      : position
+        ? `${formatPrice(position.size, 4)} ${instrument?.symbol ?? position.coin}`
+        : `0 ${instrument?.symbol ?? '—'}`;
+
   return (
     <aside className="web-xyz-ticket">
       <div className="web-xyz-ticket-head">
@@ -113,7 +128,7 @@ function ReadOnlyTicket({ instrument, mark, decimals }: { instrument?: Instrumen
       </div>
       <div className="web-ticket-tabs"><button type="button" className="is-active">Market</button><button type="button">Limit</button><span>Pro⌄</span></div>
       <div className="web-ticket-side"><button type="button" className="is-long">Buy / Long</button><button type="button">Sell / Short</button></div>
-      <div className="web-ticket-balance"><span>Available to Trade</span><b>$0.00 USDC</b><span>Current Position</span><b>0 {instrument?.symbol ?? '—'}</b></div>
+      <div className="web-ticket-balance"><span>Available to Trade</span><b>{privacy && address ? '••••' : available}</b><span>Current Position</span><b>{privacy && address ? '••••' : currentPosition}</b></div>
       <div className="web-ticket-field"><span>Size</span><b>{instrument?.symbol ?? '—'}⌄</b></div>
       <div className="web-ticket-slider"><i /><span>0%</span></div>
       <label className="web-ticket-check"><i /> Reduce Only</label>

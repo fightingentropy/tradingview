@@ -38,9 +38,7 @@ function PortfolioLine({ values }: { values: { t: number; v: number }[] }) {
   return (
     <svg className="web-portfolio-chart" viewBox="0 0 900 240" preserveAspectRatio="none" role="img" aria-label="Portfolio value history">
       {[0.25, 0.5, 0.75].map((value) => <line key={value} x1="0" x2="900" y1={240 * value} y2={240 * value} className="web-chart-grid" />)}
-      <path d={`${path} L 900 240 L 0 240 Z`} fill="url(#portfolioFill)" />
-      <path d={path} fill="none" stroke="#50e3ab" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-      <defs><linearGradient id="portfolioFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#50e3ab" stopOpacity="0.18" /><stop offset="100%" stopColor="#50e3ab" stopOpacity="0" /></linearGradient></defs>
+      <path d={path} className="web-portfolio-line" fill="none" strokeWidth="2" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
@@ -74,7 +72,7 @@ export default function WebAccountScreen() {
 
   if (!address) {
     return (
-      <div className="web-account-connect-layout">
+      <div className="web-account-connect-layout web-capital-account-connect">
         <section className="web-connect-card web-panel">
           <span className="web-setup-icon"><Ionicons name="wallet-outline" size={23} color="currentColor" /></span>
           <span className="web-section-kicker">READ-ONLY PORTFOLIO</span>
@@ -87,7 +85,7 @@ export default function WebAccountScreen() {
           </label>
           <div className="web-connect-divider"><span>or</span></div>
           <button className="web-demo-button" type="button" onClick={() => connectDemo(DEMO_ADDRESS)}><Ionicons name="eye-outline" size={16} color="currentColor" /> Preview a public demo</button>
-          <p className="web-security-note"><Ionicons name="shield-checkmark-outline" size={15} color="currentColor" /> The web workspace is view-only. Trading remains on your signed iPhone app.</p>
+          <div className="web-security-note"><Ionicons name="shield-checkmark-outline" size={15} color="currentColor" /> The web workspace is view-only. Trading remains on your signed iPhone app.</div>
         </section>
         <aside className="web-connect-aside">
           <div><span>01</span><h3>Public by design</h3><p>Portfolio reads use only the public chain address.</p></div>
@@ -106,7 +104,7 @@ export default function WebAccountScreen() {
   const periodPnl = portfolio?.[period].pnl.at(-1)?.v ?? 0;
 
   return (
-    <div className="web-content-stack">
+    <div className="web-content-stack web-account-page">
       <section className="web-account-header">
         <div><span className="web-section-kicker">{demo ? 'PUBLIC DEMO' : 'CONNECTED ACCOUNT'}</span><h2>{address.slice(0, 7)}…{address.slice(-5)}</h2><p>Live, read-only Hyperliquid portfolio</p></div>
         <div><button className="web-icon-button" type="button" onClick={() => setPrivacy(!privacy)} aria-label={privacy ? 'Show account values' : 'Hide account values'}><Ionicons name={privacy ? 'eye-off-outline' : 'eye-outline'} size={17} color="currentColor" /></button><button className="web-quiet-button" type="button" onClick={disconnect}>Disconnect</button></div>
@@ -132,7 +130,7 @@ export default function WebAccountScreen() {
           <div><span>Margin used</span><strong>{account ? display(account.totalMarginUsed) : '—'}</strong></div>
           <div><span>Withdrawable</span><strong>{account ? display(account.withdrawable) : '—'}</strong></div>
           <div><span>Account mode</span><strong>{account?.abstractionMode ?? '—'}</strong></div>
-          <p><Ionicons name="information-circle-outline" size={15} color="currentColor" /> Values are read from the live public account. No order actions are available on web.</p>
+          <div className="web-risk-note"><Ionicons name="information-circle-outline" size={15} color="currentColor" /> Values are read from the live public account. No order actions are available on web.</div>
         </aside>
       </div>
 

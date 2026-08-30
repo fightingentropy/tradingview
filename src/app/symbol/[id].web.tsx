@@ -48,7 +48,7 @@ export default function WebSymbolScreen() {
   const decimals = priceDecimalsFor(instrument.priceDecimals, last);
 
   return (
-    <div className="web-content-stack">
+    <div className="web-content-stack web-symbol-page">
       <section className="web-symbol-page-header">
         <div>
           <Link href="/" className="web-back-link"><Ionicons name="arrow-back" size={15} color="currentColor" /> Trade</Link>
