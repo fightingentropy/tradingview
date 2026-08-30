@@ -21,7 +21,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/account', match: '/account', label: 'Portfolio', icon: 'briefcase-outline' },
   { href: '/news', match: '/news', label: 'News', icon: 'newspaper-outline' },
   { href: '/economic-calendar', match: '/economic-calendar', label: 'Calendar', icon: 'calendar-outline' },
-  { href: '/settings', match: '/settings', label: 'All alerts', icon: 'notifications-outline' },
 ];
 
 function BrandMark() {
