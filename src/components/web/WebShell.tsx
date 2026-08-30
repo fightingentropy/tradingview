@@ -112,13 +112,6 @@ export function WebShell({ children }: PropsWithChildren) {
           <BrandMark />
         </Link>
 
-        <span className="web-theme-control" aria-label="Dark theme">
-          <Ionicons name="moon" size={15} color="currentColor" />
-          <i><Ionicons name="sunny-outline" size={15} color="currentColor" /></i>
-        </span>
-        <Link href="/news" className="web-top-utility" aria-label="News"><Ionicons name="mail-outline" size={20} color="currentColor" /></Link>
-        <Link href="/account" className="web-top-utility" aria-label="Portfolio overview"><Ionicons name="pie-chart-outline" size={20} color="currentColor" /></Link>
-
         <div className="web-account-strip" aria-label="Account summary">
           <span className="web-account-collapse" aria-hidden="true"><Ionicons name="chevron-forward" size={14} color="currentColor" /></span>
           <AccountMetric label="Equity" value={equity} />

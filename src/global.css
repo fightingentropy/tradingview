@@ -6526,42 +6526,6 @@ body {
 
 .web-xyz-wordmark::first-letter { color: var(--web-accent); }
 
-.web-theme-control {
-  display: flex;
-  width: 65px;
-  height: 49px;
-  flex: 0 0 65px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 7px 0 11px;
-  border-right: 1px solid #242424;
-  color: #fff;
-  background: #181818;
-}
-
-.web-theme-control > svg {
-  display: grid;
-  width: 31px;
-  height: 25px;
-  padding: 5px 8px;
-  border-radius: 15px;
-  color: #fff;
-  background: var(--web-accent);
-}
-
-.web-theme-control > i { display: inline-flex; color: #6f6f6f; }
-
-.web-top-utility {
-  display: grid;
-  width: 64px;
-  height: 49px;
-  flex: 0 0 64px;
-  border-right: 1px solid #242424;
-  color: #777;
-  place-items: center;
-}
-
-.web-top-utility:hover { color: #d2d2d2; background: #1d1d1d; }
 .web-account-strip { height: 49px; }
 
 .web-account-collapse {
@@ -7374,7 +7338,6 @@ body {
 
 @media (max-width: 1050px) {
   .web-brand { width: 138px; flex-basis: 138px; }
-  .web-theme-control { display: none; }
   .web-shell-metric:nth-of-type(4),
   .web-shell-metric:nth-of-type(5) { display: none; }
   .web-capital-trade-browser { grid-template-columns: 180px minmax(520px, 1fr); }
@@ -7385,7 +7348,6 @@ body {
 }
 
 @media (max-width: 820px) {
-  .web-top-utility { display: none; }
   .web-shell-currency { min-width: 92px; }
   .web-capital-trade-page { height: auto; overflow: visible; }
   .web-capital-trade-browser { display: block; min-height: 480px; }
