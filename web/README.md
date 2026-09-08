@@ -234,7 +234,10 @@ Redeploy after changing Convex environment variables or schema.
 ### TradingView frontend
 
 This package lives at `tradingview/web`. The root `wrangler.web.jsonc` publishes
-`web/dist` to https://tradingview-web.erlinhoxha.workers.dev. The standalone
+`web/dist` to https://trade.erlin.org using a Cloudflare Worker custom domain.
+Cloudflare manages its DNS record and HTTPS certificate. The original
+`tradingview-web.erlinhoxha.workers.dev` address remains available for existing
+links and the native calendar API. The standalone
 `trade-xyz` Pages project is retired.
 
 From the **repository root**:

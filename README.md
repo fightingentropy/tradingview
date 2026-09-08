@@ -7,7 +7,7 @@ paper ledger, API-wallet trading, portfolio, vaults, research and multi-chart vi
 
 ## Web app
 
-Live: https://tradingview-web.erlinhoxha.workers.dev
+Live: https://trade.erlin.org
 
 ```sh
 npm run web:install      # Bun 1.3.10; isolated web dependencies

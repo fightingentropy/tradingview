@@ -6,6 +6,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
+  "routes": [
+    { "pattern": "trade.erlin.org", "custom_domain": true }
+  ],
   "assets": {
     "directory": "./web/dist",
     "binding": "ASSETS",
