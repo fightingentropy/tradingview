@@ -62,7 +62,7 @@ function AddRowImpl({
 }) {
   return (
     <View style={styles.row}>
-      <SymbolLogo instrument={instrument} size={42} />
+      <SymbolLogo instrument={instrument} size={32} />
       <View style={styles.mid}>
         <AppText style={styles.symbol} numberOfLines={1}>
           {instrument.symbol}
@@ -82,11 +82,11 @@ function AddRowImpl({
       <Pressable
         hitSlop={12}
         onPress={() => onToggle(instrument)}
-        style={styles.addBtn}
+        style={[styles.addBtn, added && styles.addedBtn]}
         accessibilityLabel={`${added ? 'Remove' : 'Add'} ${instrument.symbol}`}>
         <Ionicons
-          name={added ? 'checkmark-circle' : 'add'}
-          size={added ? 24 : 28}
+          name={added ? 'checkmark' : 'add'}
+          size={20}
           color={added ? Colors.up : Colors.textMuted}
         />
       </Pressable>
@@ -189,6 +189,8 @@ export default function AddSymbolsScreen() {
             <Pressable
               key={f.key}
               onPress={() => setFilter(f.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
               style={[styles.tab, active && styles.tabActive]}>
               <AppText style={[styles.tabLabel, active && styles.tabLabelActive]}>{f.label}</AppText>
             </Pressable>
@@ -197,9 +199,10 @@ export default function AddSymbolsScreen() {
       </ScrollView>
 
       {activeList ? (
-        <AppText style={styles.addingTo} numberOfLines={1}>
-          Adding to {activeList.name}
-        </AppText>
+        <View style={styles.destinationRow}>
+          <AppText style={styles.addingTo} numberOfLines={1}>{activeList.name}</AppText>
+          <AppText style={styles.savedCount}>{watched.size} saved</AppText>
+        </View>
       ) : null}
 
       {isLoading || isRestoring ? (
@@ -213,6 +216,7 @@ export default function AddSymbolsScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           renderItem={renderItem}
+          ListEmptyComponent={<View style={styles.empty}><AppText>No matching symbols</AppText><AppText variant="caption" muted>Try another symbol or category.</AppText></View>}
         />
       )}
     </Screen>
@@ -234,14 +238,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
-    height: 48,
-    borderRadius: Radius.md,
+    height: 42,
+    borderRadius: Radius.sm,
     backgroundColor: Colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
   },
-  input: { flex: 1, color: Colors.text, fontSize: 17, lineHeight: 22 },
-  close: { fontSize: 16, lineHeight: 21, color: Colors.text, fontWeight: '600' },
+  input: { flex: 1, color: Colors.text, fontSize: 15, lineHeight: 20 },
+  close: { fontSize: 14, lineHeight: 20, color: Colors.text, fontWeight: '600' },
   tabScroller: { flexGrow: 0, flexShrink: 0 },
   tabs: {
     flexDirection: 'row',
@@ -254,35 +258,33 @@ const styles = StyleSheet.create({
   tab: {
     minHeight: 36,
     justifyContent: 'center',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.md,
     paddingVertical: 8,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
   },
   tabActive: { backgroundColor: Colors.accentSoft },
   tabLabel: { fontSize: 14, lineHeight: 18, color: Colors.textMuted, fontWeight: '600' },
-  tabLabelActive: { color: Colors.text },
-  addingTo: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: Colors.textFaint,
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
-  },
+  tabLabelActive: { color: Colors.accent },
+  destinationRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: Spacing.lg, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border },
+  addingTo: { flex: 1, fontSize: 11, lineHeight: 16, color: Colors.textMuted, fontWeight: '600' },
+  savedCount: { fontSize: 11, color: Colors.textFaint, fontVariant: ['tabular-nums'] },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    minHeight: 72,
-    paddingVertical: 14,
+    minHeight: 64,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },
   mid: { flex: 1, marginLeft: Spacing.md, paddingRight: Spacing.sm },
-  symbol: { fontSize: 17, lineHeight: 21, fontWeight: '700', color: Colors.text },
-  name: { fontSize: 13, lineHeight: 17, color: Colors.textMuted, marginTop: 2 },
-  meta: { alignItems: 'flex-end', marginRight: Spacing.lg, maxWidth: 130 },
+  symbol: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: Colors.text },
+  name: { fontSize: 12, lineHeight: 16, color: Colors.textMuted, marginTop: 2 },
+  meta: { alignItems: 'flex-end', marginRight: Spacing.md, maxWidth: 100 },
   venue: { fontSize: 14, lineHeight: 18, fontWeight: '600', color: Colors.text },
   type: { fontSize: 12, lineHeight: 16, color: Colors.textMuted, marginTop: 2 },
-  addBtn: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
+  addBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.sm, backgroundColor: Colors.surfaceAlt },
+  addedBtn: { backgroundColor: Colors.accentSoft },
+  empty: { padding: Spacing.xxl, gap: Spacing.sm },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

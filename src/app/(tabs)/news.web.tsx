@@ -5,9 +5,10 @@ import { useState } from 'react';
 import { useNewsFeed } from '@/data/useNewsFeed';
 import type { NewsItem, NewsSourceFilter } from '@/domain/news';
 import { isNewsFeedConfigured } from '@/providers/news/client';
+import { useWatchlists } from '@/store/watchlists';
 
 const FILTERS: { key: NewsSourceFilter; label: string }[] = [
-  { key: 'all', label: 'Major news' },
+  { key: 'all', label: 'Briefing' },
   { key: 'x', label: 'X' },
   { key: 'telegram', label: 'Telegram' },
   { key: 'paste', label: 'Paste' },
@@ -18,6 +19,7 @@ const sourceLabel = (source: NewsItem['source']) => source === 'x' ? 'X' : sourc
 
 function when(value: string) {
   const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Time unavailable';
   const delta = Date.now() - date.getTime();
   if (delta < 60_000) return 'Now';
   if (delta < 3_600_000) return `${Math.max(1, Math.floor(delta / 60_000))} minutes ago`;
@@ -38,6 +40,7 @@ function SourceRow({ item }: { item: NewsItem }) {
 }
 
 export default function WebNewsScreen() {
+  const activeWatchlistId = useWatchlists((state) => state.activeId);
   const [source, setSource] = useState<NewsSourceFilter>('all');
   const {
     items,
@@ -48,14 +51,17 @@ export default function WebNewsScreen() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isRefetching,
   } = useNewsFeed(source);
 
   return (
     <div className="web-capital-news-page">
+      <header className="web-page-heading"><div><h1>News</h1><p>Market briefings and the sources behind them.</p></div></header>
       <nav className="web-capital-news-tabs" aria-label="News sources">
-        <div>{FILTERS.map((filter) => <button key={filter.key} type="button" className={source === filter.key ? 'is-active' : ''} onClick={() => setSource(filter.key)}>{filter.label}</button>)}</div>
+        <div>{FILTERS.map((filter) => <button key={filter.key} type="button" aria-pressed={source === filter.key} className={source === filter.key ? 'is-active' : ''} onClick={() => setSource(filter.key)}>{filter.label}</button>)}</div>
+        <Link href={{ pathname: '/related-news', params: { watchlistId: activeWatchlistId } }}><Ionicons name="star-outline" size={16} color="currentColor" /> Watchlist</Link>
         <Link href="/economic-calendar"><Ionicons name="calendar-outline" size={16} color="currentColor" /> Calendar</Link>
-        <button type="button" onClick={() => void refetch()} aria-label="Refresh news"><Ionicons name="refresh" size={16} color="currentColor" /></button>
+        <button type="button" disabled={isRefetching} onClick={() => void refetch()} aria-label={isRefetching ? 'Refreshing news' : 'Refresh news'}><Ionicons name="refresh" size={16} color="currentColor" /></button>
       </nav>
 
       {!isNewsFeedConfigured ? (
@@ -68,7 +74,7 @@ export default function WebNewsScreen() {
         <div className="web-capital-news-layout">
           <main className="web-capital-news-main">
             <section className="web-capital-news-lead">
-              <header><h2>Major news</h2><span>{when(executiveSummary.generatedAt)}</span></header>
+              <header><h2>Market briefing</h2><span>Updated {when(executiveSummary.generatedAt)}</span></header>
               <article>
                 <span className={`web-pulse-label is-${executiveSummary.pulse.label}`}>{executiveSummary.pulse.label.replace('-', ' ')}</span>
                 <h1>{executiveSummary.headline}</h1>
@@ -98,7 +104,7 @@ export default function WebNewsScreen() {
       ) : (
         <div className="web-capital-source-feed">
           <header><h2>{FILTERS.find((filter) => filter.key === source)?.label}</h2><span>{items.length} items</span></header>
-          {items.length ? items.map((item) => <SourceRow key={`${item.source}:${item.id}`} item={item} />) : <section className="web-capital-empty-state"><h2>Nothing to show...yet</h2><p>No items are available for this source.</p></section>}
+          {items.length ? items.map((item) => <SourceRow key={`${item.source}:${item.id}`} item={item} />) : <section className="web-capital-empty-state"><h2>No items yet</h2><p>No items are available for this source.</p></section>}
           {hasNextPage ? <button type="button" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>{isFetchingNextPage ? 'Loading…' : 'Show more'}</button> : null}
         </div>
       )}

@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
@@ -25,15 +24,7 @@ const META: Record<
   losers: { icon: 'arrow-down', color: Colors.down, a11y: 'Sorted by top losers — tap to change' },
 };
 
-// iOS 26 Liquid Glass when available (samples the list behind the pill); else a
-// translucent fallback. Resolved once at module load, like the rest of the app.
-const LIQUID_GLASS = isLiquidGlassAvailable();
-
-/**
- * A compact glass pill that cycles a list's sort: default → % gainers → % losers.
- * The arrow direction + colour signal the active mode, and the rim picks up the
- * up/down tint while a % sort is on.
- */
+/** Compact control that cycles manual, gainers and losers without changing saved order. */
 export function SortControl({
   value,
   onChange,
@@ -48,7 +39,7 @@ export function SortControl({
   const inner = (
     <View style={styles.inner}>
       <Ionicons name={m.icon} size={14} color={m.color} />
-      <AppText style={[styles.label, { color: m.color }]}>%</AppText>
+      <AppText style={[styles.label, { color: m.color }]}>24h %</AppText>
     </View>
   );
 
@@ -58,34 +49,25 @@ export function SortControl({
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={m.a11y}>
-      {LIQUID_GLASS ? (
-        <GlassView style={[styles.pill, rim]} glassEffectStyle="clear" colorScheme="dark">
-          {inner}
-        </GlassView>
-      ) : (
-        <View style={[styles.pill, styles.fallback, rim]}>{inner}</View>
-      )}
+      <View style={[styles.pill, rim]}>{inner}</View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   pill: {
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    // Faint top-edge highlight reads as the lit rim of glass (matches WatchlistMenu).
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: Colors.border,
   },
-  // Used only when Liquid Glass isn't available — a translucent material.
-  fallback: { backgroundColor: Colors.surfaceAlt },
   inner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    minHeight: 36,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+    minHeight: 32,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
   },
-  label: { fontSize: 13, fontWeight: '700' },
+  label: { fontSize: 11, fontWeight: '500' },
 });

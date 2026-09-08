@@ -1,168 +1,46 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { EquityCurve } from '@/components/EquityCurve';
 import { AppText } from '@/components/ui/AppText';
-import { GlassSurface } from '@/components/ui/GlassSurface';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import { useHlPortfolio } from '@/data/useHlAccount';
-import { formatPercent, signedUsd } from '@/lib/format';
-import type { HlPortfolioPeriodKey, HlPortfolioPoint } from '@/lib/hyperliquid/info';
+import { signedUsd, usd } from '@/lib/format';
+import type { HlPortfolioPeriodKey } from '@/lib/hyperliquid/info';
+import { portfolioWindowMetrics, rebasedPnl } from '@/lib/portfolioMetrics';
 
-const PERIODS: { key: HlPortfolioPeriodKey; label: string }[] = [
-  { key: 'day', label: '1D' },
-  { key: 'week', label: '1W' },
-  { key: 'month', label: '1M' },
-  { key: 'allTime', label: 'All' },
+export const PORTFOLIO_PERIODS: { key: HlPortfolioPeriodKey; label: string }[] = [
+  { key: 'day', label: '24H' }, { key: 'week', label: '7D' }, { key: 'month', label: '30D' }, { key: 'allTime', label: 'ALL' },
 ];
-
-/** Largest peak-to-trough drop over the window, as a positive percent. */
-function maxDrawdownPct(points: HlPortfolioPoint[]): number {
-  let peak = -Infinity;
-  let mdd = 0;
-  for (const { v } of points) {
-    if (v > peak) peak = v;
-    if (peak > 0) mdd = Math.max(mdd, (peak - v) / peak);
-  }
-  return mdd * 100;
+export type PortfolioChartMode = 'account' | 'pnl' | 'perps';
+export const PORTFOLIO_MODES: { key: PortfolioChartMode; label: string }[] = [
+  { key: 'account', label: 'Account value' }, { key: 'pnl', label: 'PNL' }, { key: 'perps', label: 'Perps PNL' },
+];
+export function PortfolioCard({ hidden }: { hidden: boolean; compact?: boolean }) {
+  const query = useHlPortfolio();
+  const [period, setPeriod] = useState<HlPortfolioPeriodKey>('month');
+  const [mode, setMode] = useState<PortfolioChartMode>('account');
+  const window = mode === 'perps' ? query.data?.perps?.[period] : query.data?.[period];
+  const availableWindow = window?.available === true ? window : undefined;
+  const metrics = portfolioWindowMetrics(availableWindow);
+  const points = mode === 'account' ? availableWindow?.accountValue ?? [] : rebasedPnl(availableWindow?.pnl ?? []);
+  const color = mode === 'account' || (metrics.pnl ?? 0) >= 0 ? Colors.accent : Colors.down;
+  const amount = (value: number | null, signed = false) => value == null ? '—' : hidden ? '••••' : signed ? signedUsd(value) : `${value < 0 ? '−' : ''}${usd(value)}`;
+  return <View style={styles.card}>
+    <View style={styles.modes}>{PORTFOLIO_MODES.map((item) => <Pressable key={item.key} onPress={() => setMode(item.key)} style={[styles.mode, mode === item.key && styles.modeActive]} accessibilityRole="tab" accessibilityState={{ selected: mode === item.key }}><AppText variant="caption" color={mode === item.key ? Colors.text : Colors.textMuted}>{item.label}</AppText></Pressable>)}</View>
+    <View style={styles.metrics}><View style={styles.metric}><AppText variant="caption" muted>Period PNL</AppText><AppText numeric style={styles.value} color={metrics.pnl == null ? Colors.textMuted : metrics.pnl >= 0 ? Colors.up : Colors.down} numberOfLines={1} adjustsFontSizeToFit>{amount(metrics.pnl, true)}</AppText></View><View style={styles.metric}><AppText variant="caption" muted>Volume</AppText><AppText numeric style={styles.value} numberOfLines={1} adjustsFontSizeToFit>{amount(metrics.volume)}</AppText></View></View>
+    {query.isPending || (query.isFetching && !availableWindow) ? <View style={styles.empty}><ActivityIndicator color={Colors.accent} /></View> : points.length >= 2 ? <EquityCurve key={`${mode}:${period}`} points={points} color={color} hidden={hidden} /> : <View style={styles.empty}><AppText variant="caption" muted>{query.isError ? 'Portfolio history unavailable' : window?.available === false ? 'This history is unavailable' : 'Not enough history yet'}</AppText>{query.isError ? <Pressable onPress={() => void query.refetch()}><AppText variant="caption" color={Colors.accent}>Retry</AppText></Pressable> : null}</View>}
+    {query.isError && points.length >= 2 ? <Pressable onPress={() => void query.refetch()}><AppText variant="caption" color={Colors.warning}>History refresh failed · Retry</AppText></Pressable> : null}
+    <View style={styles.footer}>{PORTFOLIO_PERIODS.map((item) => <Pressable key={item.key} onPress={() => setPeriod(item.key)} style={[styles.period, period === item.key && styles.periodActive]} accessibilityRole="button" accessibilityState={{ selected: period === item.key }}><AppText variant="caption" color={period === item.key ? Colors.accent : Colors.textMuted}>{item.label}</AppText></Pressable>)}</View>
+    <View style={styles.details}><AppText variant="caption" color={Colors.textFaint}>Max PNL decline</AppText><AppText variant="caption" numeric color={Colors.textMuted}>{amount(metrics.maxPnlDrawdown)}</AppText></View>
+    <AppText variant="caption" color={Colors.textFaint} style={styles.note}>{mode === 'account' ? 'Account value includes deposits and withdrawals.' : 'PNL shows the change in performance for this period.'}</AppText>
+  </View>;
 }
-
-/**
- * Portfolio overview card: an account-value sparkline over a selectable window plus the
- * period change and max drawdown. Sourced from Hyperliquid's own `portfolio` series, so
- * the latest point lines up with the "Account Value" shown above it.
- */
-export function PortfolioCard({ hidden, compact = false }: { hidden: boolean; compact?: boolean }) {
-  const { data } = useHlPortfolio();
-  const [period, setPeriod] = useState<HlPortfolioPeriodKey>('week');
-  const [compactExpanded, setCompactExpanded] = useState(false);
-  const expanded = compact ? compactExpanded : true;
-  const points = useMemo(() => data?.[period]?.accountValue ?? [], [data, period]);
-
-  const stats = useMemo(() => {
-    if (points.length < 2) return null;
-    const first = points[0].v;
-    const last = points[points.length - 1].v;
-    const change = last - first;
-    return {
-      change,
-      pct: first !== 0 ? (change / first) * 100 : 0,
-      mdd: maxDrawdownPct(points),
-      up: change >= 0,
-    };
-  }, [points]);
-
-  // Nothing to show until the first portfolio fetch resolves.
-  if (!data) return null;
-
-  const color = stats ? (stats.up ? Colors.up : Colors.down) : Colors.textMuted;
-  const mask = (s: string) => (hidden ? '••••' : s);
-
-  return (
-    <GlassSurface
-      style={[styles.card, compact && !expanded && styles.cardCompact]}
-      tintColor="rgba(8,15,23,0.52)">
-      <Pressable
-        style={({ pressed }) => [styles.head, compact && pressed && styles.headPressed]}
-        onPress={() => compact && setCompactExpanded((current) => !current)}
-        disabled={!compact}
-        accessibilityRole={compact ? 'button' : undefined}
-        accessibilityLabel={compact ? `${expanded ? 'Collapse' : 'Expand'} portfolio history` : undefined}
-        accessibilityState={compact ? { expanded } : undefined}>
-        <View style={styles.headTitle}>
-          <AppText variant="caption" muted>
-            Portfolio history
-          </AppText>
-          {!expanded ? (
-            <AppText variant="caption" color={Colors.textFaint}>
-              {PERIODS.find((item) => item.key === period)?.label}
-              {stats ? ` · Max DD ${mask(`${stats.mdd.toFixed(1)}%`)}` : ''}
-            </AppText>
-          ) : null}
-        </View>
-        <View style={styles.headValue}>
-          {stats ? (
-            <AppText variant="label" numeric color={color}>
-              {mask(`${signedUsd(stats.change)} (${formatPercent(stats.pct)})`)}
-            </AppText>
-          ) : null}
-          {compact ? (
-            <Ionicons
-              name={expanded ? 'chevron-up' : 'chevron-down'}
-              size={17}
-              color={Colors.textFaint}
-            />
-          ) : null}
-        </View>
-      </Pressable>
-
-      {expanded ? (
-        <>
-          {points.length >= 2 ? (
-            <EquityCurve points={points} color={color} />
-          ) : (
-            <View style={styles.empty}>
-              <AppText variant="caption" muted>
-                Not enough history yet
-              </AppText>
-            </View>
-          )}
-
-          <View style={styles.foot}>
-            <View style={styles.periods}>
-              {PERIODS.map((p) => {
-                const active = p.key === period;
-                return (
-                  <Pressable
-                    key={p.key}
-                    onPress={() => setPeriod(p.key)}
-                    style={[styles.period, active && styles.periodActive]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}>
-                    <AppText variant="caption" color={active ? Colors.text : Colors.textMuted}>
-                      {p.label}
-                    </AppText>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {stats ? (
-              <AppText variant="caption" muted>
-                Max DD {mask(`${stats.mdd.toFixed(1)}%`)}
-              </AppText>
-            ) : null}
-          </View>
-        </>
-      ) : null}
-    </GlassSurface>
-  );
-}
-
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: Radius.lg,
-    padding: 18,
-    marginBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  cardCompact: { paddingVertical: Spacing.md },
-  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headPressed: { opacity: 0.72 },
-  headTitle: { flex: 1, gap: 2 },
-  headValue: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  empty: { height: 96, alignItems: 'center', justifyContent: 'center' },
-  foot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  periods: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  period: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
-    borderRadius: Radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'transparent',
-  },
-  periodActive: {
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.075)',
-  },
+  card: { backgroundColor: Colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 14, paddingBottom: 14 },
+  modes: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border, gap: 22 },
+  mode: { paddingVertical: 13, borderBottomWidth: 2, borderBottomColor: 'transparent' }, modeActive: { borderBottomColor: Colors.accent },
+  metrics: { flexDirection: 'row', paddingTop: 16, paddingBottom: 6, gap: 20 }, metric: { flex: 1, gap: 5, minWidth: 0 }, value: { fontSize: 19, lineHeight: 25, fontWeight: '600' },
+  empty: { height: 202, alignItems: 'center', justifyContent: 'center', gap: 12 }, footer: { flexDirection: 'row', gap: 6, marginTop: 16 },
+  period: { minWidth: 48, paddingVertical: 8, alignItems: 'center', borderRadius: 6 }, periodActive: { backgroundColor: Colors.surfaceAlt },
+  details: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 14, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border }, note: { marginTop: 8, fontSize: 10, lineHeight: 15 },
 });

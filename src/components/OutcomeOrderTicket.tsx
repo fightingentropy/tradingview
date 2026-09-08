@@ -1,10 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  GlassView,
-  isGlassEffectAPIAvailable,
-  isLiquidGlassAvailable,
-} from 'expo-glass-effect';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -45,6 +40,8 @@ import {
 import type { OutcomeChoice, OutcomeEvent, OutcomeTradeContract } from '@/lib/outcomeMarkets';
 import { storage } from '@/lib/mmkv';
 import {
+  OutcomeTradePreflightError,
+  freshOutcomeMarketData,
   OUTCOME_MARKET_SLIPPAGE,
   OUTCOME_MAX_PRICE,
   OUTCOME_MIN_NOTIONAL,
@@ -88,10 +85,6 @@ interface OutcomeTradeDraft {
 interface OutcomeSubmission {
   readonly draft: OutcomeTradeDraft;
   readonly result: OrderResult;
-}
-
-class OutcomeTradePreflightError extends Error {
-  override name = 'OutcomeTradePreflightError';
 }
 
 class OutcomeTradeStatusUnknownError extends Error {
@@ -156,19 +149,11 @@ export interface OutcomeOrderTicketProps {
 }
 
 const ACCESSORY_ID = 'outcome-order-ticket-kb';
-const LIQUID_GLASS = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
-const GLASS_FILL = 'rgba(255,255,255,0.06)';
-const GLASS_FILL_STRONG = 'rgba(255,255,255,0.13)';
-const HAIRLINE = 'rgba(255,255,255,0.11)';
+const GLASS_FILL = Colors.surfaceAlt;
+const GLASS_FILL_STRONG = Colors.surfacePress;
+const HAIRLINE = Colors.border;
 
 function SheetSurface({ style, children }: { style: StyleProp<ViewStyle>; children: ReactNode }) {
-  if (LIQUID_GLASS) {
-    return (
-      <GlassView style={style} glassEffectStyle="regular" colorScheme="dark">
-        {children}
-      </GlassView>
-    );
-  }
   return <View style={[style, styles.sheetFallback]}>{children}</View>;
 }
 
@@ -456,7 +441,8 @@ export function OutcomeOrderTicket({
     if (accountQuery.isError || !freshAccount?.spotBalancesLoaded) {
       throw new OutcomeTradePreflightError('Could not refresh verified spot balances. No order was sent.');
     }
-    const freshEvent = outcomesQuery.data?.outcomeEvents.find(
+    const freshOutcomes = freshOutcomeMarketData(outcomesQuery);
+    const freshEvent = freshOutcomes.outcomeEvents.find(
       (candidate) => candidate.id === reviewed.eventId,
     );
     const freshChoice = freshEvent?.choices.find(
@@ -1125,8 +1111,8 @@ const styles = StyleSheet.create({
   sheet: {
     maxHeight: '100%',
     overflow: 'hidden',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.18)',
   },
@@ -1144,26 +1130,26 @@ const styles = StyleSheet.create({
   },
   headerButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1, alignItems: 'center', paddingHorizontal: Spacing.sm },
-  headerTitle: { color: Colors.text, fontSize: 16, fontWeight: '700' },
+  headerTitle: { color: Colors.text, fontSize: 16, fontWeight: '600' },
   content: { padding: Spacing.lg, paddingBottom: 34, gap: Spacing.md },
   segment: { flexDirection: 'row', padding: 3, gap: 3, borderRadius: Radius.md, backgroundColor: 'rgba(255,255,255,0.055)' },
   segmentButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: Radius.sm },
   segmentButtonOn: { backgroundColor: GLASS_FILL_STRONG },
   buyOn: { backgroundColor: 'rgba(42,207,158,0.24)' },
   sellOn: { backgroundColor: 'rgba(255,93,115,0.22)' },
-  segmentText: { color: Colors.textMuted, fontSize: 14, fontWeight: '700' },
+  segmentText: { color: Colors.textMuted, fontSize: 14, fontWeight: '600' },
   segmentTextOn: { color: Colors.text },
   inlineTabs: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   inlineTab: { paddingHorizontal: Spacing.md, paddingVertical: 7, borderRadius: Radius.pill, backgroundColor: GLASS_FILL },
   inlineTabOn: { backgroundColor: Colors.accentSoft },
-  inlineTabText: { color: Colors.textMuted, fontSize: 12, fontWeight: '700' },
+  inlineTabText: { color: Colors.textMuted, fontSize: 12, fontWeight: '600' },
   inlineTabTextOn: { color: Colors.text },
   bookPrices: { flex: 1, alignItems: 'flex-end', gap: 1 },
   field: { gap: Spacing.sm },
   fieldHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   inputRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, borderRadius: Radius.md, backgroundColor: GLASS_FILL, borderWidth: StyleSheet.hairlineWidth, borderColor: HAIRLINE },
   input: { flex: 1, color: Colors.text, fontSize: 25, fontWeight: '600', paddingVertical: 8 },
-  inputUnit: { color: Colors.text, fontSize: 13, fontWeight: '700' },
+  inputUnit: { color: Colors.text, fontSize: 13, fontWeight: '600' },
   unitButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: Spacing.md, paddingVertical: 8 },
   midButton: { marginLeft: Spacing.sm, paddingHorizontal: Spacing.sm, paddingVertical: 7, borderRadius: Radius.sm, backgroundColor: GLASS_FILL_STRONG },
   quickRow: { flexDirection: 'row', gap: Spacing.sm },
@@ -1179,25 +1165,25 @@ const styles = StyleSheet.create({
   errorNotice: { backgroundColor: 'rgba(255,93,115,0.09)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,93,115,0.25)' },
   primaryButton: { minHeight: 54, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.md, backgroundColor: Colors.up },
   primarySell: { backgroundColor: Colors.down },
-  primaryLabel: { color: '#050505', fontSize: 16, fontWeight: '800' },
+  primaryLabel: { color: '#050505', fontSize: 16, fontWeight: '600' },
   secondaryButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.md, backgroundColor: GLASS_FILL },
-  secondaryLabel: { color: Colors.text, fontSize: 14, fontWeight: '700' },
+  secondaryLabel: { color: Colors.text, fontSize: 14, fontWeight: '600' },
   buttonDisabled: { opacity: 0.42 },
   buttonPressed: { opacity: 0.78 },
   reviewHero: { alignItems: 'center', gap: 5, paddingVertical: Spacing.md },
   reviewIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   buyIcon: { backgroundColor: 'rgba(42,207,158,0.22)' },
   sellIcon: { backgroundColor: 'rgba(255,93,115,0.20)' },
-  reviewTitle: { color: Colors.text, fontSize: 22, fontWeight: '800' },
+  reviewTitle: { color: Colors.text, fontSize: 22, fontWeight: '600' },
   reviewChoice: { textAlign: 'center' },
   resultContent: { padding: Spacing.xl, paddingBottom: 38, alignItems: 'stretch', gap: Spacing.md },
   resultIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
   resultSuccess: { backgroundColor: 'rgba(42,207,158,0.24)' },
   resultNeutral: { backgroundColor: GLASS_FILL_STRONG },
-  resultTitle: { color: Colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  resultTitle: { color: Colors.text, fontSize: 22, fontWeight: '600', textAlign: 'center' },
   resultCopy: { textAlign: 'center', lineHeight: 18, marginBottom: Spacing.sm },
   accessory: { height: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, backgroundColor: Colors.surfaceAlt, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: HAIRLINE },
   accessorySpacer: { flex: 1 },
   doneButton: { paddingHorizontal: Spacing.md, paddingVertical: 7 },
-  doneLabel: { color: Colors.accent, fontSize: 15, fontWeight: '700' },
+  doneLabel: { color: Colors.accent, fontSize: 15, fontWeight: '600' },
 });

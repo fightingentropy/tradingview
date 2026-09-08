@@ -29,9 +29,11 @@ export function WatchlistTabs() {
           <Pressable
             key={l.id}
             onPress={() => setActive(l.id)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
             style={[styles.pill, active && styles.pillActive]}>
             <AppText
-              color={active ? Colors.text : Colors.textMuted}
+              color={active ? Colors.accent : Colors.textMuted}
               style={styles.tabText}
               numberOfLines={1}>
               {l.name}
@@ -39,7 +41,7 @@ export function WatchlistTabs() {
           </Pressable>
         );
       })}
-      <Pressable onPress={onAdd} style={[styles.pill, styles.addPill]}>
+      <Pressable onPress={onAdd} accessibilityLabel="Create watchlist" style={[styles.pill, styles.addPill]}>
         <Ionicons name="add" size={16} color={Colors.textMuted} />
       </Pressable>
     </ScrollView>
@@ -49,24 +51,22 @@ export function WatchlistTabs() {
 const styles = StyleSheet.create({
   scroll: { flexGrow: 0, flexShrink: 0 },
   container: {
-    gap: 6,
+    gap: 18,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
     alignItems: 'center',
   },
   pill: {
-    minHeight: 36,
+    minHeight: 44,
     justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 18,
+    paddingHorizontal: 0,
+    paddingVertical: 11,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
     backgroundColor: 'transparent',
   },
   pillActive: {
-    backgroundColor: Colors.accentSoft,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(120,144,255,0.26)',
+    borderBottomColor: Colors.accent,
   },
-  tabText: { fontSize: 15, lineHeight: 19, fontWeight: '600' },
+  tabText: { fontSize: 14, lineHeight: 19, fontWeight: '500' },
   addPill: { paddingHorizontal: 10 },
 });

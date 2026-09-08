@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useIsRestoring } from '@tanstack/react-query';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
@@ -11,7 +10,7 @@ import ReorderableList, {
   type ReorderableListReorderEvent,
 } from 'react-native-reorderable-list';
 
-import { SortControl } from '@/components/SortControl';
+import { SortControl, type SortMode } from '@/components/SortControl';
 import { SymbolRow } from '@/components/SymbolRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
@@ -21,33 +20,28 @@ import { Colors, Spacing } from '@/constants/theme';
 import type { Instrument, Quote } from '@/domain/types';
 import { useInstrumentsByIds, useMarkets } from '@/data/useMarkets';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
+import { restoreRemovedSymbols, sortWatchlistView } from '@/lib/watchlistSort';
 import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
-// SymbolRow is fixed-height: 44px logo + 14px padding top/bottom + a hairline
-// bottom border. Kept here so getItemLayout can skip per-row measurement.
-const ROW_HEIGHT = 72 + StyleSheet.hairlineWidth;
+// Keep the fixed list estimate aligned with SymbolRow's compact data rows.
+const ROW_HEIGHT = 68 + StyleSheet.hairlineWidth;
 
-// White TradingView glyph as a local SVG data-URI (expo-image renders SVG), so the
-// header mark is the reference's bare white logo with no network dependency.
-const TV_MARK =
-  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTE1Ljg2NTQgOC4yNzg5YzAgMS4zNTQxLTEuMDk3OCAyLjQ1MTktMi40NTIgMi40NTE5LTEuMzU0IDAtMi40NTE5LTEuMDk3OC0yLjQ1MTktMi40NTIgMC0xLjM1NCAxLjA5NzgtMi40NTE4IDIuNDUyLTIuNDUxOCAxLjM1NDEgMCAyLjQ1MTkgMS4wOTc3IDIuNDUxOSAyLjQ1MTl6TTkuNzUgNkgwdjQuOTAzOGg0Ljg0NjJ2Ny4yNjkySDkuNzVabTguNTk2MiAwSDI0bC01LjEwNTggMTIuMTczaC01LjY1Mzh6Ii8+PC9zdmc+';
-
-/**
- * Header bar matching the TradingView app: overflow menu, centered mark, add.
- */
-function WatchlistHeader({ onMore, onAdd }: { onMore: () => void; onAdd: () => void }) {
+function WatchlistHeader({ onMore, onAdd, onNews }: { onMore: () => void; onAdd: () => void; onNews: () => void }) {
   return (
     <View style={styles.header}>
-      <Pressable hitSlop={10} style={styles.headerSide} onPress={onMore} accessibilityLabel="Watchlist options">
-        <Ionicons name="ellipsis-horizontal" size={24} color={Colors.text} />
-      </Pressable>
-      <View style={styles.headerCenter}>
-        <Image source={TV_MARK} style={styles.headerLogo} contentFit="contain" />
+      <AppText style={styles.headerTitle}>Watchlist</AppText>
+      <View style={styles.headerActions}>
+        <Pressable hitSlop={4} style={styles.headerSide} onPress={onNews} accessibilityLabel="Watchlist news">
+          <Ionicons name="newspaper-outline" size={20} color={Colors.textMuted} />
+        </Pressable>
+        <Pressable hitSlop={4} style={styles.headerSide} onPress={onMore} accessibilityLabel="Watchlist options">
+          <Ionicons name="ellipsis-horizontal" size={21} color={Colors.textMuted} />
+        </Pressable>
+        <Pressable hitSlop={4} style={[styles.headerSide, styles.addButton]} onPress={onAdd} accessibilityLabel="Add symbols">
+          <Ionicons name="add" size={23} color={Colors.accent} />
+        </Pressable>
       </View>
-      <Pressable hitSlop={10} style={styles.headerSide} onPress={onAdd} accessibilityLabel="Add symbols">
-        <Ionicons name="add" size={30} color={Colors.text} />
-      </Pressable>
     </View>
   );
 }
@@ -143,26 +137,24 @@ export default function WatchlistScreen() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [sortKey, setSortKey] = useState<SortKey>('manual');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
-  // Quick glass % sort (persisted). Non-destructive: it reorders the *view* only,
+  const [removed, setRemoved] = useState<{ listId: string; name: string; previous: string[]; ids: string[] } | null>(null);
+  // Quick percentage sort (persisted). Non-destructive: it reorders the *view* only,
   // leaving the saved manual order intact as 'default'.
   const watchlistSort = usePreferences((s) => s.watchlistSort);
   const setWatchlistSort = usePreferences((s) => s.setWatchlistSort);
+  const effectiveSortKey = watchlistSort === 'default' ? sortKey : 'change';
+  const effectiveSortDir = watchlistSort === 'default' ? sortDir : watchlistSort === 'gainers' ? 'desc' : 'asc';
 
   // While editing we always show the raw manual order so drag-to-reorder operates on
   // real positions rather than a sorted snapshot.
   const displayed = useMemo(() => {
-    if (editing || watchlistSort === 'default') return instruments;
-    const arr = [...instruments];
-    arr.sort((a, b) => {
-      const ca = data?.quotes[a.id]?.change24hPct;
-      const cb = data?.quotes[b.id]?.change24hPct;
-      if (ca == null && cb == null) return 0;
-      if (ca == null) return 1;
-      if (cb == null) return -1;
-      return watchlistSort === 'gainers' ? cb - ca : ca - cb;
-    });
-    return arr;
-  }, [instruments, editing, watchlistSort, data]);
+    return sortWatchlistView(instruments, data?.quotes ?? {}, editing ? 'manual' : effectiveSortKey, effectiveSortDir);
+  }, [instruments, editing, effectiveSortKey, effectiveSortDir, data?.quotes]);
+
+  const onQuickSort = useCallback((next: SortMode) => {
+    setSortKey('manual');
+    setWatchlistSort(next);
+  }, [setWatchlistSort]);
 
   // Pull-to-refresh is tracked separately from react-query's background fetching so
   // the cold-launch refetch doesn't pop the RefreshControl spinner at the top —
@@ -214,8 +206,9 @@ export default function WatchlistScreen() {
       const missing = active.symbolIds.filter((id) => !shown.has(id));
       reorderList(active.id, [...reordered, ...missing]);
       setSortKey('manual');
+      setWatchlistSort('default');
     },
-    [active, instruments, reorderList],
+    [active, instruments, reorderList, setWatchlistSort],
   );
 
   const onAdd = useCallback(() => router.push('/add-symbols'), [router]);
@@ -242,12 +235,20 @@ export default function WatchlistScreen() {
 
   const onDeleteSelected = useCallback(() => {
     if (!active || selected.size === 0) return;
+    setRemoved({ listId: active.id, name: active.name, previous: [...active.symbolIds], ids: [...selected] });
     reorderList(
       active.id,
       active.symbolIds.filter((id) => !selected.has(id)),
     );
     setSelected(new Set());
   }, [active, selected, reorderList]);
+
+  const onUndoRemoval = useCallback(() => {
+    if (!removed) return;
+    const current = useWatchlists.getState().lists.find((list) => list.id === removed.listId);
+    if (current) reorderList(current.id, restoreRemovedSymbols(current.symbolIds, removed.previous, removed.ids));
+    setRemoved(null);
+  }, [removed, reorderList]);
 
   const onCreate = useCallback(() => {
     setMenuOpen(false);
@@ -258,8 +259,8 @@ export default function WatchlistScreen() {
 
   const onNews = useCallback(() => {
     setMenuOpen(false);
-    Alert.alert('News', `No recent news for “${active?.name ?? 'this list'}”.`);
-  }, [active?.name]);
+    if (active) router.push({ pathname: '/related-news', params: { watchlistId: active.id } });
+  }, [active, router]);
 
   const onAllWatchlists = useCallback(() => {
     setMenuOpen(false);
@@ -272,34 +273,18 @@ export default function WatchlistScreen() {
       if (!active) return;
       if (key === 'manual') {
         setSortKey('manual');
+        setWatchlistSort('default');
         return;
       }
       // Toggle direction when re-picking the same column; otherwise pick a sensible
       // default (A→Z for symbol, high→low for the numeric columns).
       const dir: SortDir =
-        key === sortKey ? (sortDir === 'asc' ? 'desc' : 'asc') : key === 'symbol' ? 'asc' : 'desc';
+        key === effectiveSortKey ? (effectiveSortDir === 'asc' ? 'desc' : 'asc') : key === 'symbol' ? 'asc' : 'desc';
       setSortKey(key);
       setSortDir(dir);
-
-      const valueOf = (i: Instrument): number | string => {
-        const q = data?.quotes[i.id];
-        if (key === 'symbol') return i.symbol.toUpperCase();
-        if (key === 'price') return q?.last ?? 0;
-        return q?.change24hPct ?? 0;
-      };
-      const sorted = [...instruments]
-        .sort((a, b) => {
-          const va = valueOf(a);
-          const vb = valueOf(b);
-          const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : va - (vb as number);
-          return dir === 'asc' ? cmp : -cmp;
-        })
-        .map((i) => i.id);
-      const shown = new Set(sorted);
-      const missing = active.symbolIds.filter((id) => !shown.has(id));
-      reorderList(active.id, [...sorted, ...missing]);
+      setWatchlistSort(key === 'change' ? (dir === 'desc' ? 'gainers' : 'losers') : 'default');
     },
-    [active, instruments, data, sortKey, sortDir, reorderList],
+    [active, effectiveSortKey, effectiveSortDir, setWatchlistSort],
   );
 
   const renderItem = useCallback(
@@ -338,7 +323,7 @@ export default function WatchlistScreen() {
           onDone={exitEdit}
         />
       ) : (
-        <WatchlistHeader onMore={() => setMenuOpen(true)} onAdd={onAdd} />
+        <WatchlistHeader onMore={() => setMenuOpen(true)} onAdd={onAdd} onNews={onNews} />
       )}
 
       {!editing ? (
@@ -347,8 +332,23 @@ export default function WatchlistScreen() {
             <WatchlistTabs />
           </View>
           <View style={styles.sortSlot}>
-            <SortControl value={watchlistSort} onChange={setWatchlistSort} />
+            <SortControl value={watchlistSort} onChange={onQuickSort} />
           </View>
+        </View>
+      ) : null}
+
+      {!editing ? (
+        <View style={styles.columns}>
+          <AppText style={styles.columnLabel}>MARKET</AppText>
+          <AppText style={styles.columnLabel}>LAST / 24H CHANGE</AppText>
+        </View>
+      ) : null}
+
+      {removed ? (
+        <View style={styles.undoBar}>
+          <AppText variant="caption" style={styles.undoText}>{removed.ids.length} removed from {removed.name}</AppText>
+          <Pressable onPress={onUndoRemoval} accessibilityRole="button" style={styles.undoAction}><AppText variant="label" color={Colors.accent}>Undo</AppText></Pressable>
+          <Pressable onPress={() => setRemoved(null)} accessibilityLabel="Dismiss removal notice" style={styles.undoAction}><Ionicons name="close" size={16} color={Colors.textMuted} /></Pressable>
         </View>
       ) : null}
 
@@ -392,8 +392,8 @@ export default function WatchlistScreen() {
       <WatchlistMenu
         visible={menuOpen}
         listName={headerName}
-        sortKey={sortKey}
-        sortDir={sortDir}
+        sortKey={effectiveSortKey}
+        sortDir={effectiveSortDir}
         onClose={() => setMenuOpen(false)}
         onEdit={enterEdit}
         onSort={onSort}
@@ -409,12 +409,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 54,
-    paddingHorizontal: Spacing.sm,
+    height: 62,
+    paddingHorizontal: Spacing.lg,
   },
-  headerSide: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  headerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  headerLogo: { width: 34, height: 34 },
+  headerTitle: { flex: 1, fontSize: 26, lineHeight: 32, fontWeight: '600', letterSpacing: -0.6 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  headerSide: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
+  addButton: { backgroundColor: Colors.accentSoft, marginLeft: 4 },
   editSide: { height: 48, justifyContent: 'center', paddingHorizontal: Spacing.sm, zIndex: 1 },
   editSideRight: { marginLeft: 'auto' },
   editAction: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
@@ -432,8 +433,13 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   listWrap: { flex: 1 },
   retry: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg },
-  // Watchlist tabs (scrollable) on the left, the glass % sort pinned on the right.
-  tabsRow: { flexDirection: 'row', alignItems: 'center' },
+  // Watchlist selection and percentage sort remain separate from saved order.
+  tabsRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
+  columns: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingTop: 15, paddingBottom: 7 },
+  columnLabel: { fontSize: 10, lineHeight: 14, fontWeight: '500', color: Colors.textFaint, letterSpacing: 0.7 },
   tabsFlex: { flex: 1, minWidth: 0 },
   sortSlot: { paddingLeft: Spacing.xs, paddingRight: Spacing.md },
+  undoBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingLeft: Spacing.lg, paddingRight: Spacing.sm, backgroundColor: Colors.surfaceAlt },
+  undoText: { flex: 1 },
+  undoAction: { minHeight: 44, minWidth: 36, justifyContent: 'center', alignItems: 'center' },
 });

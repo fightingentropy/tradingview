@@ -2,12 +2,15 @@ import type { Candle, CandleInterval, Instrument, Quote, Source } from '@/domain
 import type { OutcomeEvent } from '@/lib/outcomeMarkets';
 
 export type Unsubscribe = () => void;
+export type FeedConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'paused';
 
 /** A single live last-price tick. */
 export interface PriceTick {
   /** Provider-native coin key (e.g. `BTC`, `@107`, `xyz:TSLA`, `AAPL`). */
   coinKey: string;
   last: number;
+  /** Receipt time. A provider can supply an earlier authoritative observation time. */
+  ts?: number;
 }
 
 export interface MarketSnapshot {
@@ -18,6 +21,8 @@ export interface MarketSnapshot {
   outcomeEvents?: OutcomeEvent[];
   /** Outcome-only failure while the provider's other market catalogs remain usable. */
   outcomeMarketsError?: string | null;
+  /** Failed catalog sections; their last successful data can remain visible. */
+  marketErrors?: Record<string, string>;
 }
 
 /**
@@ -41,6 +46,7 @@ export interface MarketDataProvider {
    * Providers without streaming can omit this (the UI falls back to snapshot/polling).
    */
   subscribePrices?(coinKeys: string[], onTicks: (ticks: PriceTick[]) => void): Unsubscribe;
+  subscribeConnection?(onStatus: (status: FeedConnectionStatus) => void): Unsubscribe;
 
   /** Stream live candle updates for the open chart. */
   subscribeCandles?(

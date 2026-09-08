@@ -23,6 +23,9 @@ export const queryKeys = {
   hlFills: (network: HlNetwork, account: string) => ['hl-fills', network, account] as const,
   hlFillsPrefix: () => ['hl-fills'] as const,
   hlPortfolio: (network: HlNetwork, account: string) => ['hl-portfolio', network, account] as const,
+  hlAccountFees: (network: HlNetwork, account: string) => ['hl-account-fees', network, account] as const,
+  hlEarnBalance: (network: HlNetwork, account: string) => ['hl-earn-balance', network, account] as const,
+  hlAccountActivity: (network: HlNetwork, account: string) => ['hl-account-activity', network, account] as const,
   hlFundingHistory: (network: HlNetwork, coin: string) =>
     ['hl-funding-history', network, coin] as const,
   hlUserFunding: (network: HlNetwork, account: string) =>

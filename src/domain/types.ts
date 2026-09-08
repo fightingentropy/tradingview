@@ -76,4 +76,6 @@ export interface PriceAlert {
   triggeredAt: number | null;
   /** Price at the moment it fired; null while still armed. */
   triggeredPrice: number | null;
+  /** Retain this generation in the relay until deleted/rearmed, including delivery receipts. */
+  remoteTriggered?: boolean;
 }

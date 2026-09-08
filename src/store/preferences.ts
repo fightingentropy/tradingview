@@ -31,11 +31,13 @@ interface PreferencesState {
   watchlistSort: SortMode;
   setWatchlistSort: (value: SortMode) => void;
   /**
-   * Fire a local OS notification when a price alert triggers, and keep the background
-   * alert check registered. Off by default; enabling it requests notification permission.
+   * Monitor price alerts on the Mac mini. Off by default; enabling requests push permission.
    */
   alertNotifications: boolean;
   setAlertNotifications: (value: boolean) => void;
+  /** Keep retrying an unacknowledged disable across restarts without claiming it is off. */
+  priceAlertsDisablePending: boolean;
+  setPriceAlertsDisablePending: (value: boolean) => void;
   /** Receive remote push notifications when the configured news feeds publish. */
   newsNotifications: boolean;
   setNewsNotifications: (value: boolean) => void;
@@ -61,6 +63,8 @@ export const usePreferences = create<PreferencesState>()(
       setWatchlistSort: (value) => set({ watchlistSort: value }),
       alertNotifications: false,
       setAlertNotifications: (value) => set({ alertNotifications: value }),
+      priceAlertsDisablePending: false,
+      setPriceAlertsDisablePending: (value) => set({ priceAlertsDisablePending: value }),
       newsNotifications: false,
       setNewsNotifications: (value) => set({ newsNotifications: value }),
       newsNotificationSources: [...ALL_NEWS_NOTIFICATION_SOURCE_IDS],

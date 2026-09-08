@@ -20,6 +20,7 @@ interface AlertsState {
   clearAll: () => void;
   /** Mark an alert as fired so the watcher won't re-trigger it. */
   markTriggered: (id: string, price: number, ts: number) => void;
+  markRemoteTriggered: (id: string, generation: number, price: number, ts: number) => boolean;
   /** Re-arm a fired alert from a fresh anchor price. */
   rearm: (id: string, anchorPrice: number) => void;
 }
@@ -52,11 +53,23 @@ export const useAlerts = create<AlertsState>()(
             x.id === id ? { ...x, triggeredAt: ts, triggeredPrice: price } : x,
           ),
         })),
+      markRemoteTriggered: (id, generation, price, ts) => {
+        let applied = false;
+        set((s) => {
+          if (!s.alerts.some(alert => alert.id === id && alert.createdAt === generation && alert.triggeredAt === null)) return s;
+          return { alerts: s.alerts.map((alert) => {
+          if (alert.id !== id || alert.createdAt !== generation || alert.triggeredAt !== null) return alert;
+          applied = true;
+          return { ...alert, triggeredAt: ts, triggeredPrice: price, remoteTriggered: true };
+          }) };
+        });
+        return applied;
+      },
       rearm: (id, anchorPrice) =>
         set((s) => ({
           alerts: s.alerts.map((x) =>
             x.id === id
-              ? { ...x, anchorPrice, triggeredAt: null, triggeredPrice: null, createdAt: Date.now() }
+              ? { ...x, anchorPrice, triggeredAt: null, triggeredPrice: null, remoteTriggered: false, createdAt: Math.max(Date.now(), x.createdAt + 1) }
               : x,
           ),
         })),

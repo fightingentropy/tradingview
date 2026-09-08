@@ -63,7 +63,7 @@ export function NewsItemRow({
         </View>
         {openItem ? (
           <View style={styles.openButton}>
-            <Ionicons name="arrow-up-outline" size={14} color={NewsColors.textMuted} />
+            <Ionicons name="open-outline" size={14} color={NewsColors.textMuted} />
           </View>
         ) : null}
       </View>
@@ -87,14 +87,12 @@ export function NewsItemRow({
 const styles = StyleSheet.create({
   row: {
     marginHorizontal: Spacing.lg,
-    marginVertical: 6,
-    padding: 18,
+    paddingVertical: 18,
     gap: 12,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NewsColors.border,
-    borderRadius: Radius.lg,
-    backgroundColor: NewsColors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: NewsColors.border,
+    backgroundColor: NewsColors.background,
   },
   highlighted: {
     borderColor: NewsColors.controlBorder,
@@ -103,17 +101,17 @@ const styles = StyleSheet.create({
   pressed: { backgroundColor: NewsColors.chip },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 32,
+    height: 32,
+    borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: NewsColors.border,
     backgroundColor: NewsColors.chip,
   },
   avatarFallback: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 32,
+    height: 32,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
@@ -125,20 +123,18 @@ const styles = StyleSheet.create({
   nameLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   name: { flexShrink: 1, color: NewsColors.text, fontSize: 15, lineHeight: 19, fontWeight: '700' },
   openButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: NewsColors.controlBorder,
+
   },
-  body: { color: NewsColors.text, fontSize: 16, lineHeight: 23, fontWeight: '400' },
+  body: { color: NewsColors.text, fontSize: 15, lineHeight: 22, fontWeight: '400' },
   mediaWrap: {
     height: 190,
     marginTop: 4,
     overflow: 'hidden',
-    borderRadius: Radius.lg,
+    borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: NewsColors.border,
     backgroundColor: NewsColors.surfaceRaised,
@@ -152,7 +148,7 @@ const styles = StyleSheet.create({
     height: 38,
     marginLeft: -19,
     marginTop: -19,
-    borderRadius: 19,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.7)',

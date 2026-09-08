@@ -13,6 +13,7 @@ import { useNewsFeed } from '@/data/useNewsFeed';
 import type { NewsItem, NewsSourceFilter } from '@/domain/news';
 import { parseNewsNotificationItemId } from '@/domain/newsNotificationSources';
 import { isNewsFeedConfigured, usesLocalNewsFeed } from '@/providers/news/client';
+import { useWatchlists } from '@/store/watchlists';
 
 const FILTERS: {
   key: NewsSourceFilter;
@@ -51,6 +52,7 @@ function SetupState() {
 }
 
 export default function NewsScreen() {
+  const activeWatchlistId = useWatchlists((state) => state.activeId);
   const { itemId } = useLocalSearchParams<{ itemId?: string | string[] }>();
   const notificationTarget = useMemo(() => parseNewsNotificationItemId(itemId), [itemId]);
   const [selectedSource, setSelectedSource] = useState<NewsSourceFilter>('all');
@@ -151,18 +153,30 @@ export default function NewsScreen() {
 
   return (
     <Screen edges={[]}>
+      <View style={styles.tools}>
+        <AppText style={styles.toolsLabel}>NEWS DESK</AppText>
+        <Pressable
+          onPress={() => router.push({ pathname: '/related-news', params: { watchlistId: activeWatchlistId } })}
+          accessibilityRole="button"
+          accessibilityLabel="News for my watchlist"
+          style={styles.toolButton}>
+          <Ionicons name="star-outline" size={14} color={Colors.textMuted} />
+          <AppText style={styles.toolLabel}>Watchlist</AppText>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push('/economic-calendar' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Open economic calendar"
+          style={styles.toolButton}>
+          <Ionicons name="calendar-outline" size={14} color={Colors.textMuted} />
+          <AppText style={styles.toolLabel}>Calendar</AppText>
+        </Pressable>
+      </View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.filterScroller}
         contentContainerStyle={styles.filters}>
-          <Pressable
-            onPress={() => router.push('/economic-calendar' as never)}
-            accessibilityRole="button"
-            accessibilityLabel="Open economic calendar"
-            style={styles.calendarButton}>
-            <Ionicons name="calendar" size={20} color={NewsColors.textMuted} />
-          </Pressable>
           {FILTERS.map((filter) => {
             const active = source === filter.key;
             return (
@@ -179,7 +193,7 @@ export default function NewsScreen() {
                   <Ionicons
                     name={filter.icon}
                     size={13}
-                    color={active ? Colors.text : NewsColors.textMuted}
+                    color={active ? Colors.accent : NewsColors.textMuted}
                   />
                 ) : null}
                 <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
@@ -228,11 +242,11 @@ export default function NewsScreen() {
       ) : source === 'all' ? (
         <View style={styles.stateWrap}>
           <View style={styles.stateIcon}>
-            <Ionicons name="sparkles" size={28} color={Colors.accent} />
+            <Ionicons name="pulse-outline" size={28} color={Colors.accent} />
           </View>
           <AppText variant="heading" style={styles.stateTitle}>Building the first pulse</AppText>
           <AppText muted style={styles.stateBody}>
-            The Mac mini is filtering the latest sources into a concise executive summary. Raw feeds remain available above.
+            The latest sources are being reviewed for the market brief. Browse individual feeds above while it is prepared.
           </AppText>
           <Pressable
             onPress={() => refetch()}
@@ -286,43 +300,39 @@ const styles = StyleSheet.create({
   filterScroller: {
     flexGrow: 0,
     backgroundColor: NewsColors.background,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: NewsColors.border,
   },
   filters: {
     flexDirection: 'row',
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.lg,
+    paddingTop: 0,
+    paddingBottom: Spacing.md,
     minWidth: '100%',
   },
   chip: {
     minHeight: 38,
-    paddingHorizontal: 15,
+    paddingHorizontal: 13,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: NewsColors.border,
     backgroundColor: NewsColors.chip,
   },
   chipActive: {
-    borderColor: 'rgba(120,144,255,0.26)',
+    borderColor: Colors.border,
     backgroundColor: Colors.accentSoft,
   },
   chipLabel: { color: NewsColors.textMuted, fontSize: 14, lineHeight: 18, fontWeight: '600' },
-  chipLabelActive: { color: Colors.text },
-  calendarButton: {
-    width: 42,
-    height: 42,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NewsColors.border,
-    backgroundColor: NewsColors.chip,
-  },
+  chipLabelActive: { color: Colors.accent },
+  tools: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: Spacing.lg, paddingVertical: 10 },
+  toolsLabel: { flex: 1, color: Colors.textFaint, fontSize: 10, fontWeight: '600', letterSpacing: 1 },
+  toolButton: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  toolLabel: { color: Colors.textMuted, fontSize: 12, fontWeight: '500' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   stateWrap: {
     flex: 1,
@@ -334,14 +344,14 @@ const styles = StyleSheet.create({
   stateIcon: {
     width: 52,
     height: 52,
-    borderRadius: 26,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: NewsColors.controlBorder,
     marginBottom: 4,
   },
-  stateTitle: { color: NewsColors.text, fontSize: 22, lineHeight: 28, textAlign: 'center' },
+  stateTitle: { color: NewsColors.text, fontSize: 20, lineHeight: 26, textAlign: 'center' },
   stateBody: {
     maxWidth: 430,
     color: NewsColors.textMuted,
@@ -370,7 +380,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
     backgroundColor: NewsColors.selected,
   },
   retryText: { color: NewsColors.onSelected, fontWeight: '700' },

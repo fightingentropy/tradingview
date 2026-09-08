@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -22,28 +21,20 @@ import { formatPrice, usd } from '@/lib/format';
 
 type Mode = 'add' | 'remove';
 
-const LIQUID_GLASS = isLiquidGlassAvailable();
 const ACCESSORY_ID = 'margin-sheet-kb';
 
-const GLASS_FILL = 'rgba(255,255,255,0.06)';
-const GLASS_FILL_STRONG = 'rgba(255,255,255,0.13)';
-const GLASS_INSET = 'rgba(0,0,0,0.28)';
-const GLASS_HAIRLINE = 'rgba(255,255,255,0.10)';
+const GLASS_FILL = Colors.surfaceAlt;
+const GLASS_FILL_STRONG = Colors.surfacePress;
+const GLASS_INSET = Colors.background;
+const GLASS_HAIRLINE = Colors.border;
 
 const num = (s: string) => {
   const v = Number(s.replace(/[^0-9.]/g, ''));
   return isFinite(v) ? v : 0;
 };
 
-/** Black-glass surface when iOS 26 Liquid Glass is available, else a near-black panel. */
+/** Opaque sheet keeps prices and order controls readable. */
 function SheetSurface({ style, children }: { style: StyleProp<ViewStyle>; children: ReactNode }) {
-  if (LIQUID_GLASS) {
-    return (
-      <GlassView style={style} glassEffectStyle="regular" colorScheme="dark">
-        {children}
-      </GlassView>
-    );
-  }
   return <View style={[style, styles.sheetFallback]}>{children}</View>;
 }
 
@@ -336,9 +327,9 @@ const styles = StyleSheet.create({
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000C2' },
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: 'rgba(0,0,0,0.20)',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: GLASS_HAIRLINE,
     overflow: 'hidden',
@@ -346,7 +337,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xxl,
     gap: Spacing.md,
   },
-  sheetFallback: { backgroundColor: 'rgba(8,10,14,0.98)' },
+  sheetFallback: { backgroundColor: Colors.surface },
   handle: {
     alignSelf: 'center',
     width: 40,
@@ -365,7 +356,7 @@ const styles = StyleSheet.create({
   field: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: 4 },
   fieldHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   inputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  input: { flex: 1, color: Colors.text, fontSize: 24, fontWeight: '700', fontVariant: ['tabular-nums'], paddingVertical: 2 },
+  input: { flex: 1, color: Colors.text, fontSize: 24, fontWeight: '600', fontVariant: ['tabular-nums'], paddingVertical: 2 },
 
   infoCard: { backgroundColor: GLASS_FILL, borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.sm },
   infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

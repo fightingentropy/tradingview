@@ -23,8 +23,9 @@ import {
   priceDecimalsFor,
 } from '@/lib/format';
 import { useAllMarkets } from '@/data/useMarkets';
+import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useAlerts, useAlertsFor } from '@/store/alerts';
-import { useLivePrice } from '@/store/livePrices';
+import { useMarketPrice } from '@/store/livePrices';
 import { useWatchlists } from '@/store/watchlists';
 
 interface SymbolMenuApi {
@@ -65,8 +66,10 @@ function SymbolMenuSheet({
 }) {
   const { data: markets } = useAllMarkets();
   const quote = instrument ? markets?.quotes[instrument.id] : undefined;
-  const live = useLivePrice(instrument?.coinKey);
-  const anchor = live ?? quote?.last ?? null;
+  useLivePriceFeed(instrument ? [instrument] : []);
+  const priceState = useMarketPrice(instrument ?? undefined, quote);
+  const anchor = priceState.last;
+  const canAnchor = anchor != null && anchor > 0 && !priceState.stale;
   const decimals = priceDecimalsFor(instrument?.priceDecimals ?? 2, anchor);
   const isOutcome = instrument?.assetClass === 'outcome';
   const displayPrice = (value: number | null | undefined) =>
@@ -105,7 +108,7 @@ function SymbolMenuSheet({
 
   const createAlert = useCallback(
     (pct: number, dir: AlertDirection) => {
-      if (!instrument || anchor == null || !(pct > 0)) return;
+      if (!instrument || !canAnchor || anchor == null || !Number.isFinite(pct) || !(Math.round(pct * 100) > 0)) return;
       add({
         instrumentId: instrument.id,
         symbol: instrument.symbol,
@@ -114,14 +117,14 @@ function SymbolMenuSheet({
         anchorPrice: anchor,
       });
     },
-    [instrument, anchor, add],
+    [instrument, anchor, canAnchor, add],
   );
 
   const customPct = parseFloat(pctText);
-  const validCustom = Number.isFinite(customPct) && customPct > 0;
+  const validCustom = Number.isFinite(customPct) && Math.round(customPct * 100) > 0;
   const targetPreview =
     anchor == null || !validCustom
-      ? null
+      || !canAnchor ? null
       : direction === 'up'
         ? `→ ${displayPrice(anchor * (1 + customPct / 100))}`
         : direction === 'down'
@@ -174,6 +177,7 @@ function SymbolMenuSheet({
             <AppText variant="caption" muted style={styles.sectionLabel}>
               PRICE-MOVE ALERT
             </AppText>
+            {!canAnchor ? <AppText variant="caption" color={Colors.warning}>Waiting for a fresh price before setting or rearming alerts.</AppText> : null}
 
             <View style={styles.segment}>
               {DIRECTIONS.map((d) => {
@@ -201,8 +205,8 @@ function SymbolMenuSheet({
                 <Pressable
                   key={p}
                   onPress={() => createAlert(p, direction)}
-                  disabled={anchor == null}
-                  style={[styles.preset, anchor == null && styles.disabled]}>
+                  disabled={!canAnchor}
+                  style={[styles.preset, !canAnchor && styles.disabled]}>
                   <AppText variant="label" color={Colors.text}>
                     {p}%
                   </AppText>
@@ -226,8 +230,8 @@ function SymbolMenuSheet({
               </View>
               <Pressable
                 onPress={() => createAlert(customPct, direction)}
-                disabled={!validCustom || anchor == null}
-                style={[styles.setBtn, (!validCustom || anchor == null) && styles.disabled]}>
+                disabled={!validCustom || !canAnchor}
+                style={[styles.setBtn, (!validCustom || !canAnchor) && styles.disabled]}>
                 <Ionicons name="notifications" size={15} color="#04121A" />
                 <AppText variant="label" color="#04121A">
                   Set alert
@@ -254,7 +258,7 @@ function SymbolMenuSheet({
                       decimals={decimals}
                       probability={isOutcome}
                       onRemove={() => remove(a.id)}
-                      onRearm={anchor == null ? undefined : () => rearm(a.id, anchor)}
+                      onRearm={!canAnchor || anchor == null ? undefined : () => rearm(a.id, anchor)}
                     />
                   ))}
                 </View>

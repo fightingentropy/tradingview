@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { GlassSurface } from '@/components/ui/GlassSurface';
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTradingIdentity } from '@/data/useHlAccount';
@@ -84,7 +83,7 @@ function ConnectedCard({
   const shownAddress = resolved ?? address;
   return (
     <>
-      <GlassSurface style={styles.card}>
+      <View style={styles.card}>
         <View style={styles.row}>
           <View style={styles.rowLeft}>
             <View style={[styles.dot, { backgroundColor: demo ? Colors.textMuted : Colors.text }]} />
@@ -152,12 +151,12 @@ function ConnectedCard({
             </AppText>
           </>
         ) : null}
-      </GlassSurface>
+      </View>
 
       {/* Connected by address only — let them paste an agent key to enable trading. */}
       {!demo && !hasKey ? <AddKeyCard onSaved={onAddKey} /> : null}
 
-      <GlassSurface style={styles.card} interactive>
+      <View style={styles.card}>
         <Pressable
           style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]}
           onPress={onDisconnect}>
@@ -167,7 +166,7 @@ function ConnectedCard({
           </View>
           <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
         </Pressable>
-      </GlassSurface>
+      </View>
     </>
   );
 }
@@ -188,7 +187,7 @@ function AddKeyCard({ onSaved }: { onSaved: () => void }) {
   };
 
   return (
-    <GlassSurface style={styles.card}>
+    <View style={styles.card}>
       <View style={styles.fieldRow}>
         <SecretInput value={key} onChangeText={setKey} placeholder="API wallet key (0x…)" />
         <Pressable
@@ -205,7 +204,7 @@ function AddKeyCard({ onSaved }: { onSaved: () => void }) {
           {error}
         </AppText>
       ) : null}
-    </GlassSurface>
+    </View>
   );
 }
 
@@ -253,7 +252,7 @@ function ConnectForm({
 
   return (
     <>
-      <GlassSurface style={styles.card}>
+      <View style={styles.card}>
         <View style={styles.segment}>
           {(['mainnet', 'testnet'] as HlNetwork[]).map((n) => (
             <Pressable
@@ -289,7 +288,7 @@ function ConnectForm({
           </AppText>
           <SecretInput value={key} onChangeText={setKey} placeholder="0x… (enables trading)" />
         </View>
-      </GlassSurface>
+      </View>
 
       <AppText variant="caption" muted style={styles.note}>
         {net === 'mainnet' ? 'Mainnet uses real funds. ' : 'Testnet uses test funds. '}
@@ -307,8 +306,8 @@ function ConnectForm({
         style={[styles.primaryBtn, !canConnect && styles.primaryBtnDisabled]}
         onPress={connect}
         disabled={!canConnect}>
-        <Ionicons name="link" size={16} color={canConnect ? Colors.text : Colors.textFaint} />
-        <AppText variant="label" color={canConnect ? Colors.text : Colors.textFaint}>
+        <Ionicons name="link" size={16} color={canConnect ? Colors.background : Colors.textFaint} />
+        <AppText variant="label" color={canConnect ? Colors.background : Colors.textFaint}>
           Connect
         </AppText>
       </Pressable>
@@ -360,7 +359,7 @@ function NetworkBadge({ network }: { network: HlNetwork }) {
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: Radius.lg },
+  card: { borderRadius: 8, backgroundColor: Colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, overflow: 'hidden' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -406,9 +405,9 @@ const styles = StyleSheet.create({
   inlineBtn: {
     paddingHorizontal: Spacing.md,
     paddingVertical: 6,
-    borderRadius: Radius.pill,
+    borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: Colors.border,
     backgroundColor: 'rgba(255,255,255,0.09)',
   },
   inlineBtnDisabled: { backgroundColor: 'rgba(255,255,255,0.035)' },
@@ -433,7 +432,7 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: 9,
     paddingVertical: 3,
-    borderRadius: Radius.pill,
+    borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(255,255,255,0.07)',
@@ -444,10 +443,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.20)',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: Colors.border,
+    backgroundColor: Colors.accent,
     paddingVertical: Spacing.md,
-    borderRadius: Radius.pill,
+    borderRadius: 6,
     marginTop: Spacing.sm,
   },
   primaryBtnDisabled: { backgroundColor: 'rgba(255,255,255,0.035)' },

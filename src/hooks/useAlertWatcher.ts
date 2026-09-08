@@ -3,21 +3,17 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { Instrument } from '@/domain/types';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useAllMarkets } from '@/data/useMarkets';
-import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
+import { priceAlertMove } from '@/domain/priceAlerts';
 import { formatPercent, formatPrice, formatProbability, priceDecimalsFor } from '@/lib/format';
-import { configureNotifications, notifyPriceAlert } from '@/lib/notifications';
+import { configureNotifications } from '@/lib/notifications';
 import { useAlertFeed } from '@/store/alertFeed';
 import { useAlerts } from '@/store/alerts';
 import { useLivePrices } from '@/store/livePrices';
 import { usePreferences } from '@/store/preferences';
 
 /**
- * App-wide alert engine. Mounted once at the root: it opens live price streams
- * for every instrument with an armed alert (so alerts fire even when that symbol
- * isn't otherwise on screen) and evaluates each tick, firing an in-app toast and
- * marking the alert triggered when its price-move threshold is crossed.
- *
- * Renders nothing.
+ * Foreground-only alerts when remote monitoring is off. The Mac mini is the sole
+ * trigger authority while notifications are enabled, avoiding duplicate dispatch.
  */
 export function AlertWatcher() {
   const { data: markets } = useAllMarkets();
@@ -27,19 +23,13 @@ export function AlertWatcher() {
   const notifyEnabled = usePreferences((s) => s.alertNotifications);
   const showOutcomeMarkets = usePreferences((s) => s.showOutcomeMarkets);
 
-  // Install the notification handler once, and keep the background alert check
-  // registered only while alert notifications are enabled.
   useEffect(() => {
     configureNotifications();
   }, []);
-  useEffect(() => {
-    if (notifyEnabled) registerAlertTask();
-    else unregisterAlertTask();
-  }, [notifyEnabled]);
 
   // Subscribe live feeds for the distinct instruments that still have armed alerts.
   const armedInstruments = useMemo(() => {
-    if (!markets) return [];
+    if (!markets || notifyEnabled) return [];
     const ids = Array.from(
       new Set(alerts.filter((a) => a.triggeredAt == null).map((a) => a.instrumentId)),
     );
@@ -50,7 +40,7 @@ export function AlertWatcher() {
           instrument !== undefined &&
           (showOutcomeMarkets || instrument.assetClass !== 'outcome'),
       );
-  }, [markets, alerts, showOutcomeMarkets]);
+  }, [markets, alerts, showOutcomeMarkets, notifyEnabled]);
 
   useLivePriceFeed(armedInstruments);
 
@@ -61,7 +51,8 @@ export function AlertWatcher() {
   }, [markets]);
 
   useEffect(() => {
-    const evaluate = (prices: Record<string, number>) => {
+    const evaluate = () => {
+      if (usePreferences.getState().alertNotifications) return;
       const m = marketsRef.current;
       if (!m) return;
       const active = useAlerts.getState().alerts.filter((a) => a.triggeredAt == null);
@@ -69,17 +60,11 @@ export function AlertWatcher() {
         const inst = m.byId[a.instrumentId];
         if (!inst || !a.anchorPrice) continue;
         if (inst.assetClass === 'outcome' && !showOutcomeMarkets) continue;
-        const price = prices[inst.coinKey];
-        if (price == null) continue;
-
-        const pct = ((price - a.anchorPrice) / a.anchorPrice) * 100;
-        const hit =
-          a.direction === 'both'
-            ? Math.abs(pct) >= a.pct
-            : a.direction === 'up'
-              ? pct >= a.pct
-              : pct <= -a.pct;
-        if (!hit) continue;
+        const tick = useLivePrices.getState().observations[inst.coinKey];
+        if (!tick || tick.ts < a.createdAt || Date.now() - tick.ts > 30_000) continue;
+        const price = tick.last;
+        const pct = priceAlertMove(a, price);
+        if (pct === null) continue;
 
         markTriggered(a.id, price, Date.now());
         const decimals = priceDecimalsFor(inst.priceDecimals, price);
@@ -93,17 +78,12 @@ export function AlertWatcher() {
           changePct: pct,
           message,
         });
-        // Also fire a local notification so a trip is captured if the user backgrounds
-        // the app right after (foreground shows only the in-app toast — see the handler).
-        if (usePreferences.getState().alertNotifications) {
-          void notifyPriceAlert(a.symbol, message, { instrumentId: a.instrumentId });
-        }
       }
     };
 
     // Evaluate immediately against the current snapshot, then on every tick.
-    evaluate(useLivePrices.getState().prices);
-    return useLivePrices.subscribe((s) => evaluate(s.prices));
+    evaluate();
+    return useLivePrices.subscribe(evaluate);
   }, [markTriggered, push, showOutcomeMarkets]);
 
   return null;

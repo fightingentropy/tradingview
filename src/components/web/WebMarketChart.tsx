@@ -2,6 +2,7 @@ import { useMemo, useState, type PointerEvent } from 'react';
 
 import type { Candle } from '@/domain/types';
 import { formatCandleStamp, formatPrice } from '@/lib/format';
+import { useChartSettings } from '@/store/chartSettings';
 
 const WIDTH = 1000;
 const HEIGHT = 390;
@@ -28,6 +29,7 @@ export function WebMarketChart({
   loading?: boolean;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
+  const volume = useChartSettings((state) => state.volume);
 
   const geometry = useMemo(() => {
     const shown = candles.slice(-96);
@@ -89,8 +91,8 @@ export function WebMarketChart({
     );
   }
 
-  const active = hovered == null ? geometry.bars[geometry.bars.length - 1] : geometry.bars[hovered];
-  const activeColor = active.candle.c >= active.candle.o ? '#50e3ab' : '#ff5572';
+  const active = geometry.bars[hovered == null ? geometry.bars.length - 1 : Math.min(hovered, geometry.bars.length - 1)];
+  const activeColor = active.candle.c >= active.candle.o ? 'var(--web-up)' : 'var(--web-down)';
 
   return (
     <div className="web-chart-wrap">
@@ -115,8 +117,8 @@ export function WebMarketChart({
         {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
           <line key={`v-${ratio}`} x1={WIDTH * ratio} x2={WIDTH * ratio} y1="0" y2={HEIGHT} className="web-chart-grid" />
         ))}
-        {geometry.bars.map((bar, index) => {
-          const color = bar.candle.c >= bar.candle.o ? '#50e3ab' : '#ff5572';
+        {volume ? geometry.bars.map((bar, index) => {
+          const color = bar.candle.c >= bar.candle.o ? 'var(--web-up)' : 'var(--web-down)';
           return (
             <rect
               className="web-chart-volume"
@@ -128,9 +130,9 @@ export function WebMarketChart({
               y={HEIGHT - bar.volumeHeight}
             />
           );
-        })}
+        }) : null}
         {geometry.bars.map((bar, index) => {
-          const color = bar.candle.c >= bar.candle.o ? '#50e3ab' : '#ff5572';
+          const color = bar.candle.c >= bar.candle.o ? 'var(--web-up)' : 'var(--web-down)';
           const top = Math.min(bar.openY, bar.closeY);
           const height = Math.max(1.5, Math.abs(bar.closeY - bar.openY));
           return (
@@ -146,7 +148,7 @@ export function WebMarketChart({
           <>
             <line x1={active.x} x2={active.x} y1="0" y2={HEIGHT} className="web-chart-crosshair" />
             <line x1="0" x2={WIDTH} y1={active.closeY} y2={active.closeY} className="web-chart-crosshair" />
-            <circle cx={active.x} cy={active.closeY} r="4" fill="#0e1013" stroke={activeColor} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            <circle cx={active.x} cy={active.closeY} r="4" fill="var(--web-bg)" stroke={activeColor} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
           </>
         ) : null}
       </svg>

@@ -5,8 +5,8 @@ import { Colors, Radius } from '@/constants/theme';
 
 const VENUE_COLOR: Record<string, string> = {
   Hyperliquid: '#2EBD85',
-  'Hyperliquid Outcomes': '#C59CFF',
-  'trade.xyz': '#B07CFF',
+  'Hyperliquid Outcomes': '#8C9FD6',
+  'trade.xyz': '#8AAABD',
   NASDAQ: '#5AA9FF',
   NYSE: '#5AA9FF',
 };
@@ -29,7 +29,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceAlt,
+    backgroundColor: Colors.surface,
     alignSelf: 'flex-start',
   },
   dot: { width: 6, height: 6, borderRadius: 3 },

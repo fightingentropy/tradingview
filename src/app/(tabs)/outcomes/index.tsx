@@ -14,7 +14,6 @@ import {
 import { OutcomeEventIcon } from '@/components/OutcomeEventIcon';
 import { OUTCOME_SERIES_COLORS } from '@/components/OutcomeHistoryChart';
 import { AppText } from '@/components/ui/AppText';
-import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useOutcomeMarkets } from '@/data/useMarkets';
@@ -109,18 +108,23 @@ function EventCard({
   const visibleChoices = event.choices.slice(0, 4);
 
   return (
-    <GlassSurface interactive style={styles.card}>
+    <View style={styles.card}>
       <Pressable
         onPress={() => onPress(event)}
         style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressed]}>
         <View style={styles.cardHeader}>
-          <OutcomeEventIcon event={event} />
+          <OutcomeEventIcon event={event} size={34} />
           <AppText style={styles.cardTitle} numberOfLines={3}>
             {event.title}
           </AppText>
           <Ionicons name="chevron-forward" size={17} color={Colors.textFaint} />
         </View>
 
+        <View style={styles.choiceHeader}>
+          <AppText style={styles.choiceColumn}>Outcome</AppText>
+          <AppText style={styles.payoutColumn}>Payout</AppText>
+          <AppText style={styles.chanceColumn}>Chance</AppText>
+        </View>
         <View style={styles.choices}>
           {visibleChoices.map((choice, index) => (
             <ChoiceRow
@@ -148,7 +152,7 @@ function EventCard({
           ) : null}
         </View>
       </Pressable>
-    </GlassSurface>
+    </View>
   );
 }
 
@@ -210,7 +214,7 @@ export default function OutcomesScreen() {
         showsVerticalScrollIndicator={false}>
         <View style={styles.titleRow}>
           <View>
-            <AppText variant="title">Outcomes</AppText>
+            <AppText style={styles.pageTitle}>Outcomes</AppText>
             <AppText variant="caption" muted style={styles.subtitle}>
               Live event probabilities on Hyperliquid
             </AppText>
@@ -245,6 +249,8 @@ export default function OutcomesScreen() {
               <Pressable
                 key={item.key}
                 onPress={() => setFilter(item.key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
                 style={[styles.filter, active && styles.filterActive]}>
                 <AppText style={[styles.filterLabel, active && styles.filterLabelActive]}>
                   {item.label}
@@ -313,68 +319,68 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
     marginBottom: Spacing.lg,
   },
-  subtitle: { marginTop: 3 },
+  pageTitle: { fontSize: 24, lineHeight: 30, fontWeight: '600' },
+  subtitle: { marginTop: 4 },
   searchWrap: {
-    height: 48,
+    height: 42,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: Colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: Colors.border,
   },
   searchInput: {
     flex: 1,
     color: Colors.text,
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 20,
     paddingVertical: 0,
   },
   filters: { gap: Spacing.sm, paddingVertical: Spacing.md, paddingRight: Spacing.lg },
   filter: {
     paddingHorizontal: Spacing.md,
     paddingVertical: 7,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: Colors.border,
   },
   filterActive: {
     backgroundColor: Colors.accentSoft,
-    borderColor: 'rgba(120,144,255,0.26)',
+    borderColor: Colors.border,
   },
   filterLabel: { color: Colors.textMuted, fontSize: 14, lineHeight: 18, fontWeight: '600' },
-  filterLabelActive: { color: Colors.text },
+  filterLabelActive: { color: Colors.accent },
   section: { marginTop: Spacing.sm },
   sectionTitle: {
     color: Colors.text,
-    fontSize: 20,
-    lineHeight: 25,
+    fontSize: 14,
+    lineHeight: 20,
     fontWeight: '700',
     marginBottom: Spacing.md,
   },
-  cardList: { gap: Spacing.md, marginBottom: Spacing.xl },
-  card: { borderRadius: Radius.lg },
-  cardPressable: { padding: 18 },
-  cardPressed: { backgroundColor: 'rgba(255,255,255,0.035)' },
+  cardList: { gap: 0, marginBottom: Spacing.xl },
+  card: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
+  cardPressable: { paddingVertical: Spacing.lg },
+  cardPressed: { backgroundColor: Colors.surfaceAlt },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   cardTitle: { flex: 1, color: Colors.text, fontSize: 16, fontWeight: '700', lineHeight: 21 },
-  choices: { marginTop: Spacing.md, gap: 7 },
+  choiceHeader: { flexDirection: 'row', paddingTop: Spacing.lg, paddingBottom: 3 },
+  choiceColumn: { flex: 1, fontSize: 10, color: Colors.textFaint },
+  payoutColumn: { width: 70, textAlign: 'right', fontSize: 10, color: Colors.textFaint },
+  chanceColumn: { width: 70, textAlign: 'right', fontSize: 10, color: Colors.textFaint },
+  choices: { gap: 2 },
   choiceRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center' },
   choiceDot: { width: 7, height: 7, borderRadius: 4, marginRight: Spacing.sm },
   choiceName: { flex: 1, color: Colors.text, fontSize: 14, fontWeight: '600' },
-  payout: { color: Colors.textMuted, fontSize: 13, marginHorizontal: Spacing.sm },
+  payout: { color: Colors.textMuted, fontSize: 13, width: 70, textAlign: 'right' },
   probabilityPill: {
-    minWidth: 56,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
+    width: 70,
+    alignItems: 'flex-end',
     paddingVertical: 7,
-    borderRadius: Radius.sm,
-    backgroundColor: 'rgba(255,255,255,0.055)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
   },
   probability: { color: Colors.text, fontSize: 13, fontWeight: '700' },
   moreChoices: { marginTop: 2, marginLeft: 15 },
@@ -382,10 +388,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.09)',
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
   },
   state: {
     minHeight: 260,
@@ -400,7 +404,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: 9,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
     backgroundColor: Colors.surfaceAlt,
   },
   retryLabel: { color: Colors.text, fontSize: 13, fontWeight: '700' },

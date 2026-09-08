@@ -4,6 +4,8 @@ import {
   fetchHlAccount,
   fetchLegalCheck,
   fetchHlPortfolio,
+  fetchHlAccountFees,
+  fetchHlEarnBalance,
   fetchHistoricalOrders,
   fetchOpenOrders,
   fetchUserFills,
@@ -13,6 +15,8 @@ import {
   type HlLegalCheck,
   type HlOpenOrder,
   type HlPortfolio,
+  type HlAccountFees,
+  type HlEarnBalance,
 } from '@/lib/hyperliquid/info';
 import {
   resolveTradingIdentity,
@@ -149,6 +153,26 @@ export function useHlPortfolio() {
     enabled: !!account,
     refetchInterval: 60_000,
     staleTime: 55_000,
+  });
+}
+
+export function useHlAccountFees() {
+  const network = useHlConnection((s) => s.network);
+  const { data: account } = useTradingAddress();
+  return useQuery<HlAccountFees>({
+    queryKey: queryKeys.hlAccountFees(network, account ?? ''),
+    queryFn: () => fetchHlAccountFees(account as string, network), enabled: !!account,
+    staleTime: 5 * 60_000, refetchOnWindowFocus: true,
+  });
+}
+
+export function useHlEarnBalance() {
+  const network = useHlConnection((s) => s.network);
+  const { data: account } = useTradingAddress();
+  return useQuery<HlEarnBalance>({
+    queryKey: queryKeys.hlEarnBalance(network, account ?? ''),
+    queryFn: () => fetchHlEarnBalance(account as string, network), enabled: !!account,
+    staleTime: 30_000, refetchInterval: 60_000,
   });
 }
 

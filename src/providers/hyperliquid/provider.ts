@@ -11,7 +11,7 @@ import {
   XYZ_DEX,
   type HlCandle,
 } from './rest';
-import { subscribeAllMids, subscribeCandle } from './ws';
+import { hlSocket, subscribeAllMids, subscribeCandle } from './ws';
 
 function mapCandle(c: HlCandle): Candle {
   return { t: c.t, o: Number(c.o), h: Number(c.h), l: Number(c.l), c: Number(c.c), v: Number(c.v) };
@@ -32,6 +32,14 @@ export const hyperliquidProvider: MarketDataProvider = {
       fetchPerpMeta(XYZ_DEX),
       fetchOutcomeMeta(),
     ]);
+    const marketErrors: Record<string, string> = {};
+    for (const [segment, result] of [
+      ['hyperliquid:perp', perpResult], ['hyperliquid:spot', spotResult],
+      ['hyperliquid:xyz', xyzResult], ['hyperliquid:outcome', outcomeResult],
+    ] as const) {
+      if (result.status === 'rejected') marketErrors[segment] =
+        result.reason instanceof Error ? result.reason.message : 'Market data unavailable';
+    }
 
     const perps =
       perpResult.status === 'fulfilled'
@@ -57,6 +65,7 @@ export const hyperliquidProvider: MarketDataProvider = {
         : spotResult.status === 'rejected'
           ? 'Hyperliquid outcome price contexts are unavailable.'
           : null;
+    if (outcomeMarketsError) marketErrors['hyperliquid:outcome'] = outcomeMarketsError;
 
     if (
       perps.instruments.length === 0 &&
@@ -84,8 +93,11 @@ export const hyperliquidProvider: MarketDataProvider = {
       quotes: { ...perps.quotes, ...xyzs.quotes, ...spots.quotes, ...outcomes.quotes },
       outcomeEvents: outcomes.events,
       outcomeMarketsError,
+      marketErrors,
     };
   },
+
+  subscribeConnection: (onStatus) => hlSocket.subscribeConnection(onStatus),
 
   async getCandles(
     instrument: Instrument,

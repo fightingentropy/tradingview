@@ -1,17 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Spacing } from '@/constants/theme';
+import type { WatchlistSortDirection, WatchlistSortKey } from '@/lib/watchlistSort';
 
-export type SortKey = 'manual' | 'symbol' | 'price' | 'change';
-export type SortDir = 'asc' | 'desc';
+export type SortKey = WatchlistSortKey;
+export type SortDir = WatchlistSortDirection;
 
-// iOS 26 Liquid Glass when the OS supports it; otherwise a solid material card.
-const LIQUID_GLASS = isLiquidGlassAvailable();
 
 interface Props {
   visible: boolean;
@@ -153,13 +151,7 @@ export function WatchlistMenu({
         onPress={onClose}
         accessibilityLabel="Dismiss menu"
       />
-      {LIQUID_GLASS ? (
-        <GlassView style={cardStyle} glassEffectStyle="clear" colorScheme="dark">
-          {content}
-        </GlassView>
-      ) : (
-        <View style={[cardStyle, styles.cardSolid]}>{content}</View>
-      )}
+      <View style={cardStyle}>{content}</View>
     </Modal>
   );
 }
@@ -168,22 +160,20 @@ const styles = StyleSheet.create({
   backdrop: { backgroundColor: 'rgba(0,0,0,0.4)' },
   card: {
     position: 'absolute',
-    left: Spacing.sm,
+    right: Spacing.lg,
     width: 256,
-    borderRadius: 22,
+    borderRadius: 10,
     paddingVertical: 6,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    // A faint top-edge highlight reads as the lit rim of glass.
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceAlt,
     shadowColor: '#000',
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
     shadowOffset: { width: 0, height: 12 },
     elevation: 16,
   },
-  // Fallback (no Liquid Glass): a near-opaque dark material.
-  cardSolid: { backgroundColor: 'rgba(14,18,24,0.98)' },
   header: {
     fontSize: 13,
     color: Colors.textMuted,
@@ -194,12 +184,12 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 50,
+    height: 46,
     paddingHorizontal: Spacing.lg,
   },
   rowPressed: { backgroundColor: 'rgba(255,255,255,0.10)' },
   rowIcon: { width: 26 },
-  rowLabel: { flex: 1, fontSize: 16, color: Colors.text, marginLeft: 6, fontWeight: '500' },
+  rowLabel: { flex: 1, fontSize: 15, color: Colors.text, marginLeft: 6, fontWeight: '500' },
   rowAccessory: { marginLeft: Spacing.sm },
   sortAccessory: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   divider: {

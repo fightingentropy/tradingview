@@ -1,8 +1,8 @@
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsRestoring } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { SortControl } from '@/components/SortControl';
@@ -43,6 +43,7 @@ interface Searchable {
 
 export default function MarketsScreen() {
   const router = useRouter();
+  const listRef = useRef<FlashListRef<Instrument>>(null);
   const { data, isLoading } = useMarkets();
   const isRestoring = useIsRestoring();
   const [search, setSearch] = useState('');
@@ -58,6 +59,12 @@ export default function MarketsScreen() {
     const id = setTimeout(() => setDebouncedSearch(search), 150);
     return () => clearTimeout(id);
   }, [search]);
+
+  // A category/search/sort change is a new result set, not an insertion into the
+  // old list. Start at its first result instead of anchoring a recycled old row.
+  useEffect(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [filter, debouncedSearch, sort]);
 
   const activeId = useWatchlists((s) => s.activeId);
   const activeList = useWatchlists((s) => s.lists.find((l) => l.id === s.activeId));
@@ -161,6 +168,8 @@ export default function MarketsScreen() {
               <Pressable
                 key={f.key}
                 onPress={() => setFilter(f.key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
                 style={[styles.chip, active && styles.chipActive]}>
                 <AppText style={[styles.chipLabel, active && styles.chipLabelActive]}>
                   {f.label}
@@ -174,16 +183,31 @@ export default function MarketsScreen() {
         <SortControl value={sort} onChange={setSort} />
       </View>
 
+      <View style={styles.tableHeader}>
+        <AppText style={styles.columnLabel}>
+          {debouncedSearch.trim() ? `${results.length} matches` : 'Instrument'}
+        </AppText>
+        <AppText style={[styles.columnLabel, styles.priceColumn]}>Last / 24h</AppText>
+      </View>
+
       {isLoading || isRestoring ? (
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} />
         </View>
       ) : (
         <FlashList
+          ref={listRef}
           data={results}
+          maintainVisibleContentPosition={{ disabled: true }}
           keyExtractor={(item) => item.id}
           keyboardShouldPersistTaps="handled"
           renderItem={renderItem}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <AppText style={styles.emptyTitle}>No matching markets</AppText>
+              <AppText variant="caption" muted>Try another symbol or category.</AppText>
+            </View>
+          }
         />
       )}
     </Screen>
@@ -198,14 +222,14 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.lg,
     marginTop: Spacing.md,
     marginBottom: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    height: 48,
-    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    height: 42,
+    borderRadius: Radius.sm,
     backgroundColor: Colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
   },
-  input: { flex: 1, color: Colors.text, fontSize: 17, lineHeight: 22, fontWeight: '500' },
+  input: { flex: 1, color: Colors.text, fontSize: 15, lineHeight: 20, fontWeight: '400' },
   chips: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -217,19 +241,24 @@ const styles = StyleSheet.create({
   chipScroller: { flex: 1 },
   chipGroup: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingRight: Spacing.sm },
   chip: {
-    minHeight: 36,
+    minHeight: 38,
     justifyContent: 'center',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.md,
     paddingVertical: 8,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.background,
   },
   chipActive: {
     backgroundColor: Colors.accentSoft,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(120,144,255,0.24)',
+    borderColor: Colors.border,
   },
   chipLabel: { fontSize: 14, lineHeight: 18, fontWeight: '600', color: Colors.textMuted },
-  chipLabelActive: { color: Colors.text },
+  chipLabelActive: { color: Colors.accent },
+  tableHeader: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border },
+  columnLabel: { fontSize: 10, lineHeight: 14, letterSpacing: 0.8, textTransform: 'uppercase', color: Colors.textFaint, fontWeight: '600' },
+  priceColumn: { marginRight: 32 },
+  empty: { padding: Spacing.xxl, gap: Spacing.sm },
+  emptyTitle: { fontSize: 16, fontWeight: '600' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

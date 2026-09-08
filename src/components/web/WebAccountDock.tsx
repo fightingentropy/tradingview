@@ -14,10 +14,12 @@ import {
   useHlFills,
   useHlHistoricalOrders,
   useHlOpenOrders,
+  useTradingAddress,
 } from '@/data/useHlAccount';
 import { useAllMarkets } from '@/data/useMarkets';
 import type { Instrument } from '@/domain/types';
 import { formatPrice, signedUsd, usd } from '@/lib/format';
+import { fillNetPnl } from '@/lib/portfolioMetrics';
 import type {
   HlAccount,
   HlFill,
@@ -34,9 +36,9 @@ type AccountDockTab = 'balances' | 'positions' | 'openOrders' | 'orderHistory' |
 const TABS: { key: AccountDockTab; label: string }[] = [
   { key: 'balances', label: 'Balances' },
   { key: 'positions', label: 'Positions' },
-  { key: 'openOrders', label: 'Open Orders' },
-  { key: 'orderHistory', label: 'Order History' },
-  { key: 'tradeHistory', label: 'Trade History' },
+  { key: 'openOrders', label: 'Open orders' },
+  { key: 'orderHistory', label: 'Order history' },
+  { key: 'tradeHistory', label: 'Trade history' },
 ];
 
 const HEIGHT_STORAGE_KEY = 'tradingview-account-dock-height-v3';
@@ -127,7 +129,7 @@ function BalancesTable({ account, rows, instrumentFor, mask }: { account: HlAcco
               <td><div className="web-xyz-dock-asset"><InstrumentLink coin={balance.coin} instrument={instrument} className="web-xyz-dock-symbol" /><span>Spot</span></div></td>
               <td className="is-mono">{mask(`${quantity(balance.total)} ${cleanCoin(balance.coin)}`)}</td>
               <td className="is-mono">{mask(`${quantity(balance.available)} ${cleanCoin(balance.coin)}`)}</td>
-              <td className="is-mono">{mask(balance.usdValue < 0 ? signedUsd(balance.usdValue) : usd(balance.usdValue))}</td>
+              <td className="is-mono">{balance.priceKnown !== true ? '—' : mask(balance.usdValue < 0 ? signedUsd(balance.usdValue) : usd(balance.usdValue))}</td>
               <td className="is-muted">--</td>
               <td>{instrument ? <InstrumentLink coin={balance.coin} instrument={instrument} className="web-xyz-dock-action" label="View" /> : <Link href="/account" className="web-xyz-dock-action">View</Link>}</td>
               <td className="is-muted">--</td>
@@ -231,10 +233,11 @@ function OrderHistoryTable({ rows, instrumentFor, mask }: { rows: HlHistoricalOr
 function TradeHistoryTable({ rows, instrumentFor, mask }: { rows: HlFill[]; instrumentFor: (coin: string) => Instrument | undefined; mask: (value: string) => string }) {
   return (
     <table className="web-xyz-dock-table is-roomy">
-      <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Price</th><th>Size</th><th>Notional</th><th>PnL</th></tr></thead>
+      <thead><tr><th>Time (UTC)</th><th>Symbol</th><th>Side</th><th>Price</th><th>Size</th><th>Notional</th><th>Closed P&amp;L</th></tr></thead>
       <tbody>
         {rows.length ? rows.map((fill) => {
           const instrument = instrumentFor(fill.coin);
+          const closedPnl = fill.pnlKnown === true ? fillNetPnl(fill) : null;
           return (
             <tr key={fill.key}>
               <td className="is-mono is-muted">{clockTime(fill.timestamp)}</td>
@@ -243,7 +246,7 @@ function TradeHistoryTable({ rows, instrumentFor, mask }: { rows: HlFill[]; inst
               <td className="is-mono">{formatPrice(fill.px)}</td>
               <td className="is-mono">{mask(`${quantity(fill.size)} ${instrument?.symbol ?? cleanCoin(fill.coin)}`)}</td>
               <td className="is-mono">{mask(usd(fill.size * fill.px))}</td>
-              <td className={`is-mono ${fill.closedPnl >= 0 ? 'is-up' : 'is-down'}`}>{mask(signedUsd(fill.closedPnl - fill.fee))}</td>
+              <td className="is-mono"><span className={closedPnl == null ? '' : closedPnl >= 0 ? 'is-up' : 'is-down'}>{closedPnl == null ? '—' : mask(signedUsd(closedPnl))}</span><small className="web-dock-fee">{fill.pnlKnown !== true ? 'PNL unavailable' : closedPnl != null ? 'After fees' : `Gross ${mask(signedUsd(fill.closedPnl))} · fee ${mask(formatPrice(fill.fee, 8))} ${fill.feeToken ?? '(token unavailable)'}`}</small></td>
             </tr>
           );
         }) : <tr><td colSpan={7} className="web-xyz-dock-table-empty">No trades yet</td></tr>}
@@ -260,6 +263,7 @@ export function WebAccountDock() {
   const address = useHlConnection((state) => state.address);
   const privacy = usePreferences((state) => state.privacyMode);
   const hideSmallBalances = usePreferences((state) => state.hideSmallBalances);
+  const identity = useTradingAddress();
   const account = useHlAccount();
   const openOrders = useHlOpenOrders();
   const fills = useHlFills();
@@ -336,7 +340,7 @@ export function WebAccountDock() {
   };
 
   const balances = useMemo(
-    () => (account.data?.spotBalances ?? []).filter((balance) => !hideSmallBalances || Math.abs(balance.usdValue) >= SMALL_BALANCE_USD),
+    () => (account.data?.spotBalances ?? []).filter((balance) => !hideSmallBalances || balance.priceKnown !== true || Math.abs(balance.usdValue) >= SMALL_BALANCE_USD),
     [account.data?.spotBalances, hideSmallBalances],
   );
   const instrumentFor = (coin: string) => markets?.byCoinKey.get(marketCoinKey(coin));
@@ -348,13 +352,17 @@ export function WebAccountDock() {
 
   let content: ReactNode;
   if (!address) {
-    content = <DockEmpty title="Connect an account" detail="Use Connect above to load your trading activity" />;
-  } else if (activeQuery.isLoading) {
+    content = <DockEmpty title="No account connected" detail="Open Portfolio to connect a public account and view its activity." />;
+  } else if (identity.isError) {
+    content = <div className="web-xyz-dock-error"><span>Account could not be resolved</span><button type="button" onClick={() => void identity.refetch()}>Retry</button></div>;
+  } else if (activeQuery.isPending) {
     content = <DockLoading />;
   } else if (activeQuery.isError) {
     content = <div className="web-xyz-dock-error"><span>Account data unavailable</span><button type="button" onClick={() => void activeQuery.refetch()}>Retry</button></div>;
   } else if (tab === 'balances') {
-    content = account.data
+    content = account.data && account.data.spotBalancesLoaded !== true
+      ? <div className="web-xyz-dock-error"><span>Wallet balances unavailable</span>{account.data.spotBalancesError ? <small>{account.data.spotBalancesError}</small> : null}<button type="button" onClick={() => void account.refetch()}>Retry</button></div>
+      : account.data
       ? <BalancesTable account={account.data} rows={balances} instrumentFor={instrumentFor} mask={mask} />
       : <DockEmpty title="No balances" />;
   } else if (tab === 'positions') {
@@ -396,6 +404,8 @@ export function WebAccountDock() {
               key={item.key}
               type="button"
               role="tab"
+              id={`web-dock-tab-${item.key}`}
+              aria-controls="web-account-dock-panel"
               aria-selected={tab === item.key}
               className={tab === item.key ? 'is-active' : ''}
               onClick={() => {
@@ -413,7 +423,7 @@ export function WebAccountDock() {
           );
         })}
       </div>
-      <div className="web-account-dock-scroll" role="tabpanel">{content}</div>
+      <div className="web-account-dock-scroll" id="web-account-dock-panel" role="tabpanel" aria-labelledby={`web-dock-tab-${tab}`}>{content}</div>
     </section>
   );
 }

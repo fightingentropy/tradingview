@@ -1,0 +1,133 @@
+.account-page { display: flex; min-width: 0; flex-direction: column; gap: 18px; }
+.account-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.account-heading h1 { font-size: 23px; font-weight: 600; letter-spacing: -.035em; }
+.account-heading p { display: flex; align-items: center; gap: 10px; margin-top: 5px; color: var(--web-muted); font-size: 11px; }
+.account-heading b { color: var(--web-text); font: 11px var(--font-mono); }
+.account-network { padding-left: 10px; border-left: 1px solid var(--web-line); text-transform: capitalize; }
+.account-toolbar { display: flex; align-items: center; gap: 7px; }
+.account-overview-grid { display: grid; min-width: 0; grid-template-columns: minmax(250px, .75fr) minmax(0, 1.8fr); gap: 16px; }
+.account-overview { display: flex; flex-direction: column; padding: 20px; }
+.account-overview > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.account-overview h2 { font-size: 13px; font-weight: 550; }
+.account-overview > header > span { color: var(--web-muted); font-size: 10px; }
+.account-equity { display: flex; flex-direction: column; gap: 5px; margin: 26px 0; }
+.account-equity > span { color: var(--web-muted); font-size: 11px; }
+.account-equity > strong { font: 500 31px/1.2 var(--font-mono); letter-spacing: -.06em; }
+.account-overview dl { display: flex; flex-direction: column; gap: 13px; margin: 0 0 18px; }
+.account-overview dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.account-overview dt { color: var(--web-muted); font-size: 11px; }
+.account-overview dd { margin: 0; font: 11px var(--font-mono); }
+.account-overview > p { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--web-line); color: var(--web-faint); font-size: 10px; line-height: 1.6; }
+.account-overview > .account-read-status { margin: 12px -20px -20px; }
+.account-secondary-metrics { display: grid; grid-template-columns: 1fr 1fr 1.3fr; }
+.account-secondary-metrics > div { display: flex; min-width: 0; flex-direction: column; gap: 6px; padding: 15px 20px; border-right: 1px solid var(--web-line); }
+.account-secondary-metrics > div:last-child { border-right: 0; }
+.account-secondary-metrics > div > span { color: var(--web-muted); font-size: 11px; }
+.account-secondary-metrics > div > strong { font: 500 16px/1.5 var(--font-mono); }
+.account-secondary-metrics > div > small { color: var(--web-faint); font-size: 10px; }
+.account-secondary-metrics strong > small { color: var(--web-muted); font: 10px var(--font-display); }
+.account-secondary-metrics i { padding: 0 5px; color: var(--web-faint); font-style: normal; }
+.account-secondary-metrics .account-read-status { margin: 3px -20px -15px; }
+.account-chart-card { display: flex; min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--web-line); border-radius: 8px; background: var(--web-panel); }
+.account-chart-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid var(--web-line); }
+.account-chart-modes, .account-chart-periods { display: flex; align-items: center; gap: 2px; }
+.account-chart-modes button, .account-chart-periods button { padding: 5px 8px; border: 0; color: var(--web-muted); background: transparent; font-size: 11px; white-space: nowrap; }
+.account-chart-modes button:first-child { margin-left: -8px; }
+.account-chart-modes button.is-active { color: var(--web-accent); }
+.account-chart-periods button { padding: 4px 7px; font-size: 10px; }
+.account-chart-periods button.is-active { color: var(--web-accent); background: var(--web-panel-soft); }
+.account-chart-metrics { display: flex; gap: 28px; padding: 15px 18px 0; }
+.account-chart-metrics > div { display: flex; flex-direction: column; gap: 4px; }
+.account-chart-metrics span { color: var(--web-muted); font-size: 10px; }
+.account-chart-metrics strong { font: 500 15px var(--font-mono); }
+.account-curve { padding: 0 18px 12px; }
+.account-curve-readout { display: flex; min-height: 28px; align-items: center; gap: 10px; color: var(--web-faint); font-size: 10px; }
+.account-curve-readout strong { color: var(--web-text); font: 10px var(--font-mono); }
+.account-curve-plot { position: relative; display: flex; gap: 12px; }
+.account-curve svg { display: block; width: calc(100% - 64px); height: 100%; overflow: visible; touch-action: pan-y; }
+.account-curve-grid { stroke: var(--web-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.account-curve-cursor { stroke: var(--web-muted); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.account-curve-axis { display: flex; width: 52px; flex: 0 0 52px; flex-direction: column; justify-content: space-between; padding: 2px 0; color: var(--web-faint); font: 9px var(--font-mono); }
+.account-curve-dates { display: flex; justify-content: space-between; margin-top: 7px; padding-right: 64px; color: var(--web-faint); font-size: 9px; }
+.account-chart-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--web-line); color: var(--web-faint); font-size: 10px; }
+.account-chart-footer > span { flex: 0 0 auto; }
+.account-chart-footer strong { margin-left: 5px; color: var(--web-muted); font: 10px var(--font-mono); }
+.account-chart-empty { display: flex; min-height: 240px; flex: 1; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: var(--web-muted); font-size: 12px; }
+.account-chart-empty button, .account-table-empty button { padding: 6px 11px; color: var(--web-accent); background: transparent; font-size: 11px; }
+.account-read-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; color: var(--web-warning); background: rgba(214, 183, 128, .04); font-size: 10px; }
+.account-read-status button { flex: 0 0 auto; padding: 3px 7px; color: var(--web-warning); background: transparent; font-size: 10px; }
+.account-tabs { display: flex; gap: 20px; padding: 0 18px; overflow-x: auto; border-bottom: 1px solid var(--web-line); }
+.account-tabs > button { display: flex; min-height: 47px; flex: 0 0 auto; align-items: center; gap: 6px; padding: 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--web-muted); background: transparent; font-size: 11px; }
+.account-tabs > button.is-active { border-bottom-color: var(--web-accent); color: var(--web-accent); }
+.account-tabs > button > span { color: var(--web-faint); font: 9px var(--font-mono); }
+.account-ledger-meta { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 18px; color: var(--web-faint); font-size: 10px; }
+.account-ledger-meta > span { flex: 0 0 auto; }
+.account-ledger-meta label { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; color: var(--web-muted); cursor: pointer; }
+.account-ledger-meta input { margin: 0; accent-color: var(--web-accent); }
+.account-table-region { overflow-x: auto; }
+.account-table { width: 100%; border-collapse: collapse; text-align: right; white-space: nowrap; }
+.account-table th { padding: 10px 15px; border-top: 1px solid var(--web-line); border-bottom: 1px solid var(--web-line); color: var(--web-faint); background: rgba(11, 17, 20, .28); font-size: 10px; font-weight: 450; }
+.account-table td { height: 62px; padding: 9px 15px; border-bottom: 1px solid var(--web-line); font: 11px var(--font-mono); }
+.account-table tr:last-child td { border-bottom: 0; }
+.account-table th:first-child, .account-table td:first-child { text-align: left; }
+.account-table tr:hover td { background: rgba(154, 181, 194, .025); }
+.account-table td:has(.account-market), .account-table th:nth-child(2) { text-align: left; }
+.account-market { display: inline-flex; align-items: center; gap: 8px; max-width: 215px; font-family: var(--font-display); text-align: left; }
+.account-market > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.account-market strong { overflow: hidden; color: var(--web-text); font-size: 11px; font-weight: 550; text-overflow: ellipsis; }
+.account-market small { overflow: hidden; color: var(--web-faint); font-size: 9px; text-overflow: ellipsis; }
+.account-market .web-symbol-mark { width: 26px; height: 26px; flex-basis: 26px; font-size: 9px; }
+.account-cell-detail { display: block; margin-top: 4px; color: var(--web-faint); font-size: 9px; font-weight: 400; }
+.account-order-status { color: var(--web-muted); font-family: var(--font-display); text-transform: capitalize; }
+.account-table-empty { display: flex; min-height: 225px; align-items: center; justify-content: center; flex-direction: column; gap: 12px; padding: 26px; color: var(--web-muted); font-size: 12px; }
+.account-table-empty strong { font-size: 12px; font-weight: 500; }
+.account-connect { display: flex; width: min(100%, 550px); align-items: flex-start; flex-direction: column; gap: 14px; margin: 40px auto; padding: 30px; }
+.account-connect h2 { margin-top: 8px; font-size: 22px; letter-spacing: -.035em; }
+.account-connect p { max-width: 410px; color: var(--web-muted); font-size: 12px; line-height: 1.7; }
+.account-connect form { display: flex; width: 100%; flex-direction: column; gap: 8px; margin-top: 10px; }
+.account-connect label { color: var(--web-muted); font-size: 11px; }
+.account-connect form > div { display: flex; gap: 8px; }
+.account-connect input { width: 100%; flex: 1; padding: 10px 11px; border: 1px solid var(--web-line); border-radius: 6px; font: 12px var(--font-mono); }
+.account-connect form > small { color: var(--web-down); font-size: 11px; }
+.account-demo { display: inline-flex; align-items: center; gap: 7px; padding: 0; border: 0; color: var(--web-accent); background: transparent; font-size: 11px; }
+.account-connect footer { display: flex; width: 100%; align-items: center; gap: 6px; margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--web-line); color: var(--web-faint); font-size: 10px; }
+@media (max-width: 1150px) {
+  .account-overview-grid { grid-template-columns: minmax(235px, .75fr) minmax(0, 1.4fr); }
+  .account-chart-toolbar { align-items: flex-start; flex-direction: column; gap: 3px; padding: 8px 14px; }
+  .account-chart-footer { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .account-secondary-metrics > div { padding: 14px 16px; }
+  .account-secondary-metrics > div > strong { font-size: 14px; }
+}
+@media (max-width: 900px) {
+  .account-overview-grid { grid-template-columns: 1fr; }
+  .account-overview { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 26px; }
+  .account-overview > header, .account-overview > p, .account-overview > .account-read-status { grid-column: 1 / -1; }
+  .account-equity { margin: 6px 0; }
+  .account-overview dl { margin: 6px 0; }
+  .account-chart-toolbar { align-items: center; flex-direction: row; padding: 0 16px; }
+  .account-chart-footer { align-items: center; flex-direction: row; }
+  .account-secondary-metrics { grid-template-columns: 1fr 1fr; }
+  .account-secondary-metrics > div:nth-child(2) { border-right: 0; }
+  .account-secondary-metrics > div:last-child { grid-column: 1 / -1; border-top: 1px solid var(--web-line); }
+  .account-ledger-meta { align-items: flex-start; flex-direction: column; gap: 7px; }
+}
+@media (max-width: 540px) {
+  .account-page { gap: 14px; }
+  .account-heading { align-items: flex-start; flex-direction: column; gap: 13px; }
+  .account-heading h1 { font-size: 22px; }
+  .account-toolbar { width: 100%; }
+  .account-toolbar > button:last-child { margin-left: auto; }
+  .account-overview { display: flex; gap: 0; padding: 18px; }
+  .account-equity { margin: 22px 0; }
+  .account-equity > strong { font-size: 30px; }
+  .account-overview dl { gap: 12px; margin: 0 0 18px; }
+  .account-overview > .account-read-status { margin: 12px -18px -18px; }
+  .account-secondary-metrics > div { padding: 14px; }
+  .account-chart-toolbar { align-items: flex-start; flex-direction: column; gap: 4px; padding: 8px 14px; }
+  .account-chart-metrics { padding: 14px 14px 0; }
+  .account-curve { padding: 0 14px 12px; }
+  .account-chart-footer { align-items: flex-start; flex-direction: column; gap: 5px; padding: 10px 14px; }
+  .account-tabs { gap: 20px; padding: 0 14px; }
+  .account-ledger-meta { padding: 10px 14px; }
+  .account-connect { margin: 8px auto; padding: 23px; }
+}

@@ -10,6 +10,7 @@ import { SymbolMenuProvider } from '@/components/SymbolMenu';
 import { Colors } from '@/constants/theme';
 import { AlertWatcher } from '@/hooks/useAlertWatcher';
 import { NewsPushRegistration } from '@/hooks/useNewsPushRegistration';
+import { PriceAlertRegistration } from '@/hooks/usePriceAlertRegistration';
 import { PERSIST_MAX_AGE, queryClient, queryPersister } from '@/lib/queryClient';
 
 // Victory Native's candlestick paths emit Skia path deprecation warnings; harmless and noisy.
@@ -72,7 +73,7 @@ export default function RootLayout() {
                 screenOptions={{
                   headerStyle: { backgroundColor: Colors.background },
                   headerTintColor: Colors.text,
-                  headerTitleStyle: { fontSize: 20, fontWeight: '700', color: Colors.text },
+                  headerTitleStyle: { fontSize: 18, fontWeight: '600', color: Colors.text },
                   headerShadowVisible: false,
                   headerBackButtonDisplayMode: 'minimal',
                   contentStyle: { backgroundColor: Colors.background },
@@ -98,6 +99,7 @@ export default function RootLayout() {
             </SymbolMenuProvider>
             <AlertWatcher />
             <NewsPushRegistration />
+            <PriceAlertRegistration />
             <AlertHost />
           </ThemeProvider>
         </PersistQueryClientProvider>

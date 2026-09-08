@@ -20,7 +20,7 @@ export function RangeBar({ value, onChange }: Props) {
             key={key}
             onPress={() => onChange(key)}
             style={[styles.item, active && styles.itemActive]}>
-            <AppText variant="label" color={active ? Colors.text : Colors.textMuted}>
+            <AppText variant="label" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} color={active ? Colors.text : Colors.textMuted}>
               {rangeLabel(key)}
             </AppText>
           </Pressable>

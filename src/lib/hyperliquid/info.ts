@@ -3,6 +3,8 @@
  * Powers the Account tab: margin summary + open perp positions with live marks.
  */
 import { toNum } from '@/lib/format';
+import { earnUsdcState, feeVolume14d, portfolioNumber, portfolioPoints } from '@/lib/portfolioMetrics';
+import { normalizeAccountActivity, type AccountActivity } from '@/lib/accountActivity';
 import {
   deriveModeAwareAccountMetrics,
   deriveSignedSpotEquity,
@@ -106,6 +108,8 @@ export interface HlSpotBalance {
   available: number;
   /** Current value in USD (USDC = 1; other tokens priced off spot mids). */
   usdValue: number;
+  /** False when the token has no usable USD mark; a zero value is then unknown. */
+  priceKnown: boolean;
 }
 
 export interface HlAccount {
@@ -131,6 +135,8 @@ export interface HlAccount {
   spotBalances: HlSpotBalance[];
   /** False when the tolerant spot-balance request failed; trading callers must fail closed. */
   spotBalancesLoaded: boolean;
+  /** Sanitized failure category only; never an account payload or raw error message. */
+  spotBalancesError: string | null;
   /** Signed USD value of all spot/unified balances, including borrow liabilities. */
   spotValue: number;
   /** Freely-available USDC in the spot wallet (total − hold). */
@@ -141,6 +147,9 @@ export interface HlAccount {
   spendableUsdcLoaded: boolean;
   /** Total USD equity deposited in vaults. */
   vaultValue: number;
+  vaultValueLoaded: boolean;
+  /** False when a tolerant spot/vault read or a token's USD valuation is missing. */
+  totalEquityLoaded: boolean;
   /**
    * Hyperliquid's "Total Equity" — the figure at the top of the web Portfolio page.
    * Standard adds the separate spot and per-DEX perp balances. Unified/portfolio modes
@@ -463,29 +472,49 @@ interface SpotPrices {
   byCoin: Record<string, number>;
 }
 
+class SpotBalanceReadError extends Error {}
+
+/** Preserve request diagnostics without exposing response text, URLs or account values. */
+async function spotRead<T>(network: HlNetwork, body: object, source: 'Balance request' | 'Price request'): Promise<T> {
+  try {
+    return await infoRequest<T>(network, body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const status = /^Hyperliquid info ([1-5][0-9]{2})$/.exec(message)?.[1];
+    const category = status ? `HTTP ${status}`
+      : /^Hyperliquid request timed out after [0-9]+ms$/.test(message) ? 'timed out'
+      : error instanceof SyntaxError ? 'invalid JSON response'
+      : error instanceof TypeError ? 'network connection failed'
+      : 'request failed';
+    throw new SpotBalanceReadError(`${source}: ${category}.`);
+  }
+}
+
 /** Token/coin → USD price. Outcome balances use `+encoding`, contexts use `#encoding`. */
 function spotPrices([meta, ctxs]: [SpotMeta, SpotCtx[]]): SpotPrices {
   const midByCoin: Record<string, number> = {};
   const markByCoin: Record<string, number> = {};
   for (const c of ctxs) {
-    midByCoin[c.coin] = n(c.midPx);
-    markByCoin[c.coin] = n(c.markPx);
+    const mid = portfolioNumber(c.midPx);
+    const mark = portfolioNumber(c.markPx);
+    if (mid != null && mid >= 0) midByCoin[c.coin] = mid;
+    if (mark != null && mark >= 0) markByCoin[c.coin] = mark;
   }
   const byToken: Record<number, number> = { 0: 1 }; // USDC is token 0
   for (const u of meta.universe) {
     const [base, quote] = u.tokens;
     if (quote !== 0) continue; // only USDC-quoted pairs give a USD price
     const px =
-      markByCoin[u.name] ||
-      markByCoin[`@${u.index}`] ||
-      midByCoin[u.name] ||
+      markByCoin[u.name] ??
+      markByCoin[`@${u.index}`] ??
+      midByCoin[u.name] ??
       midByCoin[`@${u.index}`];
-    if (px) byToken[base] = px;
+    if (px != null) byToken[base] = px;
   }
   const byCoin: Record<string, number> = {};
-  for (const coin of Object.keys(midByCoin)) {
-    const px = markByCoin[coin] || midByCoin[coin];
-    if (px) byCoin[coin] = px;
+  for (const coin of new Set([...Object.keys(midByCoin), ...Object.keys(markByCoin)])) {
+    const px = markByCoin[coin] ?? midByCoin[coin];
+    if (px != null) byCoin[coin] = px;
   }
   return { byToken, byCoin };
 }
@@ -506,13 +535,27 @@ async function fetchSpotBalances(
   usdcTotal: number;
   usdcAvailable: number;
   loaded: boolean;
+  error: string | null;
 }> {
   try {
     const [state, metaCtxs] = await Promise.all([
-      infoRequest<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }),
-      infoRequest<[SpotMeta, SpotCtx[]]>(network, { type: 'spotMetaAndAssetCtxs' }),
+      spotRead<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }, 'Balance request'),
+      spotRead<[SpotMeta, SpotCtx[]]>(network, { type: 'spotMetaAndAssetCtxs' }, 'Price request'),
     ]);
-    const price = spotPrices(metaCtxs);
+    if (!Array.isArray(state?.balances)) throw new SpotBalanceReadError('Balance data: invalid balances list.');
+    for (const balance of state.balances) {
+      if (!balance || typeof balance !== 'object') throw new SpotBalanceReadError('Balance data: invalid balance entry.');
+      if (typeof balance.coin !== 'string') throw new SpotBalanceReadError('Balance data: invalid coin field.');
+      if (!Number.isSafeInteger(balance.token)) throw new SpotBalanceReadError('Balance data: invalid token field.');
+      if (portfolioNumber(balance.total) == null) throw new SpotBalanceReadError('Balance data: invalid total field.');
+      if (portfolioNumber(balance.hold) == null) throw new SpotBalanceReadError('Balance data: invalid hold field.');
+    }
+    let price: SpotPrices;
+    try {
+      price = spotPrices(metaCtxs);
+    } catch {
+      throw new SpotBalanceReadError('Price data: invalid market metadata or contexts.');
+    }
     const balances = state.balances
       .map((b) => {
         const total = n(b.total);
@@ -524,7 +567,9 @@ async function fetchSpotBalances(
             : outcomeCoin
               ? (price.byCoin[outcomeCoin] ?? 0)
               : (price.byToken[b.token] ?? 0);
-        return { coin: b.coin, total, hold, available: total - hold, usdValue: total * px };
+        const priceKnown = b.coin === 'USDC' || (outcomeCoin
+          ? price.byCoin[outcomeCoin] != null : price.byToken[b.token] != null);
+        return { coin: b.coin, total, hold, available: total - hold, usdValue: total * px, priceKnown };
       })
       // Portfolio Margin represents borrows as negative balances. Keep liabilities
       // visible and sort by absolute size so they cannot silently disappear below dust.
@@ -553,8 +598,9 @@ async function fetchSpotBalances(
       usdcTotal,
       usdcAvailable,
       loaded: true,
+      error: null,
     };
-  } catch {
+  } catch (error) {
     return {
       balances: [],
       collateralBalances: [],
@@ -562,6 +608,7 @@ async function fetchSpotBalances(
       usdcTotal: 0,
       usdcAvailable: 0,
       loaded: false,
+      error: error instanceof SpotBalanceReadError ? error.message : 'Balance data could not be read.',
     };
   }
 }
@@ -572,15 +619,18 @@ interface RawVaultEquity {
 }
 
 /** Total USD equity the address has deposited across vaults. Tolerant of failure. */
-async function fetchVaultEquity(address: string, network: HlNetwork): Promise<number> {
+async function fetchVaultEquity(address: string, network: HlNetwork): Promise<{ value: number; loaded: boolean }> {
   try {
     const rows = await infoRequest<RawVaultEquity[]>(network, {
       type: 'userVaultEquities',
       user: address,
     });
-    return (rows ?? []).reduce((s, r) => s + n(r.equity), 0);
+    if (!Array.isArray(rows) || rows.some((row) => portfolioNumber(row.equity) == null)) {
+      throw new Error('Vault equity is incomplete');
+    }
+    return { value: rows.reduce((s, r) => s + n(r.equity), 0), loaded: true };
   } catch {
-    return 0;
+    return { value: 0, loaded: false };
   }
 }
 
@@ -597,7 +647,7 @@ async function fetchVaultEquity(address: string, network: HlNetwork): Promise<nu
  */
 export async function fetchHlAccount(address: string, network: HlNetwork = 'mainnet'): Promise<HlAccount> {
   const dexes: HlPosition['dex'][] = ['default', 'xyz'];
-  const [rawAbstraction, collateralTokens, defState, xyzState, spot, vaultValue] = await Promise.all([
+  const [rawAbstraction, collateralTokens, defState, xyzState, spot, vault] = await Promise.all([
     infoRequest<RawUserAbstraction>(network, { type: 'userAbstraction', user: address }),
     fetchSupportedCollateralTokens(network),
     infoRequest<RawClearinghouse>(network, { type: 'clearinghouseState', user: address }),
@@ -606,7 +656,9 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     fetchVaultEquity(address, network),
   ]);
   const states = [defState, xyzState];
+  const vaultValue = vault.value;
   const abstractionMode = normalizeAccountMode(rawAbstraction);
+  const perpEquityLoaded = states.every((state) => portfolioNumber(state?.marginSummary?.accountValue) != null);
 
   // Perp equity + risk span every dex (default crypto perps + the trade.xyz HIP-3 dex).
   let perpValue = 0;
@@ -734,11 +786,15 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
     positions,
     spotBalances: spot.balances,
     spotBalancesLoaded: spot.loaded,
+    spotBalancesError: spot.error,
     spotValue: spot.value,
     availableUsdc: spot.usdcAvailable,
     spendableUsdc,
     spendableUsdcLoaded: spot.loaded && completeUsdcMarginState,
     vaultValue,
+    vaultValueLoaded: vault.loaded,
+    totalEquityLoaded: spot.loaded && vault.loaded && spot.balances.every((balance) => balance.priceKnown) &&
+      ((abstractionMode === 'unified' || abstractionMode === 'portfolioMargin') || perpEquityLoaded),
     totalEquity,
   };
 }
@@ -758,11 +814,15 @@ export interface HlPortfolioWindow {
   /** Cumulative PnL over the window. */
   pnl: HlPortfolioPoint[];
   /** Traded volume over the window, USD. */
-  volume: number;
+  volume: number | null;
+  /** Missing API windows are distinct from a valid window with no samples. */
+  available: boolean;
 }
 
 export type HlPortfolioPeriodKey = 'day' | 'week' | 'month' | 'allTime';
-export type HlPortfolio = Record<HlPortfolioPeriodKey, HlPortfolioWindow>;
+export type HlPortfolio = Record<HlPortfolioPeriodKey, HlPortfolioWindow> & {
+  perps: Record<HlPortfolioPeriodKey, HlPortfolioWindow>;
+};
 
 interface RawPortfolioWindow {
   accountValueHistory?: [number, string][];
@@ -785,13 +845,56 @@ export async function fetchHlPortfolio(
     type: 'portfolio',
     user: address,
   });
+  if (!Array.isArray(rows)) throw new Error('Portfolio history is unavailable');
+  if (rows.some((row) => !Array.isArray(row) || row.length !== 2 || typeof row[0] !== 'string' ||
+    !row[0].trim() || !row[1] || typeof row[1] !== 'object' || Array.isArray(row[1])) ||
+    new Set(rows.map((row) => row[0])).size !== rows.length) {
+    throw new Error('Portfolio history contains an invalid window');
+  }
   const byKey = new Map(rows);
-  const pts = (h?: [number, string][]) => (h ?? []).map(([t, v]) => ({ t, v: n(v) }));
   const win = (key: string): HlPortfolioWindow => {
-    const w = byKey.get(key) ?? {};
-    return { accountValue: pts(w.accountValueHistory), pnl: pts(w.pnlHistory), volume: n(w.vlm) };
+    const w = byKey.get(key);
+    return {
+      accountValue: portfolioPoints(w?.accountValueHistory),
+      pnl: portfolioPoints(w?.pnlHistory),
+      volume: portfolioNumber(w?.vlm),
+      available: !!w,
+    };
   };
-  return { day: win('day'), week: win('week'), month: win('month'), allTime: win('allTime') };
+  return {
+    day: win('day'), week: win('week'), month: win('month'), allTime: win('allTime'),
+    perps: { day: win('perpDay'), week: win('perpWeek'), month: win('perpMonth'), allTime: win('perpAllTime') },
+  };
+}
+
+export interface HlAccountFees {
+  volume14d: number | null;
+  /** Base perp fee rates; specific markets can apply further adjustments. */
+  takerRate: number | null;
+  makerRate: number | null;
+  spotTakerRate: number | null;
+  spotMakerRate: number | null;
+}
+
+export async function fetchHlAccountFees(address: string, network: HlNetwork = 'mainnet'): Promise<HlAccountFees> {
+  const raw = await infoRequest<Record<string, unknown>>(network, { type: 'userFees', user: address });
+  if (!raw || typeof raw !== 'object') throw new Error('Account fees are unavailable');
+  return {
+    volume14d: feeVolume14d(raw.dailyUserVlm),
+    takerRate: portfolioNumber(raw.userCrossRate), makerRate: portfolioNumber(raw.userAddRate),
+    spotTakerRate: portfolioNumber(raw.userSpotCrossRate), spotMakerRate: portfolioNumber(raw.userSpotAddRate),
+  };
+}
+
+export interface HlEarnBalance {
+  /** USDC only. Other supplied tokens are intentionally not called USD. */
+  suppliedUsdc: number | null;
+  borrowedUsdc: number | null;
+}
+
+export async function fetchHlEarnBalance(address: string, network: HlNetwork = 'mainnet'): Promise<HlEarnBalance> {
+  const raw = await infoRequest<unknown>(network, { type: 'borrowLendUserState', user: address });
+  return earnUsdcState(raw);
 }
 
 // ---- Funding + borrow/lend interest history ------------------------------
@@ -848,7 +951,8 @@ async function fetchTimeRangePages<T extends TimedApiRow>(
   let cursor = startTime;
   for (let page = 0; page < maxPages && cursor <= endTime; page++) {
     const batch = await infoRequest<T[]>(network, request(cursor, endTime));
-    if (!Array.isArray(batch) || batch.length === 0) break;
+    if (!Array.isArray(batch)) throw new Error('Account history response is invalid');
+    if (batch.length === 0) break;
     rows.push(...batch);
 
     let lastTime = cursor - 1;
@@ -862,6 +966,26 @@ async function fetchTimeRangePages<T extends TimedApiRow>(
   // Normalize out-of-order pages while preserving distinct rows that share an hourly
   // timestamp (one account can settle many markets at the same time).
   return rows.sort((a, b) => a.time - b.time);
+}
+
+export interface HlAccountActivity {
+  rows: AccountActivity[];
+  /** A bounded read reached its cap, so do not imply the whole window was loaded. */
+  limited: boolean;
+  through: number | null;
+}
+
+/** Deposits, withdrawals, and ledger activity from the last 90 days. Read-only. */
+export async function fetchHlAccountActivity(address: string, network: HlNetwork = 'mainnet'): Promise<HlAccountActivity> {
+  const end = Date.now();
+  const raw = await fetchTimeRangePages<TimedApiRow>(network,
+    (startTime, endTime) => ({ type: 'userNonFundingLedgerUpdates', user: address, startTime, endTime }),
+    end - 90 * 86_400_000, end, 8);
+  return {
+    rows: normalizeAccountActivity(raw, address).slice(0, 100),
+    limited: raw.length >= 4_000,
+    through: raw.at(-1)?.time ?? null,
+  };
 }
 
 interface RawFundingPoint extends TimedApiRow {
@@ -1053,13 +1177,20 @@ function mapFrontendOrder(o: RawFrontendOrder): HlOpenOrder {
 export async function fetchOpenOrders(address: string, network: HlNetwork = 'mainnet'): Promise<HlOpenOrder[]> {
   const [base, xyz] = await Promise.all([
     infoRequest<RawFrontendOrder[]>(network, { type: 'frontendOpenOrders', user: address }),
-    infoRequest<RawFrontendOrder[]>(network, { type: 'frontendOpenOrders', user: address, dex: XYZ_DEX }).catch(
-      () => [] as RawFrontendOrder[],
-    ),
+    infoRequest<RawFrontendOrder[]>(network, { type: 'frontendOpenOrders', user: address, dex: XYZ_DEX }),
   ]);
   const byOid = new Map<number, HlOpenOrder>();
   for (const o of [...(base ?? []), ...(xyz ?? [])]) byOid.set(o.oid, mapFrontendOrder(o));
   return [...byOid.values()].sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/** Exact read-only lookup; unknownOid remains unresolved, never a retry signal. */
+export async function fetchOrderStatus(
+  address: string,
+  clientOrderId: string,
+  network: HlNetwork = 'mainnet',
+): Promise<unknown> {
+  return infoRequest<unknown>(network, { type: 'orderStatus', user: address, oid: clientOrderId });
 }
 
 // ---- Order history --------------------------------------------------------
@@ -1203,8 +1334,11 @@ export interface HlFill {
    * opens). Hyperliquid reports the fee separately, so net realized = closedPnl − fee.
    */
   closedPnl: number;
-  /** Total fee in USDC for this fill; a NEGATIVE value is a maker rebate. */
+  /** Fee in feeToken units; a NEGATIVE value is a maker rebate. */
   fee: number;
+  feeToken?: string;
+  /** False when the raw fee or closed PNL field was absent or invalid. */
+  pnlKnown?: boolean;
   /** True if the fill crossed the book (taker); false = maker (may earn a rebate). */
   crossed: boolean;
   /** L1 transaction hash, for an explorer link (may be empty on some fills). */
@@ -1221,6 +1355,7 @@ interface RawFill {
   dir?: string;
   closedPnl?: string;
   fee?: string;
+  feeToken?: string;
   oid?: number;
   hash?: string;
   crossed?: boolean;
@@ -1243,6 +1378,8 @@ export async function fetchUserFills(
       size: n(f.sz),
       closedPnl: n(f.closedPnl),
       fee: n(f.fee),
+      feeToken: f.feeToken?.trim() || undefined,
+      pnlKnown: portfolioNumber(f.fee) != null && portfolioNumber(f.closedPnl) != null,
       crossed: f.crossed ?? false,
       hash: f.hash ?? '',
       timestamp: f.time,

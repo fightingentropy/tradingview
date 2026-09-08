@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { StyleSheet } from 'react-native';
 
-import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Colors } from '@/constants/theme';
 import { usePreferences } from '@/store/preferences';
 
@@ -13,18 +12,18 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerStyle: { backgroundColor: Colors.background },
+        headerTitleAlign: 'left',
         headerTitleStyle: {
           color: Colors.text,
-          fontSize: 20,
-          fontWeight: '700',
+          fontSize: 24,
+          fontWeight: '600',
           letterSpacing: -0.35,
         },
         headerTintColor: Colors.text,
         headerShadowVisible: false,
         tabBarStyle: styles.tabBar,
-        tabBarBackground: () => <GlassSurface style={StyleSheet.absoluteFill} />,
-        tabBarActiveTintColor: Colors.text,
-        tabBarInactiveTintColor: Colors.textFaint,
+        tabBarActiveTintColor: Colors.accent,
+        tabBarInactiveTintColor: Colors.textMuted,
         tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: styles.tabItem,
         tabBarHideOnKeyboard: true,
@@ -73,6 +72,7 @@ export default function TabsLayout() {
         name="account"
         options={{
           title: 'Account',
+          headerShown: false,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'wallet' : 'wallet-outline'} color={color} size={22} />
           ),
@@ -93,10 +93,11 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: 'transparent',
-    borderTopWidth: 0,
+    backgroundColor: Colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
     elevation: 0,
   },
   tabItem: { paddingTop: 4 },
-  tabLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.1 },
+  tabLabel: { fontSize: 10, fontWeight: '500', letterSpacing: 0.1 },
 });

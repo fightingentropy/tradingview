@@ -23,7 +23,7 @@
     "android": {
       "package": "com.tradingview.app",
       "adaptiveIcon": {
-        "backgroundColor": "#05070A",
+        "backgroundColor": "#0B1114",
         "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false
@@ -39,7 +39,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#05070A",
+          "backgroundColor": "#0B1114",
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76

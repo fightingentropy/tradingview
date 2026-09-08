@@ -30,6 +30,7 @@ import {
 } from 'victory-native';
 
 import { AppText } from '@/components/ui/AppText';
+import { RsiPane } from '@/components/RsiPane';
 import { Colors, Indicators, Spacing } from '@/constants/theme';
 import { sma } from '@/domain/indicators';
 import type { Candle } from '@/domain/types';
@@ -152,6 +153,8 @@ interface Props {
   hideValues?: boolean;
   /** Opens the position-management surface when the on-chart position tag is tapped. */
   onPositionPress?: () => void;
+  /** An oscillator sharing this chart's exact viewport, transform, and crosshair. */
+  rsiPeriod?: number;
 }
 
 /** Height of the position tag chip riding the entry-price line. */
@@ -196,6 +199,7 @@ export function PriceChart({
   symbol,
   hideValues = false,
   onPositionPress,
+  rsiPeriod,
 }: Props) {
   const isProbability = priceDisplay === 'probability';
   // While a finger is pressing the chart, hold the candle series steady so live
@@ -271,22 +275,17 @@ export function PriceChart({
   // SMA over the full series (including the off-screen lead), then sliced to the
   // visible window so a 200-period line still renders on a short range.
   //
-  // The websocket swaps `activeCandles` for a new array every tick, but the SMA
-  // only moves when the bar count or the latest close changes. Key the memo on a
-  // stable signature (length + last close/timestamp + periods + start) so an
-  // identity-only change skips the ~400-bar-per-period recompute.
-  const lastClose = activeCandles.length ? activeCandles[activeCandles.length - 1].c : null;
-  const lastStamp = activeCandles.length ? activeCandles[activeCandles.length - 1].t : null;
+  // Depend on the entire series: reconnect backfills can correct older closes
+  // without changing the last timestamp/price or bar count.
   const smaKey = smaPeriods.join(',');
   const smaSeries = useMemo(() => {
     const closes = activeCandles.map((c) => c.c);
     const out: Record<number, (number | null)[]> = {};
     for (const p of smaPeriods) out[p] = sma(closes, p).slice(start);
     return out;
-    // `activeCandles` identity churns every tick; the signature below captures
-    // every input that actually changes the computed series.
+    // The periods key captures the contents of the user-controlled array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCandles.length, lastClose, lastStamp, smaKey, start]);
+  }, [activeCandles, smaKey, start]);
 
   const volMax = useMemo(
     () => (showVolume ? shown.reduce((m, c) => Math.max(m, c.v), 0) : 0),
@@ -655,6 +654,18 @@ export function PriceChart({
             </AppText>
           ))}
         </View>
+      ) : null}
+      {rsiPeriod != null ? (
+        <RsiPane
+          candles={activeCandles}
+          period={rsiPeriod}
+          startIndex={start}
+          viewport={viewport}
+          transformState={transform.state}
+          activeIndex={activeIndex == null ? null : start + activeIndex}
+          crossX={crossX}
+          crossActive={crossActive}
+        />
       ) : null}
     </View>
   );
@@ -1180,7 +1191,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 6,
     borderRadius: 4,
-    backgroundColor: '#363A45',
+    backgroundColor: Colors.surfacePress,
     zIndex: 7,
   },
   pricePillText: {

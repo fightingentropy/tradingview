@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  OutcomeTradePreflightError,
+  freshOutcomeMarketData,
   OUTCOME_ASSET_OFFSET,
   OUTCOME_MARKET_SLIPPAGE,
   OUTCOME_MAX_PRICE,
@@ -139,4 +141,13 @@ test('the 8% IOC helper is applied to the book midpoint, not bid or ask', () => 
   assert.equal(sellIocPrice, 0.5428);
   assert.notEqual(buyIocPrice, outcomeMarketIocPrice(bestAsk, true));
   assert.notEqual(sellIocPrice, outcomeMarketIocPrice(bestBid, false));
+});
+
+
+test('retained Outcome snapshots cannot authorize a trade after query or source refresh errors', () => {
+  const retained = { outcomeEvents: [{ id: 'retained-event' }], outcomeMarketsError: null };
+  assert.throws(() => freshOutcomeMarketData({ isError: true, data: retained }), OutcomeTradePreflightError);
+  assert.throws(() => freshOutcomeMarketData({ isError: false, data: { ...retained, outcomeMarketsError: 'upstream failed' } }), OutcomeTradePreflightError);
+  assert.throws(() => freshOutcomeMarketData({ isError: false, data: undefined }), /No order was sent/);
+  assert.equal(freshOutcomeMarketData({ isError: false, data: retained }), retained);
 });

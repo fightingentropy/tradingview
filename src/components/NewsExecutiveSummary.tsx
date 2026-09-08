@@ -5,7 +5,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 
 import { NewsSourceIcon } from '@/components/NewsSourceIcon';
 import { AppText } from '@/components/ui/AppText';
-import { Colors, NewsColors, Radius, Spacing } from '@/constants/theme';
+import { Colors, NewsColors, Spacing } from '@/constants/theme';
 import type {
   NewsConfidence,
   NewsExecutiveSummary,
@@ -67,7 +67,6 @@ const confidenceColor: Record<NewsConfidence, string> = {
 function StatusBadge({ label, color }: { label: string; color: string }) {
   return (
     <View style={styles.statusBadge}>
-      <View style={[styles.statusDot, { backgroundColor: color }]} />
       <AppText style={[styles.statusText, { color }]}>{label}</AppText>
     </View>
   );
@@ -118,7 +117,6 @@ export function NewsExecutiveSummaryView({
       </View>
 
       <View style={styles.sectionHeading}>
-        <View style={styles.sectionMarker} />
         <AppText style={styles.sectionTitle}>Top developments</AppText>
         <AppText style={styles.sectionCount}>
           {summary.bullets.length} {summary.bullets.length === 1 ? 'story' : 'stories'}
@@ -128,18 +126,8 @@ export function NewsExecutiveSummaryView({
       <View style={styles.bulletList}>
         {summary.bullets.map((bullet, index) => {
           const isExpanded = expanded === index;
-          const uniqueSources = bullet.sources.filter(
-            (source, sourceIndex, sources) =>
-              sources.findIndex((candidate) => candidate.source === source.source) === sourceIndex,
-          );
           return (
             <View key={`${summary.id}:${index}`} style={styles.bulletItem}>
-              <View style={styles.bulletRail}>
-                <AppText style={styles.cardNumber}>{String(index + 1).padStart(2, '0')}</AppText>
-                <View style={[styles.railNode, { backgroundColor: changeColor[bullet.change] }]} />
-                {index < summary.bullets.length - 1 ? <View style={styles.railLine} /> : null}
-              </View>
-
               <View
                 style={[
                   styles.bulletColumn,
@@ -152,25 +140,13 @@ export function NewsExecutiveSummaryView({
                   accessibilityLabel={`${bullet.headline}. ${isExpanded ? 'Collapse' : 'Expand'} evidence`}
                   style={({ pressed }) => [styles.bulletButton, pressed && styles.pressed]}>
                   <View style={styles.cardMeta}>
+                    <AppText style={styles.cardNumber}>{String(index + 1).padStart(2, '0')}</AppText>
                     <View style={styles.statusGroup}>
                       <StatusBadge label={changeLabel[bullet.change]} color={changeColor[bullet.change]} />
                       <View style={styles.metaDivider} />
                       <StatusBadge label={confidenceLabel[bullet.confidence]} color={confidenceColor[bullet.confidence]} />
                     </View>
                     <View style={styles.sourceMeta}>
-                      <View style={styles.sourceIcons}>
-                        {uniqueSources.slice(0, 3).map((source, sourceIndex) => (
-                          <View
-                            key={source.source}
-                            style={[
-                              styles.sourceIconShell,
-                              sourceIndex > 0 && styles.sourceIconOverlap,
-                              { zIndex: uniqueSources.length - sourceIndex },
-                            ]}>
-                            <NewsSourceIcon source={source.source} size={16} />
-                          </View>
-                        ))}
-                      </View>
                       <AppText style={styles.sourceCount}>
                         {bullet.sources.length} {bullet.sources.length === 1 ? 'ref' : 'refs'}
                       </AppText>
@@ -182,7 +158,6 @@ export function NewsExecutiveSummaryView({
                   <View style={styles.impactRow}>
                     <View style={styles.impactCopy}>
                       <View style={styles.impactHeading}>
-                        <Ionicons name="trending-up-outline" size={15} color={Colors.accent} />
                         <AppText style={styles.impactLabel}>MARKET EFFECT</AppText>
                       </View>
                       <AppText style={styles.impactText}>{bullet.marketImpact}</AppText>
@@ -281,218 +256,65 @@ export function NewsExecutiveSummaryView({
 }
 
 const styles = StyleSheet.create({
-  content: { padding: Spacing.lg, paddingBottom: 56, gap: 24 },
-  topline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  kickerBadge: {
-    minHeight: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 7,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NewsColors.border,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-  },
-  liveDot: { width: 4, height: 4, borderRadius: 2, opacity: 0.55 },
-  kicker: {
-    color: NewsColors.textFaint,
-    fontSize: 9,
-    lineHeight: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  updatedAt: { color: NewsColors.textFaint },
-  hero: {
-    gap: 13,
-    padding: 22,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NewsColors.border,
-    borderRadius: Radius.lg,
-    backgroundColor: NewsColors.surface,
-  },
-  headline: {
-    color: NewsColors.text,
-    fontSize: 30,
-    lineHeight: 35,
-    fontWeight: '700',
-    letterSpacing: -0.65,
-  },
-  overview: { color: NewsColors.textMuted, fontSize: 15, lineHeight: 22, fontWeight: '400' },
-  marketRead: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginTop: 2,
-    paddingTop: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: NewsColors.border,
-  },
-  marketReadLabel: {
-    width: 72,
-    color: NewsColors.textFaint,
-    fontSize: 9,
-    lineHeight: 18,
-    fontWeight: '800',
-    letterSpacing: 0.7,
-  },
-  marketReadText: {
-    flex: 1,
-    color: NewsColors.text,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
-  },
-  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  sectionMarker: { width: 3, height: 22, borderRadius: 2, backgroundColor: Colors.accent },
-  sectionTitle: { color: NewsColors.text, fontSize: 20, lineHeight: 24, fontWeight: '700' },
-  sectionCount: {
-    marginLeft: 'auto',
-    color: NewsColors.textFaint,
-    fontSize: 11,
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
-  },
+  content: { paddingHorizontal: Spacing.lg, paddingBottom: 40 },
+  topline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  kickerBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  liveDot: { width: 5, height: 5, borderRadius: 2 },
+  kicker: { color: NewsColors.textMuted, fontSize: 11, lineHeight: 15, fontWeight: '600' },
+  updatedAt: { color: NewsColors.textFaint, fontSize: 11 },
+  hero: { gap: 12, paddingTop: 20, paddingBottom: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: NewsColors.border },
+  headline: { color: NewsColors.text, fontSize: 25, lineHeight: 31, fontWeight: '600', letterSpacing: -0.5 },
+  overview: { color: NewsColors.textMuted, fontSize: 14, lineHeight: 21, fontWeight: '400' },
+  marketRead: { gap: 6, paddingLeft: 12, marginTop: 2, borderLeftWidth: 2, borderLeftColor: Colors.accent },
+  marketReadLabel: { color: Colors.accent, fontSize: 10, lineHeight: 14, fontWeight: '600', letterSpacing: 0.7 },
+  marketReadText: { color: NewsColors.text, fontSize: 13, lineHeight: 20, fontWeight: '400' },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 22, paddingBottom: 2 },
+  sectionTitle: { color: NewsColors.text, fontSize: 16, lineHeight: 22, fontWeight: '600' },
+  sectionCount: { marginLeft: 'auto', color: NewsColors.textFaint, fontSize: 11, fontVariant: ['tabular-nums'] },
   bulletList: { gap: 0 },
-  bulletItem: { flexDirection: 'row', gap: 14 },
-  bulletRail: { width: 25, alignItems: 'center', paddingTop: 19 },
-  railNode: {
-    width: 6,
-    height: 6,
-    marginTop: 9,
-    borderRadius: 3,
-  },
-  railLine: {
-    width: StyleSheet.hairlineWidth,
-    flex: 1,
-    marginTop: 6,
-    backgroundColor: 'rgba(120, 144, 255, 0.22)',
-  },
-  bulletColumn: {
-    flex: 1,
-    minWidth: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: NewsColors.border,
-  },
+  bulletItem: { flexDirection: 'row' },
+  bulletColumn: { flex: 1, minWidth: 0, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: NewsColors.border },
   bulletColumnLast: { borderBottomWidth: 0 },
-  bulletButton: { gap: 11, paddingTop: 18, paddingBottom: 20, paddingRight: 2 },
+  bulletButton: { gap: 10, paddingVertical: 18 },
   pressed: { opacity: 0.7 },
-  cardMeta: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  cardNumber: {
-    color: NewsColors.textFaint,
-    fontSize: 11,
-    lineHeight: 13,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  statusGroup: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  statusDot: { width: 4, height: 4, borderRadius: 2 },
-  statusText: { fontSize: 10, lineHeight: 13, fontWeight: '700', letterSpacing: 0.2 },
-  metaDivider: { width: 1, height: 10, backgroundColor: NewsColors.border },
-  sourceMeta: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  sourceIcons: { flexDirection: 'row', alignItems: 'center' },
-  sourceIconShell: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: NewsColors.background,
-    backgroundColor: NewsColors.surfaceRaised,
-  },
-  sourceIconOverlap: { marginLeft: -7 },
-  sourceCount: { color: NewsColors.textFaint, fontSize: 10, lineHeight: 13, fontWeight: '600' },
-  bulletHeadline: {
-    color: NewsColors.text,
-    fontSize: 18,
-    lineHeight: 23,
-    fontWeight: '700',
-    letterSpacing: -0.28,
-  },
+  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 20 },
+  cardNumber: { color: NewsColors.textFaint, fontSize: 11, fontWeight: '500', fontVariant: ['tabular-nums'] },
+  statusGroup: { flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center' },
+  statusText: { fontSize: 11, lineHeight: 15, fontWeight: '500' },
+  metaDivider: { width: StyleSheet.hairlineWidth, height: 10, backgroundColor: NewsColors.border },
+  sourceMeta: { flexDirection: 'row', alignItems: 'center' },
+  sourceCount: { color: NewsColors.textFaint, fontSize: 11, lineHeight: 15 },
+  bulletHeadline: { color: NewsColors.text, fontSize: 17, lineHeight: 23, fontWeight: '600', letterSpacing: -0.2 },
   bulletSummary: { color: NewsColors.textMuted, fontSize: 14, lineHeight: 21, fontWeight: '400' },
-  impactRow: {
-    marginTop: 2,
-    paddingLeft: 14,
-    paddingVertical: 3,
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(120, 144, 255, 0.52)',
-  },
-  impactCopy: { gap: 5 },
-  impactHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  impactLabel: { color: Colors.accent, fontSize: 9, lineHeight: 12, fontWeight: '800', letterSpacing: 0.65 },
-  impactText: {
-    color: NewsColors.text,
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: '600',
-  },
-  expandHint: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, marginTop: 1 },
-  expandHintText: { color: NewsColors.textFaint, fontSize: 10, fontWeight: '600' },
-  expandedBody: {
-    gap: 10,
-    marginBottom: 18,
-    padding: 14,
-    borderRadius: Radius.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-  },
-  evidenceLabel: {
-    color: Colors.accent,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.75,
-  },
-  details: { color: NewsColors.textMuted, fontSize: 13, lineHeight: 19, fontWeight: '400' },
-  sourceDetails: { gap: 1 },
-  sourceDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
-  sourceDetailCopy: { flex: 1, gap: 1 },
-  sourceDetailAuthor: { color: NewsColors.text, fontSize: 12, fontWeight: '600' },
-  secondarySection: {
-    overflow: 'hidden',
-    paddingHorizontal: Spacing.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NewsColors.border,
-    borderRadius: 18,
-    backgroundColor: NewsColors.surface,
-  },
-  secondaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
-  secondaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  secondaryTitle: { color: NewsColors.text, fontSize: 13, fontWeight: '700' },
-  secondaryList: { gap: 9, paddingBottom: 12 },
-  secondaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
-  secondaryDot: {
-    width: 4,
-    height: 4,
-    marginTop: 7,
-    borderRadius: 2,
-    backgroundColor: NewsColors.textFaint,
-  },
-  secondaryText: { flex: 1, color: NewsColors.textMuted, fontSize: 12, lineHeight: 18 },
-  watchSection: {
-    gap: 10,
-    padding: Spacing.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NewsColors.border,
-    borderRadius: 18,
-    backgroundColor: NewsColors.surface,
-  },
-  watchHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  watchTitle: { color: NewsColors.text, fontSize: 14, fontWeight: '800' },
+  impactRow: { marginTop: 2 },
+  impactCopy: { gap: 4 },
+  impactHeading: { flexDirection: 'row', alignItems: 'center' },
+  impactLabel: { color: NewsColors.textFaint, fontSize: 10, lineHeight: 14, fontWeight: '600', letterSpacing: 0.7 },
+  impactText: { color: NewsColors.text, fontSize: 13, lineHeight: 20, fontWeight: '400' },
+  expandHint: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, minHeight: 26 },
+  expandHintText: { color: Colors.accent, fontSize: 12, fontWeight: '500' },
+  expandedBody: { gap: 10, marginBottom: 18, paddingLeft: 12, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: NewsColors.border },
+  evidenceLabel: { color: NewsColors.textFaint, fontSize: 10, fontWeight: '600', letterSpacing: 0.7 },
+  details: { color: NewsColors.textMuted, fontSize: 13, lineHeight: 20, fontWeight: '400' },
+  sourceDetails: { gap: 2 },
+  sourceDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingVertical: 7 },
+  sourceDetailCopy: { flex: 1, gap: 2 },
+  sourceDetailAuthor: { color: NewsColors.text, fontSize: 12, fontWeight: '500' },
+  secondarySection: { marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: NewsColors.border },
+  secondaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
+  secondaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  secondaryTitle: { color: NewsColors.text, fontSize: 14, fontWeight: '600' },
+  secondaryList: { gap: 10, paddingBottom: 16 },
+  secondaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  secondaryDot: { width: 3, height: 3, marginTop: 8, backgroundColor: NewsColors.textFaint },
+  secondaryText: { flex: 1, color: NewsColors.textMuted, fontSize: 13, lineHeight: 20 },
+  watchSection: { gap: 12, paddingVertical: 18, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: NewsColors.border },
+  watchHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  watchTitle: { color: NewsColors.text, fontSize: 14, fontWeight: '600' },
   watchRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  watchNumber: { width: 18, color: Colors.warning, fontSize: 10, lineHeight: 18, fontWeight: '800' },
-  watchText: {
-    flex: 1,
-    color: NewsColors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '500',
-  },
-  footer: { gap: 4, paddingTop: 3 },
-  footerText: { color: NewsColors.textFaint, textAlign: 'center', lineHeight: 16 },
+  watchNumber: { width: 20, color: NewsColors.textFaint, fontSize: 11, lineHeight: 20, fontVariant: ['tabular-nums'] },
+  watchText: { flex: 1, color: NewsColors.textMuted, fontSize: 13, lineHeight: 20, fontWeight: '400' },
+  footer: { gap: 6, paddingTop: 18, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: NewsColors.border },
+  footerText: { color: NewsColors.textFaint, lineHeight: 17, fontSize: 11 },
 });

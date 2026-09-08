@@ -13,10 +13,9 @@ import {
   formatPrice,
   formatProbability,
   formatProbabilityPointChange,
-  formatSignedPrice,
   priceDecimalsFor,
 } from '@/lib/format';
-import { useLivePrice } from '@/store/livePrices';
+import { useMarketPrice } from '@/store/livePrices';
 
 interface Props {
   instrument: Instrument;
@@ -51,8 +50,8 @@ function SymbolRowImpl({
   const onOpenMenu = useCallback(() => open(instrument), [open, instrument]);
   const menuTrigger = useContextMenuTrigger(onOpenMenu);
 
-  const live = useLivePrice(instrument.coinKey);
-  const last = live ?? quote?.last ?? null;
+  const priceState = useMarketPrice(instrument, quote);
+  const last = priceState.last;
   const prev = quote?.prevClose ?? null;
   const changePct =
     last !== null && prev !== null && prev !== 0
@@ -67,8 +66,6 @@ function SymbolRowImpl({
   const changeText =
     isOutcome && absChange !== null
       ? `${formatProbabilityPointChange(absChange)}  24h`
-      : absChange !== null
-      ? `${formatSignedPrice(absChange, decimals)}  ${formatPercent(changePct)}`
       : formatPercent(changePct);
 
   const onRowPress = useCallback(() => {
@@ -103,20 +100,27 @@ function SymbolRowImpl({
         </Pressable>
       ) : null}
 
-      <SymbolLogo instrument={instrument} />
+      <SymbolLogo instrument={instrument} size={36} />
 
       <View style={styles.mid}>
         <AppText style={styles.symbol} numberOfLines={1}>
           {instrument.symbol}
         </AppText>
-        <AppText style={styles.name} numberOfLines={1}>
-          {instrument.name}
-        </AppText>
+        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+          <AppText style={[styles.name, { flexShrink: 1 }]} numberOfLines={1}>
+            {instrument.name}
+          </AppText>
+          {priceState.status !== 'live' ? (
+            <AppText style={[styles.name, { color: priceState.stale ? Colors.warning : Colors.textMuted }]} numberOfLines={1}>
+              {priceState.label}
+            </AppText>
+          ) : null}
+        </View>
       </View>
 
       {editing ? null : (
         <View style={styles.right}>
-          <AppText style={styles.price} numeric numberOfLines={1}>
+          <AppText style={[styles.price, priceState.stale && { color: Colors.textMuted }]} numeric numberOfLines={1}>
             {isOutcome ? formatProbability(last) : formatPrice(last, decimals)}
           </AppText>
           <AppText style={[styles.change, { color: changeColor }]} numeric numberOfLines={1}>
@@ -171,7 +175,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    minHeight: 72,
+    minHeight: 68,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
@@ -180,11 +184,11 @@ const styles = StyleSheet.create({
   dragging: { backgroundColor: Colors.surfaceAlt },
   checkbox: { marginRight: Spacing.md, alignItems: 'center', justifyContent: 'center' },
   mid: { flex: 1, marginLeft: Spacing.md, paddingRight: Spacing.sm },
-  symbol: { fontSize: 17, lineHeight: 21, fontWeight: '700', color: Colors.text },
-  name: { fontSize: 13, lineHeight: 17, color: Colors.textMuted, marginTop: 2 },
+  symbol: { fontSize: 15, lineHeight: 20, fontWeight: '600', color: Colors.text },
+  name: { fontSize: 12, lineHeight: 16, color: Colors.textMuted, marginTop: 2 },
   right: { alignItems: 'flex-end', marginLeft: Spacing.sm },
-  price: { fontSize: 17, lineHeight: 21, fontWeight: '600', color: Colors.text },
-  change: { fontSize: 13, lineHeight: 17, fontWeight: '600', marginTop: 2 },
+  price: { fontSize: 16, lineHeight: 21, fontWeight: '500', color: Colors.text },
+  change: { fontSize: 12, lineHeight: 16, fontWeight: '500', marginTop: 2 },
   star: { paddingLeft: Spacing.md },
   dragHandle: { paddingLeft: Spacing.md, paddingVertical: 4 },
 });

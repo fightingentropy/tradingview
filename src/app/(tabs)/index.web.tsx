@@ -22,8 +22,9 @@ import {
   usd,
 } from '@/lib/format';
 import { useHlConnection } from '@/store/hlConnection';
-import { useLivePrice } from '@/store/livePrices';
+import { useMarketPrice } from '@/store/livePrices';
 import { usePreferences } from '@/store/preferences';
+import { marketDataError } from '@/lib/marketCatalog';
 
 const CHART_INTERVALS: CandleInterval[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 const QUICK_SYMBOLS = ['HYPE', 'BTC', 'ETH', 'SOL', 'ZEC'];
@@ -47,14 +48,14 @@ function MarketOption({
   active: boolean;
   onSelect: () => void;
 }) {
-  const streamed = useLivePrice(instrument.coinKey);
-  const last = streamed ?? quote?.last;
+  const priceState = useMarketPrice(instrument, quote);
+  const last = priceState.last;
   const move = quote?.change24hPct;
   return (
     <button className={active ? 'is-active' : ''} type="button" onClick={onSelect}>
       <WebSymbolMark symbol={instrument.symbol} />
       <span><strong>{pairLabel(instrument)}</strong><small>{instrument.venue} perpetual</small></span>
-      <b>{formatPrice(last, priceDecimalsFor(instrument.priceDecimals, last))}</b>
+      <b title={priceState.label}>{formatPrice(last, priceDecimalsFor(instrument.priceDecimals, last))}{priceState.status !== 'live' ? <small className="web-price-status">{priceState.label}</small> : null}</b>
       <em className={move == null ? '' : move >= 0 ? 'is-up' : 'is-down'}>{formatPercent(move)}</em>
     </button>
   );
@@ -91,15 +92,15 @@ function OrderBookPanel({ instrument, mark, decimals }: { instrument?: Instrumen
   return (
     <aside className="web-xyz-orderbook web-hl-orderbook">
       <div className="web-xyz-side-head">
-        <strong>Order Book</strong>
-        <div><span className="web-hl-book-tick">0.01</span><span className="web-book-layout-icon"><i /><i /></span></div>
+        <strong>Order book</strong>
+        <span className="web-hl-book-tick">Cumulative size</span>
       </div>
       <div className="web-book-labels"><span>Price</span><span>Size</span><span>Total</span></div>
       <div className="web-book-half is-asks">
         {depth.asks.length ? depth.asks.map((level) => renderLevel(level, 'ask')) : <span className="web-book-empty">{isLoading ? 'Loading depth…' : 'No ask depth'}</span>}
       </div>
       <div className="web-book-spread">
-        <strong className="is-up">{formatPrice(mark, decimals)}</strong>
+        <strong>{formatPrice(mark, decimals)}</strong>
         <span>{depth.spread == null ? '—' : formatPrice(depth.spread, decimals)} · {depth.spreadPct == null ? '—' : `${depth.spreadPct.toFixed(3)}%`}</span>
       </div>
       <div className="web-book-half is-bids">
@@ -111,7 +112,6 @@ function OrderBookPanel({ instrument, mark, decimals }: { instrument?: Instrumen
 
 function ReadOnlyTicket({ instrument, mark, decimals }: { instrument?: Instrument; mark?: number; decimals: number }) {
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
-  const [orderType, setOrderType] = useState<'market' | 'limit'>('market');
   const [allocation, setAllocation] = useState(0);
   const address = useHlConnection((state) => state.address);
   const network = useHlConnection((state) => state.network);
@@ -121,14 +121,14 @@ function ReadOnlyTicket({ instrument, mark, decimals }: { instrument?: Instrumen
   const active = useActiveAsset(coin);
   const position = account.data?.positions.find((item) => item.coin === coin);
   const leverage = active.data?.leverage ?? position?.leverage;
-  const isCross = active.data?.isCross ?? position?.leverageType === 'cross';
+  const isCross = active.data?.isCross ?? (position ? position.leverageType === 'cross' : undefined);
   const available = side === 'buy' ? active.data?.availBuy : active.data?.availSell;
   const maxSize = side === 'buy' ? active.data?.maxSzBuy : active.data?.maxSzSell;
   const resolvedMark = active.data?.markPx || mark;
   const signedPositionSize = position ? (position.side === 'long' ? position.size : -position.size) : 0;
   const orderValue = allocation && maxSize && resolvedMark ? (maxSize * allocation * resolvedMark) / 100 : null;
   const marginRequired = orderValue && leverage ? orderValue / leverage : null;
-  const marginUsage = account.data && account.data.totalEquity > 0
+  const marginUsage = account.data?.totalEquityLoaded && account.data.totalEquity > 0
     ? (account.data.totalMarginUsed / account.data.totalEquity) * 100
     : null;
   const hide = (value: string) => privacy ? '••••••' : value;
@@ -136,50 +136,39 @@ function ReadOnlyTicket({ instrument, mark, decimals }: { instrument?: Instrumen
   return (
     <aside className="web-xyz-ticket web-hl-ticket">
       <div className="web-xyz-ticket-head">
-        <span>Trade</span>
-        {address ? <Link href="/account" className="web-hl-connected"><i />{shortAddress(address)}</Link> : <Link href="/account" className="web-hl-connected">Connect</Link>}
+        <span>Sizing preview</span>
+        {address ? <Link href="/account" className="web-hl-connected"><i />{hide(shortAddress(address))}</Link> : <Link href="/account" className="web-hl-connected">Connect</Link>}
       </div>
 
-      <div className="web-ticket-controls">
-        <button type="button">{isCross ? 'Cross' : 'Isolated'}</button>
-        <button type="button">{leverage ? `${leverage}x` : '—x'}</button>
-        <button type="button">One-way</button>
-      </div>
-      <div className="web-ticket-tabs">
-        <button type="button" className={orderType === 'market' ? 'is-active' : ''} onClick={() => setOrderType('market')}>Market</button>
-        <button type="button" className={orderType === 'limit' ? 'is-active' : ''} onClick={() => setOrderType('limit')}>Limit</button>
-        <span>Perpetual</span>
-      </div>
+      <div className="web-ticket-context"><span>{isCross == null ? 'Margin mode unavailable' : isCross ? 'Cross margin' : 'Isolated margin'}</span><strong>{leverage ? `${leverage}× leverage` : 'Leverage unavailable'}</strong></div>
+      {account.isError ? <div className="web-inline-notice" role="status"><span>Account refresh failed. Values may be stale.</span><button type="button" onClick={() => void account.refetch()}>Retry</button></div> : null}
       <div className="web-ticket-side">
-        <button type="button" className={side === 'buy' ? 'is-long' : ''} onClick={() => setSide('buy')}>Buy / Long</button>
-        <button type="button" className={side === 'sell' ? 'is-short' : ''} onClick={() => setSide('sell')}>Sell / Short</button>
+        <button type="button" aria-pressed={side === 'buy'} className={side === 'buy' ? 'is-long' : ''} onClick={() => setSide('buy')}>Long</button>
+        <button type="button" aria-pressed={side === 'sell'} className={side === 'sell' ? 'is-short' : ''} onClick={() => setSide('sell')}>Short</button>
       </div>
       <div className="web-ticket-balance">
         <span>Available to trade</span><b>{hide(available == null ? '—' : usd(available))}</b>
-        <span>Current position</span><b>{hide(`${formatPrice(signedPositionSize, 4)} ${instrument?.symbol ?? '—'}`)}</b>
+        <span>Current position</span><b>{hide(account.data ? `${formatPrice(signedPositionSize, 4)} ${instrument?.symbol ?? '—'}` : '—')}</b>
       </div>
-      <div className="web-ticket-field"><span>Size</span><b>{allocation ? `${formatPrice(((maxSize ?? 0) * allocation) / 100, 4)} ${instrument?.symbol ?? '—'}` : `0.0000 ${instrument?.symbol ?? '—'}`}</b></div>
+      <div className="web-ticket-field"><span>Estimated size</span><b>{maxSize == null ? '—' : hide(`${formatPrice((maxSize * allocation) / 100, 4)} ${instrument?.symbol ?? '—'}`)}</b></div>
       <div className="web-hl-allocation" aria-label="Order size percentage">
-        {[0, 25, 50, 75, 100].map((value) => <button key={value} type="button" className={allocation === value ? 'is-active' : ''} onClick={() => setAllocation(value)}>{value}%</button>)}
+        {[0, 25, 50, 75, 100].map((value) => <button key={value} type="button" aria-pressed={allocation === value} className={allocation === value ? 'is-active' : ''} onClick={() => setAllocation(value)}>{value}%</button>)}
       </div>
-      <label className="web-ticket-check"><i /> Reduce only</label>
-      <label className="web-ticket-check"><i /> Take profit / stop loss</label>
       <div className="web-ticket-summary">
         <span>Mark price</span><b>{formatPrice(resolvedMark, decimals)}</b>
         <span>Order value</span><b>{orderValue == null ? '—' : hide(usd(orderValue))}</b>
         <span>Margin required</span><b>{marginRequired == null ? '—' : hide(usd(marginRequired))}</b>
-        <span>Max slippage</span><b>0.50%</b>
       </div>
       <div className="web-ticket-cta">
         <Link href="/account">{address ? 'View account' : 'Connect account'}</Link>
-        <p>Read-only workspace · orders are never submitted</p>
+        <p>Estimates only. Place orders in the iPhone app.</p>
       </div>
 
       <div className="web-hl-account-summary">
         <header><strong>Account</strong><span>{network === 'mainnet' ? 'Mainnet' : 'Testnet'}</span></header>
-        <div><span>Equity</span><b>{hide(account.data ? usd(account.data.totalEquity) : '—')}</b></div>
+        <div><span>Equity</span><b>{hide(account.data?.totalEquityLoaded ? `${account.data.totalEquity < 0 ? '−' : ''}${usd(account.data.totalEquity)}` : '—')}</b></div>
         <div><span>Unrealized P&amp;L</span><b className={(account.data?.unrealizedPnl ?? 0) >= 0 ? 'is-up' : 'is-down'}>{hide(account.data ? signedUsd(account.data.unrealizedPnl) : '—')}</b></div>
-        <div><span>Free collateral</span><b>{hide(account.data ? usd(account.data.freeCollateral) : '—')}</b></div>
+        <div><span>Free collateral</span><b>{hide(account.data?.totalEquityLoaded ? usd(account.data.freeCollateral) : '—')}</b></div>
         <div><span>Margin used</span><b>{hide(account.data ? usd(account.data.totalMarginUsed) : '—')}</b></div>
         <div><span>Margin usage</span><b>{hide(marginUsage == null ? '—' : `${marginUsage.toFixed(2)}%`)}</b></div>
       </div>
@@ -207,10 +196,10 @@ export default function WebTradeScreen() {
     ?? marketOptions[0];
   const selected = (selectedId ? data?.instruments.find((instrument) => instrument.id === selectedId) : undefined) ?? fallbackSelected;
   const quote = selected ? data?.quotes[selected.id] : undefined;
-  const streamed = useLivePrice(selected?.coinKey);
-  const last = streamed ?? quote?.last;
+  const priceState = useMarketPrice(selected, quote);
+  const last = priceState.last ?? undefined;
   const decimals = selected ? priceDecimalsFor(selected.priceDecimals, last) : 2;
-  const { data: candles, isLoading: chartLoading } = useCandles(selected, chartInterval, 220);
+  const { data: candles, isLoading: chartLoading, historyError, isFetching: chartRefreshing, refetch: refreshChart } = useCandles(selected, chartInterval, 220);
   useLivePriceFeed(marketOptions);
 
   if (isError) {
@@ -228,14 +217,14 @@ export default function WebTradeScreen() {
     <div className="web-terminal web-xyz-terminal web-hl-terminal">
       <section className="web-xyz-marketbar web-hl-marketbar">
         <div className="web-hl-market-picker">
-          <button type="button" className="web-xyz-market-selector" aria-haspopup="listbox" aria-expanded={marketMenuOpen} onClick={() => setMarketMenuOpen((open) => !open)}>
+          <button type="button" className="web-xyz-market-selector" aria-controls="web-market-picker" aria-expanded={marketMenuOpen} onClick={() => setMarketMenuOpen((open) => !open)}>
             {selected ? <WebSymbolMark symbol={selected.symbol} /> : null}
             <span><strong>{pairLabel(selected)}</strong><small>{selected?.venue ?? 'Hyperliquid'} perpetual</small></span>
             <span className="web-market-chevron" aria-hidden="true"><Ionicons name="chevron-down" size={14} color="currentColor" /></span>
           </button>
           {marketMenuOpen ? (
-            <div className="web-hl-market-menu" role="listbox" aria-label="Select market">
-              <header><strong>Markets</strong><Link href="/markets">Discover all</Link></header>
+            <div className="web-hl-market-menu" id="web-market-picker" aria-label="Select market">
+              <header><strong>Markets</strong><Link href="/markets">All markets <Ionicons name="arrow-forward" size={13} color="currentColor" /></Link></header>
               {marketOptions.map((instrument) => (
                 <MarketOption
                   key={instrument.id}
@@ -248,7 +237,7 @@ export default function WebTradeScreen() {
             </div>
           ) : null}
         </div>
-        <div className="web-xyz-primary-price"><strong>{formatPrice(last, decimals)}</strong><span>Mark</span></div>
+        <div className="web-xyz-primary-price"><strong>{formatPrice(last, decimals)}</strong><span>Price · {priceState.label}</span></div>
         <div><strong className={(quote?.change24hPct ?? 0) >= 0 ? 'is-up' : 'is-down'}>{formatPercent(quote?.change24hPct)}</strong><span>24h change</span></div>
         <div><strong>{quote?.prevClose == null ? '—' : formatPrice(quote.prevClose, decimals)}</strong><span>Prev. close</span></div>
         <div><strong>{quote?.dayVolume == null ? '—' : `$${formatCompact(quote.dayVolume)}`}</strong><span>24h volume</span></div>
@@ -261,9 +250,9 @@ export default function WebTradeScreen() {
             <div className="web-hl-chart-toolbar">
               <strong>Chart</strong>
               <span className="web-hl-toolbar-divider" />
-              {CHART_INTERVALS.map((interval) => <button key={interval} className={chartInterval === interval ? 'is-active' : ''} type="button" onClick={() => setChartInterval(interval)}>{interval}</button>)}
+              {CHART_INTERVALS.map((interval) => <button key={interval} aria-pressed={chartInterval === interval} className={chartInterval === interval ? 'is-active' : ''} type="button" onClick={() => setChartInterval(interval)}>{interval}</button>)}
               <span className="web-hl-toolbar-divider" />
-              <button type="button"><Ionicons name="stats-chart-outline" size={15} color="currentColor" /> Indicators</button>
+              <span className="web-chart-study">SMA 20</span>
               {selected ? <Link href={{ pathname: '/symbol/[id]', params: { id: selected.id } }}><Ionicons name="expand-outline" size={15} color="currentColor" /> Full chart</Link> : null}
             </div>
             <div className="web-hl-chart-identity">
@@ -272,6 +261,12 @@ export default function WebTradeScreen() {
               <small>Perpetual · {selected?.venue ?? 'Hyperliquid'} · Funding {formatFundingApr(quote?.funding)}</small>
             </div>
             <div className="web-xyz-chart-card"><WebMarketChart candles={candles ?? []} decimals={decimals} loading={chartLoading} /></div>
+            {historyError || (selected && marketDataError(selected, data?.marketErrors)) ? (
+              <div role="status" className="web-chart-notice web-inline-notice">
+                {historyError ? 'Chart history may be incomplete.' : 'Market details unavailable. Showing saved data.'}{' '}
+                <button type="button" className="web-quiet-button" disabled={chartRefreshing} onClick={() => { void refreshChart(); void refetch(); }}>{chartRefreshing ? 'Refreshing…' : 'Retry'}</button>
+              </div>
+            ) : null}
           </div>
           <WebAccountDock />
         </section>

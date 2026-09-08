@@ -7,6 +7,7 @@
  * explicit user confirmation.
  */
 import { fetchWithTimeout, HL_API, type HlNetwork } from './info';
+import { newClientOrderId, type PendingOrderAttempt } from '../orderRecovery';
 import { priceToWire, signL1Action, sizeToWire } from './sign';
 import {
   signingKeyForCurrentFingerprint,
@@ -17,6 +18,8 @@ import {
 
 /** Mandatory identity proof + last-moment store/context guard for real mutations. */
 export interface SignedMutationIdentity {
+  /** Public market label used for durable order recovery. */
+  recoveryCoin?: string;
   identity: SignedTradingIdentityBinding;
   /** Action-specific network checks, after identity proof and before signing. */
   validateImmediatelyBeforeSigning: () => Promise<void>;
@@ -63,6 +66,7 @@ interface OrderWire {
   s: string;
   r: boolean;
   t: LimitWire | TriggerWire;
+  c?: string;
 }
 
 /** How a bulk order's legs relate to each other (Hyperliquid `grouping`). */
@@ -86,6 +90,10 @@ export interface OrderResult {
   error?: string;
   /** Preserved for forward-compatible display/debugging when Hyperliquid adds a status. */
   raw?: unknown;
+}
+
+export class OrderRejectedError extends Error {
+  override name = 'OrderRejectedError';
 }
 
 const DEFAULT_SLIPPAGE = 0.05;
@@ -121,6 +129,7 @@ async function exchangePost(
 
   if (json.status !== 'ok') {
     const msg = typeof json.response === 'string' ? json.response : `Hyperliquid error (${res.status})`;
+    if (json.status === 'err') throw new OrderRejectedError(msg);
     throw new Error(msg);
   }
 
@@ -160,7 +169,7 @@ function normalizeStatus(raw: unknown): OrderResult {
 }
 
 function throwOrderError(result: OrderResult | undefined): void {
-  if (result?.status === 'error') throw new Error(result.error ?? 'Hyperliquid rejected the order.');
+  if (result?.status === 'error') throw new OrderRejectedError(result.error ?? 'Hyperliquid rejected the order.');
 }
 
 export interface PlaceOrderParams extends SignedMutationIdentity {
@@ -201,18 +210,60 @@ async function submitOrders(
   auth: SignedMutationIdentity,
   onPostAttempt?: () => void,
 ): Promise<OrderResult[]> {
-  const action = { type: 'order', orders, grouping };
-  const { nonce, signature } = await verifiedMutationKey(network, auth, (key) => {
-    const nonce = nextNonce();
-    return {
-      nonce,
-      signature: signL1Action(key, action, nonce, network === 'mainnet', null),
+  // Lazy-load native persistence only on the mutation path. Pure signing/wire
+  // verification can still run in Node without loading MMKV.
+  const { orderRecovery, withOrderRecoveryLock } = await import('../../store/orderRecovery');
+  return withOrderRecoveryLock(async () => {
+    orderRecovery.assertCanSubmit(network, auth.identity.accountAddress);
+    const startedAt = Date.now();
+    const wireOrders = orders.map((order) => ({ ...order, c: newClientOrderId(startedAt) }));
+    const attempt: PendingOrderAttempt = {
+      id: wireOrders[0].c,
+      network,
+      accountAddress: auth.identity.accountAddress,
+      coin: auth.recoveryCoin ?? null,
+      startedAt,
+      legs: wireOrders.map((order, index) => ({
+        clientId: order.c,
+        label: 'trigger' in order.t ? (order.t.trigger.tpsl === 'tp' ? 'Take profit' : 'Stop loss') : (index === 0 ? 'Order' : `Leg ${index + 1}`),
+        status: null,
+      })),
     };
-  });
+    const action = { type: 'order', orders: wireOrders, grouping };
+    const { nonce, signature } = await verifiedMutationKey(network, auth, (key) => {
+      orderRecovery.assertCanSubmit(network, auth.identity.accountAddress);
+      const nonce = nextNonce();
+      return {
+        nonce,
+        signature: signL1Action(key, action, nonce, network === 'mainnet', null),
+      };
+    });
 
-  onPostAttempt?.();
-  const statuses = await exchangePost(network, action, signature, nonce);
-  return statuses.map(normalizeStatus);
+    // No order can leave the device if this synchronous journal write fails.
+    // The second guard also prevents another ticket submitting during preflight.
+    orderRecovery.begin(attempt);
+    let postStarted = false;
+    try {
+      onPostAttempt?.();
+      postStarted = true;
+      const statuses = await exchangePost(network, action, signature, nonce);
+      const results = statuses.map(normalizeStatus);
+      if (results[0]?.status === 'error' && grouping === 'normalTpsl') {
+        // A definitively rejected bracket parent cannot activate its children.
+        orderRecovery.discardConfirmed(attempt.id);
+      } else {
+        orderRecovery.recordAcknowledgements(attempt.id, results.map((r) => r.status));
+      }
+      return results;
+    } catch (error) {
+      if (!postStarted || error instanceof OrderRejectedError) {
+        orderRecovery.discardConfirmed(attempt.id);
+      }
+      // Timeout, failed reads, missing statuses, and malformed responses keep the
+      // original IDs in the journal. There is deliberately no automatic re-POST.
+      throw error;
+    }
+  });
 }
 
 /** The aggressive IOC limit price a market order crosses the book at (mark ± slippage). */
@@ -599,6 +650,7 @@ export interface MarketCloseParams extends SignedMutationIdentity {
 export async function marketClose(p: MarketCloseParams): Promise<OrderResult> {
   return placeOrder({
     network: p.network,
+    recoveryCoin: p.recoveryCoin,
     assetIndex: p.assetIndex,
     szDecimals: p.szDecimals,
     isBuy: !p.positionIsLong,
@@ -622,6 +674,7 @@ export async function marketClose(p: MarketCloseParams): Promise<OrderResult> {
 export async function reversePosition(p: MarketCloseParams): Promise<OrderResult> {
   return placeOrder({
     network: p.network,
+    recoveryCoin: p.recoveryCoin,
     assetIndex: p.assetIndex,
     szDecimals: p.szDecimals,
     isBuy: !p.positionIsLong,

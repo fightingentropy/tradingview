@@ -85,10 +85,14 @@
     "lint": "expo lint",
     "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit && npm run typecheck:worker",
     "typecheck:worker": "wrangler types worker/worker-configuration.d.ts && node node_modules/@typescript/native/bin/tsc -p worker/tsconfig.json",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs && npm run test:news-relay",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs && npm run test:news-relay && npm run test:price-alert-relay",
     "check": "npm run lint && npm run typecheck && npm test && npm run verify:signing && npm run verify:identity",
     "verify:signing": "npx tsx scripts/verify-hl-signing.mts",
-    "verify:identity": "npx tsx scripts/verify-trading-identity.mts"
+    "verify:identity": "npx tsx scripts/verify-trading-identity.mts",
+    "price-alerts:monitor": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/price-alert-monitor.mjs",
+    "price-alerts:install": "node scripts/price-alert-service.mjs install",
+    "price-alerts:status": "node scripts/price-alert-service.mjs status",
+    "test:price-alert-relay": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test worker/price-alert-relay.test.mjs"
   },
   "private": true
 }

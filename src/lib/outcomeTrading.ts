@@ -173,3 +173,19 @@ export function outcomeMarketIocPrice(
   const adversePrice = referencePrice * (isBuy ? 1 + slippage : 1 - slippage);
   return clampOutcomePrice(floorOutcomePrice(clampOutcomePrice(adversePrice)));
 }
+
+
+export class OutcomeTradePreflightError extends Error {
+  override name = 'OutcomeTradePreflightError';
+}
+
+/** Retained display data after a failed refresh cannot authorize a signed order. */
+export function freshOutcomeMarketData<T extends { outcomeMarketsError?: unknown }>(query: {
+  isError: boolean;
+  data: T | undefined;
+}): T {
+  if (query.isError || !query.data || query.data.outcomeMarketsError) {
+    throw new OutcomeTradePreflightError('Could not refresh this Outcome market. No order was sent.');
+  }
+  return query.data;
+}

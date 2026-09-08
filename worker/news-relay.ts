@@ -1,3 +1,4 @@
+import { handlePriceAlertRequest } from './price-alert-api';
 import {
   ALL_NEWS_NOTIFICATION_SOURCE_IDS,
   buildNewsPushNotificationContent,
@@ -743,6 +744,9 @@ export default {
       if (url.pathname === '/health' && request.method === 'GET') return json({ ok: true });
       if (url.pathname === '/ingest' && request.method === 'POST') {
         return handleIngest(request, env, ctx);
+      }
+      if (url.pathname.startsWith('/price-alerts/')) {
+        return handlePriceAlertRequest(request, env, await authorized(request, env));
       }
       if (!(await authorized(request, env))) return json({ error: 'Unauthorized' }, 401, true);
       if (url.pathname === '/feed' && request.method === 'GET') return handleFeed(request, env);

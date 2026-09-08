@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -21,13 +20,12 @@ import { AppText } from '@/components/ui/AppText';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { formatPrice, signedUsd } from '@/lib/format';
 
-const LIQUID_GLASS = isLiquidGlassAvailable();
 const ACCESSORY_ID = 'tpsl-sheet-kb';
 
-const GLASS_FILL = 'rgba(255,255,255,0.06)';
-const GLASS_FILL_STRONG = 'rgba(255,255,255,0.13)';
-const GLASS_INSET = 'rgba(0,0,0,0.28)';
-const GLASS_HAIRLINE = 'rgba(255,255,255,0.10)';
+const GLASS_FILL = Colors.surfaceAlt;
+const GLASS_FILL_STRONG = Colors.surfacePress;
+const GLASS_INSET = Colors.background;
+const GLASS_HAIRLINE = Colors.border;
 
 const CLOSE_PRESETS = [25, 50, 75, 100];
 
@@ -53,15 +51,8 @@ export function floorSizeToDecimals(size: number, szDecimals: number): number {
   return Math.floor(scaled + ulpGuard) / factor;
 }
 
-/** Black-glass surface when iOS 26 Liquid Glass is available, else a near-black panel. */
+/** Opaque sheet keeps prices and order controls readable. */
 function SheetSurface({ style, children }: { style: StyleProp<ViewStyle>; children: ReactNode }) {
-  if (LIQUID_GLASS) {
-    return (
-      <GlassView style={style} glassEffectStyle="regular" colorScheme="dark">
-        {children}
-      </GlassView>
-    );
-  }
   return <View style={[style, styles.sheetFallback]}>{children}</View>;
 }
 
@@ -558,9 +549,9 @@ const styles = StyleSheet.create({
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
     maxHeight: '92%',
-    backgroundColor: 'rgba(0,0,0,0.20)',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: GLASS_HAIRLINE,
     overflow: 'hidden',
@@ -569,7 +560,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xxl,
     gap: Spacing.md,
   },
-  sheetFallback: { backgroundColor: 'rgba(8,10,14,0.98)' },
+  sheetFallback: { backgroundColor: Colors.surface },
   handle: {
     alignSelf: 'center',
     width: 40,

@@ -233,6 +233,7 @@ export default function WebEconomicCalendarScreen() {
 
   return (
     <div className="web-xyz-calendar-page">
+      <header className="web-page-heading"><div><h1>Economic calendar</h1><p>Scheduled releases and reported results. Times are shown in your local timezone.</p></div></header>
       <div className="web-xyz-calendar-shell">
         <aside className="web-xyz-calendar-filters" aria-label="Calendar filters">
           <div className="web-xyz-calendar-filter-heading"><span>Filters</span><small>{events.length} events</small></div>
@@ -294,6 +295,7 @@ export default function WebEconomicCalendarScreen() {
                   key={option.value}
                   type="button"
                   className={preset === option.value ? 'is-active' : ''}
+                  aria-pressed={preset === option.value}
                   onClick={() => selectPreset(option.value)}>
                   {option.label}
                 </button>

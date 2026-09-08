@@ -18,7 +18,6 @@ import {
 } from '@/components/OutcomeHistoryChart';
 import { OutcomeOrderTicket } from '@/components/OutcomeOrderTicket';
 import { AppText } from '@/components/ui/AppText';
-import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useOutcomeMarkets } from '@/data/useMarkets';
@@ -133,7 +132,7 @@ function DetailsModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalRoot}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <GlassSurface style={styles.modalCard}>
+        <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <OutcomeEventIcon event={event} size={38} />
             <AppText style={styles.modalTitle} numberOfLines={3}>
@@ -163,7 +162,7 @@ function DetailsModal({
               probabilities, not guarantees.
             </AppText>
           </ScrollView>
-        </GlassSurface>
+        </View>
       </View>
     </Modal>
   );
@@ -271,7 +270,7 @@ export default function OutcomeDetailScreen() {
         </View>
 
         <View style={styles.hero}>
-          <OutcomeEventIcon event={event} size={50} />
+          <OutcomeEventIcon event={event} size={36} />
           <View style={styles.heroText}>
             <AppText variant="caption" color={Colors.textMuted} style={styles.category}>
               {categoryLabel(event.category).toUpperCase()}
@@ -286,7 +285,7 @@ export default function OutcomeDetailScreen() {
           </View>
         </View>
 
-        <GlassSurface style={styles.metricsCard}>
+        <View style={styles.metricsCard}>
           <View style={styles.selectedHeader}>
             <View
               style={[
@@ -308,10 +307,6 @@ export default function OutcomeDetailScreen() {
             </AppText>
           </View>
           <View style={styles.metricsGrid}>
-            <View style={styles.metric}>
-              <AppText variant="caption" muted>% Chance</AppText>
-              <AppText style={styles.metricValue} numeric>{formatProbability(selectedProbability)}</AppText>
-            </View>
             <View style={styles.metric}>
               <AppText variant="caption" muted>Price</AppText>
               <AppText style={styles.metricValue} numeric>{formatPrice(selectedProbability, 5)}</AppText>
@@ -347,9 +342,9 @@ export default function OutcomeDetailScreen() {
               </AppText>
             </View>
           </View>
-        </GlassSurface>
+        </View>
 
-        <GlassSurface style={styles.chartCard}>
+        <View style={styles.chartCard}>
           <View style={styles.sectionHeader}>
             <View>
               <AppText style={styles.sectionTitle}>Probability history</AppText>
@@ -382,13 +377,13 @@ export default function OutcomeDetailScreen() {
             })}
           </View>
           <OutcomeHistoryChart choices={chartChoices} />
-        </GlassSurface>
+        </View>
 
         <View style={styles.liveHeader}>
           <AppText style={styles.sectionTitle}>Live outcomes</AppText>
           <AppText variant="caption" muted>{event.choices.length} choices</AppText>
         </View>
-        <GlassSurface style={styles.outcomesCard}>
+        <View style={styles.outcomesCard}>
           {event.choices.map((choice, index) => {
             const quote = data?.quotes[choice.instrumentId];
             return (
@@ -404,12 +399,9 @@ export default function OutcomeDetailScreen() {
               />
             );
           })}
-        </GlassSurface>
+        </View>
 
-        <GlassSurface style={styles.tradeCard}>
-          <View style={styles.tradeIcon}>
-            <Ionicons name="swap-horizontal" size={19} color={Colors.text} />
-          </View>
+        <View style={styles.tradeCard}>
           <View style={styles.tradeText}>
             <AppText style={styles.tradeTitle} numberOfLines={1}>
               Trade {selectedChoice?.label ?? 'outcome'}
@@ -430,7 +422,7 @@ export default function OutcomeDetailScreen() {
               <AppText style={styles.tradeButtonLabel}>Sell</AppText>
             </Pressable>
           </View>
-        </GlassSurface>
+        </View>
       </ScrollView>
 
       <DetailsModal event={event} visible={detailsOpen} onClose={() => setDetailsOpen(false)} />
@@ -459,10 +451,10 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: Spacing.md,
     paddingVertical: 7,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.13)',
+    borderColor: Colors.border,
   },
   detailsLabel: { color: Colors.text, fontSize: 12, fontWeight: '700' },
   hero: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, marginTop: Spacing.sm },
@@ -471,16 +463,16 @@ const styles = StyleSheet.create({
   title: { color: Colors.text, fontSize: 21, fontWeight: '700', lineHeight: 27 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: Spacing.sm },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.up },
-  metricsCard: { borderRadius: Radius.lg, marginTop: Spacing.lg, padding: Spacing.lg },
+  metricsCard: { marginTop: Spacing.lg, paddingVertical: Spacing.lg, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border },
   selectedHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg },
   selectedName: { flex: 1, color: Colors.text, fontSize: 16, fontWeight: '700' },
   headlineChance: { color: Colors.text, fontSize: 24, fontWeight: '700' },
-  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
-  metric: { width: '47%', gap: 4 },
+  metricsGrid: { gap: 10 },
+  metric: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   metricValue: { color: Colors.text, fontSize: 14, fontWeight: '600' },
-  chartCard: { borderRadius: Radius.lg, marginTop: Spacing.md, padding: Spacing.lg },
+  chartCard: { marginTop: Spacing.lg, paddingVertical: Spacing.sm },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: { color: Colors.text, fontSize: 17, fontWeight: '700' },
+  sectionTitle: { color: Colors.text, fontSize: 15, fontWeight: '700' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginVertical: Spacing.md },
   legendItem: {
     flexDirection: 'row',
@@ -489,8 +481,8 @@ const styles = StyleSheet.create({
     maxWidth: '48%',
     paddingHorizontal: 8,
     paddingVertical: 5,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surface,
   },
   legendDot: { width: 7, height: 7, borderRadius: 4, marginRight: 6 },
   legendName: { color: Colors.textMuted, maxWidth: 105 },
@@ -501,18 +493,17 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xl,
     marginBottom: Spacing.md,
   },
-  outcomesCard: { borderRadius: Radius.lg },
+  outcomesCard: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
   outcomeRow: {
     minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: Colors.border,
   },
-  outcomeRowSelected: { backgroundColor: 'rgba(255,255,255,0.045)' },
-  outcomeRowPressed: { backgroundColor: 'rgba(255,255,255,0.075)' },
+  outcomeRowSelected: { backgroundColor: Colors.accentSoft },
+  outcomeRowPressed: { backgroundColor: Colors.surfaceAlt },
   outcomeBar: { width: 3, height: 34, borderRadius: 2, marginRight: Spacing.md },
   outcomeMain: { flex: 1, gap: 5, paddingRight: Spacing.sm },
   outcomeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
@@ -524,31 +515,18 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.055)',
+    backgroundColor: Colors.surface,
   },
   chanceButtonText: { color: Colors.text, fontSize: 14, fontWeight: '700' },
-  tradeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    marginTop: Spacing.lg,
-  },
-  tradeIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    marginRight: Spacing.md,
-  },
-  tradeText: { flex: 1, paddingRight: Spacing.sm },
+  tradeCard: { gap: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border, paddingTop: Spacing.lg, marginTop: Spacing.lg },
+  tradeText: { gap: 2 },
   tradeTitle: { color: Colors.text, fontSize: 14, fontWeight: '700' },
   tradeCopy: { marginTop: 3, lineHeight: 16 },
-  tradeActions: { flexDirection: 'row', gap: 6 },
+  tradeActions: { flexDirection: 'row', gap: 8 },
   tradeButton: {
-    minWidth: 52,
+    flex: 1,
+    minHeight: 42,
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 9,
@@ -556,7 +534,7 @@ const styles = StyleSheet.create({
   },
   buyButton: { backgroundColor: Colors.up },
   sellButton: { backgroundColor: Colors.down },
-  tradeButtonLabel: { color: '#050505', fontSize: 12, fontWeight: '800' },
+  tradeButtonLabel: { color: Colors.background, fontSize: 12, fontWeight: '800' },
   tradeButtonPressed: { opacity: 0.75 },
   loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   missingHeader: { height: 48, justifyContent: 'center', paddingHorizontal: Spacing.md },
@@ -566,7 +544,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: 9,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
     backgroundColor: Colors.surfaceAlt,
   },
   retryLabel: { color: Colors.text, fontSize: 13, fontWeight: '700' },
@@ -581,6 +559,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 520,
     maxHeight: '82%',
+    backgroundColor: Colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
     borderRadius: Radius.lg,
     padding: Spacing.lg,
   },
@@ -595,6 +576,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
     paddingTop: Spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.10)',
+    borderTopColor: Colors.border,
   },
 });

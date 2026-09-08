@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { OrderRecoveryNotice } from '@/components/OrderRecoveryNotice';
+import { accountReadState } from '@/lib/accountReadState';
 import { MarginSheet } from '@/components/MarginSheet';
 import { PortfolioCard } from '@/components/PortfolioCard';
 import { SymbolLogo } from '@/components/SymbolLogo';
@@ -14,17 +16,19 @@ import {
   type TpSlLegInput,
 } from '@/components/TpSlSheet';
 import { AppText } from '@/components/ui/AppText';
-import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useAllMarkets } from '@/data/useMarkets';
 import {
   useHlAccount,
+  useHlAccountFees,
+  useHlEarnBalance,
+  useHlHistoricalOrders,
   useHlFills,
   useHlOpenOrders,
   useTradingIdentity,
 } from '@/data/useHlAccount';
-import { useHlBorrowLendInterest, useHlUserFunding } from '@/data/useHlHistory';
+import { useHlAccountActivity, useHlBorrowLendInterest, useHlUserFunding } from '@/data/useHlHistory';
 import { useHlMeta } from '@/data/useHlMeta';
 import {
   buildAccountRiskSummary,
@@ -32,6 +36,7 @@ import {
   type AccountRiskSummary,
 } from '@/lib/accountRisk';
 import {
+  OrderRejectedError,
   cancelOrder,
   marketClose,
   placePositionTpSl,
@@ -58,6 +63,7 @@ import { formatCompact, formatPercent, formatPrice, priceDecimalsFor, signedUsd,
 import { priceToWire, sizeToWire } from '@/lib/hyperliquid/sign';
 import { outcomeAssetId } from '@/lib/outcomeMarkets';
 import { queryKeys } from '@/lib/queryKeys';
+import { fillNetPnl, shortAccountMode } from '@/lib/portfolioMetrics';
 import { formatFundingRatePercent } from '@/lib/fundingHistory';
 import type { Instrument } from '@/domain/types';
 import { DEMO_ADDRESS, useHlConnection } from '@/store/hlConnection';
@@ -318,11 +324,17 @@ export default function AccountScreen() {
   const network = useHlConnection((s) => s.network);
   const hasKey = useHlConnection((s) => s.hasKey);
   const connectDemo = useHlConnection((s) => s.connectDemo);
-  const { data: account, isLoading, isError, isFetching, refetch } = useHlAccount();
-  const { data: tradingIdentity } = useTradingIdentity();
+  const accountQuery = useHlAccount();
+  const { data: account, isLoading, isFetching, refetch } = accountQuery;
+  const identityQuery = useTradingIdentity();
+  const { data: tradingIdentity } = identityQuery;
   const executionIdentity = signedIdentityBinding(tradingIdentity);
-  const { data: openOrders } = useHlOpenOrders();
-  const { data: fills } = useHlFills();
+  const ordersQuery = useHlOpenOrders();
+  const { data: openOrders } = ordersQuery;
+  const feesQuery = useHlAccountFees();
+  const earnQuery = useHlEarnBalance();
+  const fillsQuery = useHlFills();
+  const { data: fills } = fillsQuery;
   const { data: markets } = useAllMarkets();
   const { data: meta } = useHlMeta();
 
@@ -345,8 +357,10 @@ export default function AccountScreen() {
 
   const tradable = hasKey && !demo && !!executionIdentity;
   const [tab, setTab] = useState<
-    'positions' | 'orders' | 'balances' | 'history' | 'funding' | 'interest'
-  >('positions');
+    'positions' | 'orders' | 'balances' | 'history' | 'funding' | 'interest' | 'orderHistory' | 'transfers'
+  >('balances');
+  const historicalOrdersQuery = useHlHistoricalOrders(tab === 'orderHistory');
+  const activityQuery = useHlAccountActivity(tab === 'transfers');
   const {
     data: fundingHistory,
     isLoading: fundingHistoryLoading,
@@ -428,6 +442,7 @@ export default function AccountScreen() {
         const submit = action === 'close' ? marketClose : reversePosition;
         acknowledgement = await submit({
           network: identity.network,
+          recoveryCoin: position.coin,
           identity,
           validateImmediatelyBeforeSigning: () =>
             validatePositionActionImmediately(request, meta?.[position.coin]),
@@ -443,6 +458,7 @@ export default function AccountScreen() {
           },
         });
       } catch (error) {
+        if (error instanceof OrderRejectedError) throw error;
         if (!postAttempted) {
           throw new AccountPreflightError(
             error instanceof Error ? error.message : 'Trading identity could not be verified. No order was sent.',
@@ -485,13 +501,17 @@ export default function AccountScreen() {
       qc.invalidateQueries({ queryKey: queryKeys.hlFillsPrefix() });
       qc.invalidateQueries({ queryKey: ['hl', 'activeAsset'] });
       const label = request.action === 'close' ? 'Close' : 'Reverse';
+      if (e instanceof OrderRejectedError) {
+        Alert.alert(`${label} rejected`, e.message);
+        return;
+      }
       if (e instanceof AccountPreflightError) {
         Alert.alert(`${label} not sent`, e.message);
         return;
       }
       Alert.alert(
         `${label} status unknown`,
-        `${e instanceof Error ? e.message : 'The exchange response was not confirmed.'}\n\nReview the live position and fills before retrying.`,
+        `${e instanceof Error ? e.message : 'The exchange response was not confirmed.'}\n\nNew orders are paused while saved order IDs are checked. Review the recovery panel in Account.`,
       );
     },
   });
@@ -816,6 +836,7 @@ export default function AccountScreen() {
       let postAttempted = false;
       try {
         return await placePositionTpSl({
+          recoveryCoin: p.coin,
           network: identity.network,
           identity,
           validateImmediatelyBeforeSigning,
@@ -873,6 +894,10 @@ export default function AccountScreen() {
     },
     onError: (e: unknown) => {
       const message = e instanceof Error ? e.message : 'Unknown error';
+      if (e instanceof OrderRejectedError) {
+        Alert.alert('TP/SL rejected', message);
+        return;
+      }
       if (e instanceof ProtectionPreflightError) {
         Alert.alert('TP/SL not sent', message);
         return;
@@ -1073,7 +1098,7 @@ export default function AccountScreen() {
   const visibleBalances = useMemo(
     () =>
       (account?.spotBalances ?? []).filter(
-        (b) => !hideSmallBalances || Math.abs(b.usdValue) >= SMALL_BALANCE_USD,
+        (b) => !hideSmallBalances || b.priceKnown !== true || Math.abs(b.usdValue) >= SMALL_BALANCE_USD,
       ),
     [account, hideSmallBalances],
   );
@@ -1125,8 +1150,8 @@ export default function AccountScreen() {
             Link your Hyperliquid account to see balances and positions, and to trade from the app.
           </AppText>
           <Pressable style={styles.primaryBtn} onPress={() => router.navigate('/settings')}>
-            <Ionicons name="link" size={16} color={Colors.text} />
-            <AppText variant="label">Connect in Settings</AppText>
+            <Ionicons name="link" size={16} color={Colors.background} />
+            <AppText variant="label" color={Colors.background}>Connect in Settings</AppText>
           </Pressable>
           <Pressable hitSlop={8} onPress={() => connectDemo(DEMO_ADDRESS)} style={styles.demoLink}>
             <AppText variant="label" color={Colors.accent}>
@@ -1138,7 +1163,7 @@ export default function AccountScreen() {
     );
   }
 
-  if (isLoading && !account) {
+  if ((isLoading || identityQuery.isPending) && !account) {
     return (
       <Screen>
         <View style={styles.center}>
@@ -1148,14 +1173,15 @@ export default function AccountScreen() {
     );
   }
 
-  if (isError || !account) {
+  if (!account) {
     return (
       <Screen>
         <View style={styles.center}>
-          <AppText muted>Couldn’t load account</AppText>
+          <OrderRecoveryNotice network={network} address={tradingIdentity?.accountAddress} />
+          <AppText muted>{identityQuery.isError ? 'Couldn’t verify account identity' : 'Couldn’t load account'}</AppText>
           <Pressable
             style={styles.retryBtn}
-            onPress={() => refetch()}
+            onPress={() => { void (identityQuery.isError ? identityQuery.refetch() : refetch()); }}
             disabled={isFetching}
             accessibilityState={{ disabled: isFetching, busy: isFetching }}>
             {isFetching ? (
@@ -1172,8 +1198,11 @@ export default function AccountScreen() {
   }
 
   const pnlColor = account.unrealizedPnl >= 0 ? Colors.up : Colors.down;
-  const equityBase = account.totalEquity ?? account.accountValue;
-  const pnlPct = equityBase ? (account.unrealizedPnl / equityBase) * 100 : 0;
+  const shownAddress = tradingIdentity?.accountAddress ?? address;
+  const shownMode = shortAccountMode(account.abstractionMode);
+  const equityLabel = account.abstractionMode === 'standard' || account.abstractionMode === 'dexAbstraction' ? 'Tracked equity' : 'Account equity';
+  const rate = (value: number | null | undefined) => value == null ? '—' : mask(`${(value * 100).toFixed(4)}%`);
+  const money = (value: number | null | undefined) => value == null ? '—' : mask(`${value < 0 ? '−' : ''}${usd(value)}`);
 
   return (
     <Screen>
@@ -1187,57 +1216,56 @@ export default function AccountScreen() {
           </View>
         ) : null}
 
-        {/* Total equity = perps + spot + vaults (Hyperliquid's "Total Equity"). */}
+        <OrderRecoveryNotice network={network} address={tradingIdentity?.accountAddress} />
+        <AccountReadStatus label="account" query={accountQuery} freshForMs={15_000} />
+
         <View style={styles.balanceCard}>
           <View style={styles.balanceLabelRow}>
-            <AppText variant="caption" muted>
-              Account Value · Hyperliquid
-            </AppText>
-            <Pressable
-              hitSlop={12}
-              onPress={() => setPrivacyMode(!privacyMode)}
-              accessibilityLabel={privacyMode ? 'Show balances' : 'Hide balances'}>
-              <Ionicons
-                name={privacyMode ? 'eye-off-outline' : 'eye-outline'}
-                size={18}
-                color={Colors.textMuted}
-              />
-            </Pressable>
+            <AppText style={styles.portfolioTitle}>Portfolio</AppText>
+            <View style={styles.overviewActions}>
+              <Pressable hitSlop={12} onPress={() => setPrivacyMode(!privacyMode)} accessibilityLabel={privacyMode ? 'Show balances' : 'Hide balances'}><Ionicons name={privacyMode ? 'eye-off-outline' : 'eye-outline'} size={18} color={Colors.textMuted} /></Pressable>
+              <Pressable hitSlop={12} onPress={() => { void refetch(); void feesQuery.refetch(); void earnQuery.refetch(); }} accessibilityLabel="Refresh portfolio" disabled={isFetching}><Ionicons name="refresh-outline" size={18} color={Colors.textMuted} /></Pressable>
+              <Pressable hitSlop={12} onPress={() => router.push('/settings')} accessibilityLabel="Account settings"><Ionicons name="settings-outline" size={18} color={Colors.textMuted} /></Pressable>
+            </View>
           </View>
-          <AppText variant="title" numeric style={styles.equity}>
-            {mask(usd(account.totalEquity ?? account.accountValue))}
-          </AppText>
-          <View style={styles.pnlRow}>
-            <Ionicons
-              name={account.unrealizedPnl >= 0 ? 'caret-up' : 'caret-down'}
-              size={12}
-              color={pnlColor}
-            />
-            <AppText variant="label" numeric color={pnlColor}>
-              {mask(`${signedUsd(account.unrealizedPnl)} (${formatPercent(pnlPct)})`)}
-            </AppText>
-            <AppText variant="caption" muted>
-              Unrealized
-            </AppText>
+          <AppText variant="caption" muted style={styles.accountAddress}>{privacyMode ? MASK : shownAddress ? `${shownAddress.slice(0, 6)}…${shownAddress.slice(-4)}` : '—'} · {shownMode}{network === 'testnet' ? ' · Testnet' : ''}</AppText>
+          <AppText variant="caption" muted style={styles.equityLabel}>{equityLabel}</AppText>
+          <AppText numeric style={styles.equity} numberOfLines={1} adjustsFontSizeToFit>{account.totalEquityLoaded !== true ? '—' : money(account.totalEquity)}</AppText>
+          {account.totalEquityLoaded !== true ? <AppText variant="caption" color={Colors.warning}>Some balances or valuations are unavailable.</AppText> : null}
+          <View style={styles.overviewMetrics}>
+            <OverviewMetric label="Unrealized PNL" value={mask(signedUsd(account.unrealizedPnl))} color={pnlColor} />
+            <OverviewMetric label="Available collateral" value={money(account.totalEquityLoaded !== true ? null : account.freeCollateral)} />
           </View>
+          {equityLabel === 'Tracked equity' ? <AppText variant="caption" color={Colors.textFaint} style={styles.coverageNote}>Equity tracks default and XYZ perps, spot balances and vaults.</AppText> : null}
         </View>
-
-        {/* Portfolio history belongs with the account-value summary, before live risk and positions. */}
-        <View style={styles.portfolioWrap}>
-          <PortfolioCard hidden={privacyMode} />
+        <View style={styles.portfolioWrap}><PortfolioCard hidden={privacyMode} /></View>
+        <View style={styles.accountDetails}>
+          <DetailRow label="USDC Earn · supplied" value={money(earnQuery.data?.suppliedUsdc)} />
+          <DetailRow label="14D reported volume" value={money(feesQuery.data?.volume14d)} />
+          <DetailRow label="Perp fees · maker / taker" value={`${rate(feesQuery.data?.makerRate)} / ${rate(feesQuery.data?.takerRate)}`} />
+          {earnQuery.isError || feesQuery.isError ? <AppText variant="caption" color={Colors.warning}>Some account details could not refresh.</AppText> : null}
         </View>
 
         {/* Current account risk follows the account-value history. */}
-        <RiskStrip summary={riskSummary!} hidden={privacyMode} />
+        {openOrders !== undefined ? <RiskStrip summary={riskSummary!} hidden={privacyMode} /> : (
+          <View style={styles.readStatus}>
+            <AppText variant="caption" muted>Position protection is unavailable until open orders load.</AppText>
+          </View>
+        )}
+        {openOrders !== undefined && ordersQuery.isError ? <AccountReadStatus label="position protection and orders" query={ordersQuery} freshForMs={20_000} /> : null}
 
         {/* Positions / Orders / Balances / History tabs */}
-        <GlassSurface
-          style={styles.tabBarWrap}
-          tintColor="rgba(8,13,21,0.52)">
+        <View style={styles.tabBarWrap}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.tabBar}>
+            <TabButton
+              label="Balances"
+              count={account.spotBalancesLoaded ? visibleBalances.length : undefined}
+              active={tab === 'balances'}
+              onPress={() => setTab('balances')}
+            />
             <TabButton
               label="Positions"
               count={account.positions.length}
@@ -1245,20 +1273,14 @@ export default function AccountScreen() {
               onPress={() => setTab('positions')}
             />
             <TabButton
-              label="Orders"
-              count={openOrders?.length ?? 0}
+              label="Open orders"
+              count={openOrders?.length}
               active={tab === 'orders'}
               onPress={() => setTab('orders')}
             />
             <TabButton
-              label="Balances"
-              count={visibleBalances.length}
-              active={tab === 'balances'}
-              onPress={() => setTab('balances')}
-            />
-            <TabButton
-              label="History"
-              count={fills?.length ?? 0}
+              label="Trade history"
+              count={fills?.length}
               active={tab === 'history'}
               onPress={() => setTab('history')}
             />
@@ -1274,8 +1296,10 @@ export default function AccountScreen() {
               active={tab === 'interest'}
               onPress={() => setTab('interest')}
             />
+            <TabButton label="Order history" count={historicalOrdersQuery.data?.length} active={tab === 'orderHistory'} onPress={() => setTab('orderHistory')} />
+            <TabButton label="Transfers" count={activityQuery.data?.rows.length} active={tab === 'transfers'} onPress={() => setTab('transfers')} />
           </ScrollView>
-        </GlassSurface>
+        </View>
 
         {tab === 'positions' ? (
           sortedPositions.length === 0 ? (
@@ -1310,7 +1334,9 @@ export default function AccountScreen() {
             </View>
           )
         ) : tab === 'orders' ? (
-          (openOrders?.length ?? 0) === 0 ? (
+          <>
+          <AccountReadStatus label="open orders" query={ordersQuery} freshForMs={20_000} />
+          {openOrders === undefined ? null : openOrders.length === 0 ? (
             <View style={styles.noPositions}>
               <AppText variant="body" muted>
                 No open orders
@@ -1318,7 +1344,7 @@ export default function AccountScreen() {
             </View>
           ) : (
             <View style={styles.list}>
-              {openOrders!.map((o) => (
+              {openOrders.map((o) => (
                 <OrderCard
                   key={o.oid}
                   o={o}
@@ -1331,9 +1357,10 @@ export default function AccountScreen() {
                 />
               ))}
             </View>
-          )
+          )}
+          </>
         ) : tab === 'balances' ? (
-          visibleBalances.length > 0 ? (
+          account.spotBalancesLoaded === false ? <HistoryError label="balances" detail={account.spotBalancesError ?? undefined} onRetry={() => { void refetch(); }} /> : visibleBalances.length > 0 ? (
             <View style={styles.list}>
               {visibleBalances.map((b) => (
                 <SpotCard
@@ -1356,7 +1383,9 @@ export default function AccountScreen() {
             </View>
           )
         ) : tab === 'history' ? (
-          (fills?.length ?? 0) === 0 ? (
+          <>
+          <AccountReadStatus label="trade history" query={fillsQuery} freshForMs={45_000} />
+          {fills === undefined ? null : fills.length === 0 ? (
             <View style={styles.noPositions}>
               <AppText variant="body" muted>
                 No trade history
@@ -1364,7 +1393,7 @@ export default function AccountScreen() {
             </View>
           ) : (
             <View style={styles.list}>
-              {fills!.map((f) => (
+              {fills.map((f) => (
                 <FillCard
                   key={f.key}
                   f={f}
@@ -1376,7 +1405,8 @@ export default function AccountScreen() {
                 />
               ))}
             </View>
-          )
+          )}
+          </>
         ) : tab === 'funding' ? (
           fundingHistoryLoading && !fundingHistory ? (
             <HistoryLoading />
@@ -1399,6 +1429,27 @@ export default function AccountScreen() {
               ))}
             </View>
           )
+        ) : tab === 'orderHistory' ? (
+          <>
+            <AccountReadStatus label="order history" query={historicalOrdersQuery} freshForMs={60_000} />
+            {historicalOrdersQuery.data?.length === 0 ? <HistoryEmpty title="No recent orders" detail="Final order states appear here after an order changes status." /> : historicalOrdersQuery.data?.slice(0, 100).map((order) => (
+              <View key={`${order.oid}:${order.statusTimestamp}`} style={styles.ledgerRow}>
+                <View style={styles.ledgerCopy}><AppText style={styles.symbol}>{symbolForCoin(order.coin)} <AppText variant="caption" color={order.side === 'buy' ? Colors.up : Colors.down}>{order.side === 'buy' ? 'Buy' : 'Sell'}</AppText></AppText><AppText variant="caption" muted>{order.orderType} · {fullWhen(order.statusTimestamp)}</AppText></View>
+                <View style={styles.ledgerValue}><AppText variant="label">{order.status.replace(/([a-z])([A-Z])/g, '$1 $2')}</AppText><AppText variant="caption" muted numeric>{mask(qty(order.origSize))} @ {formatPrice(order.limitPx)}</AppText></View>
+              </View>
+            ))}
+          </>
+        ) : tab === 'transfers' ? (
+          <>
+            <AccountReadStatus label="transfers" query={activityQuery} freshForMs={120_000} />
+            <AppText variant="caption" muted style={styles.ledgerNote}>{activityQuery.data?.limited ? 'Partial 90-day history; the read limit was reached.' : 'Up to 100 recent records from the last 90 days.'} Transfers are separate from PNL.</AppText>
+            {activityQuery.data?.rows.length === 0 ? <HistoryEmpty title="No recent transfers" detail="Deposits, withdrawals and wallet activity appear here." /> : activityQuery.data?.rows.map((row) => (
+              <View key={row.key} style={styles.ledgerRow}>
+                <View style={styles.ledgerCopy}><AppText style={styles.symbol}>{row.label}</AppText><AppText variant="caption" muted>{fullWhen(row.timestamp)}</AppText></View>
+                <View style={styles.ledgerValue}><AppText numeric variant="label" color={row.flow === 'in' ? Colors.up : row.flow === 'out' ? Colors.down : Colors.text}>{row.amount == null ? '—' : mask(`${row.flow === 'out' ? '−' : row.flow === 'in' ? '+' : ''}${tokenAmt(Math.abs(row.amount))}`)}{row.token ? ` ${row.token}` : ''}</AppText><AppText variant="caption" muted>{row.flow === 'internal' ? 'Internal' : row.flow === 'in' ? 'Received' : row.flow === 'out' ? 'Sent' : 'Activity'}</AppText></View>
+              </View>
+            ))}
+          </>
         ) : interestHistoryLoading && !interestHistory ? (
           <HistoryLoading />
         ) : interestHistoryError ? (
@@ -1539,15 +1590,15 @@ export default function AccountScreen() {
   );
 }
 
+function OverviewMetric({ label, value, color, note }: { label: string; value: string; color?: string; note?: string }) {
+  return <View style={styles.overviewMetric}><AppText variant="caption" muted>{label}</AppText><AppText numeric style={styles.overviewValue} color={color} numberOfLines={1} adjustsFontSizeToFit>{value}</AppText>{note ? <AppText style={styles.overviewNote} color={Colors.textFaint}>{note}</AppText> : null}</View>;
+}
+
 const MAINTENANCE_WARNING_PCT = 50;
 const MAINTENANCE_URGENT_PCT = 75;
 const LIQUIDATION_WARNING_PCT = 20;
 const LIQUIDATION_URGENT_PCT = 10;
 const LEVERAGE_WARNING = 5;
-
-function riskUsd(value: number): string {
-  return '$' + formatCompact(Math.abs(value));
-}
 
 function RiskStrip({
   summary,
@@ -1564,55 +1615,14 @@ function RiskStrip({
     liquidation != null && liquidation.distancePct <= LIQUIDATION_URGENT_PCT;
   const liquidationWarning =
     liquidation != null && liquidation.distancePct <= LIQUIDATION_WARNING_PCT;
-  const hasWarning =
-    maintenanceWarning ||
-    liquidationWarning ||
-    (summary.effectiveLeverage ?? 0) >= LEVERAGE_WARNING;
   const mask = (value: string) => (hidden ? MASK : value);
 
   return (
-    <GlassSurface style={styles.riskCard} tintColor="rgba(8,15,23,0.54)">
-      <View style={styles.riskHead}>
-        <View style={styles.riskTitleRow}>
-          <Ionicons
-            name={hasWarning ? 'warning-outline' : 'shield-checkmark-outline'}
-            size={16}
-            color={hasWarning ? Colors.warning : Colors.up}
-          />
-          <AppText variant="label">Live risk</AppText>
-        </View>
-        <View
-          style={[
-            styles.maintenanceBadge,
-            maintenanceWarning && styles.maintenanceBadgeWarning,
-            maintenanceUrgent && styles.maintenanceBadgeUrgent,
-          ]}>
-          <AppText
-            variant="caption"
-            numeric
-            color={maintenanceUrgent ? Colors.down : maintenanceWarning ? Colors.warning : Colors.textMuted}>
-            Maintenance {maintenance == null ? '—' : mask(`${maintenance.toFixed(1)}%`)}
-          </AppText>
-        </View>
-      </View>
-
+    <View style={styles.riskCard}>
       <View style={styles.riskMetrics}>
-        <RiskMetric label="Free collateral" value={mask(riskUsd(summary.freeCollateral))} />
-        <RiskMetric
-          label="Exposure"
-          value={mask(riskUsd(summary.totalExposure))}
-          sub={
-            summary.effectiveLeverage == null
-              ? '—'
-              : mask(`${summary.effectiveLeverage.toFixed(1)}× equity`)
-          }
-        />
-        <RiskMetric
-          label="Closest liq."
-          value={liquidation ? mask(`${liquidation.distancePct.toFixed(1)}%`) : '—'}
-          sub={liquidation ? (hidden ? MASK : cleanCoin(liquidation.coin)) : 'No liq. price'}
-          color={liquidationUrgent ? Colors.down : liquidationWarning ? Colors.warning : undefined}
-        />
+        <RiskMetric label="Margin usage" value={maintenance == null ? '—' : mask(`${maintenance.toFixed(1)}%`)} color={maintenanceUrgent ? Colors.down : maintenanceWarning ? Colors.warning : undefined} />
+        <RiskMetric label="Leverage" value={summary.effectiveLeverage == null ? '—' : mask(`${summary.effectiveLeverage.toFixed(1)}×`)} />
+        <RiskMetric label="Closest liq." value={liquidation ? mask(`${liquidation.distancePct.toFixed(1)}%`) : '—'} sub={liquidation ? (hidden ? MASK : cleanCoin(liquidation.coin)) : undefined} color={liquidationUrgent ? Colors.down : liquidationWarning ? Colors.warning : undefined} />
       </View>
 
       {maintenanceWarning ? (
@@ -1644,7 +1654,7 @@ function RiskStrip({
           }
         />
       ) : null}
-    </GlassSurface>
+    </View>
   );
 }
 
@@ -1668,8 +1678,6 @@ function RiskMetric({
         numeric
         color={color}
         numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.78}
         style={styles.riskMetricValue}>
         {value}
       </AppText>
@@ -1779,7 +1787,7 @@ function PositionCardImpl({
       }`;
 
   return (
-    <GlassSurface style={styles.positionCard} tintColor="rgba(7,13,21,0.56)">
+    <View style={styles.positionCard}>
       <View style={styles.positionBody}>
         <View style={styles.positionSummary}>
           <Pressable
@@ -1904,7 +1912,7 @@ function PositionCardImpl({
           />
         </Pressable>
       </View>
-    </GlassSurface>
+    </View>
   );
 }
 
@@ -2058,7 +2066,7 @@ function SpotCardImpl({
           style={[styles.spotValue, b.usdValue < 0 && styles.spotLiability]}
           numeric
           numberOfLines={1}>
-          {m(usd(b.usdValue))}
+          {b.priceKnown !== true ? '—' : m(`${b.usdValue < 0 ? '−' : ''}${usd(b.usdValue)}`)}
         </AppText>
         <Ionicons
           name={expanded ? 'chevron-up' : 'chevron-down'}
@@ -2078,9 +2086,9 @@ function SpotCardImpl({
           ) : null}
           <DetailRow
             label="Price"
-            value={`$${formatPrice(price, displayPriceDecimals(b.coin, instrument, price))}`}
+            value={b.priceKnown !== true ? 'Unavailable' : `$${formatPrice(price, displayPriceDecimals(b.coin, instrument, price))}`}
           />
-          <DetailRow label="USD Value" value={m(usd(b.usdValue))} strong />
+          <DetailRow label="USD Value" value={b.priceKnown !== true ? 'Unavailable' : m(`${b.usdValue < 0 ? '−' : ''}${usd(b.usdValue)}`)} strong />
           {instrument ? (
             <Pressable style={styles.chartLink} onPress={onChart} hitSlop={6}>
               <AppText variant="caption" color={Colors.accent}>
@@ -2226,9 +2234,9 @@ function FillCardImpl({
   const tradeValue = f.px * f.size;
   const isRebate = f.fee < 0;
   // Fee shown as its P&L impact: a paid fee is negative, a maker rebate positive.
-  const feeText = signMoneyExact(-f.fee);
-  const netPnl = f.closedPnl - f.fee;
-  const netColor = netPnl >= 0 ? Colors.up : Colors.down;
+  const feeText = f.pnlKnown !== true ? '—' : f.feeToken?.toUpperCase() === 'USDC' ? signMoneyExact(-f.fee) : `${f.fee > 0 ? '−' : f.fee < 0 ? '+' : ''}${tokenAmt(Math.abs(f.fee))} ${f.feeToken ?? 'token'}`;
+  const netPnl = f.pnlKnown === true ? fillNetPnl(f) : null;
+  const netColor = netPnl == null ? Colors.textMuted : netPnl >= 0 ? Colors.up : Colors.down;
   // Only closing fills realize PnL; opens book 0. Show the gross→net split only then.
   const showPnl = f.closedPnl !== 0 || /close|reduce/i.test(f.dir);
   const hashValid = /^0x[0-9a-fA-F]{2,}$/.test(f.hash);
@@ -2271,7 +2279,7 @@ function FillCardImpl({
             "Closed PNL"; the gross→fee→net split lives in the expanded detail. */}
         {f.closedPnl !== 0 ? (
           <AppText style={[styles.pnl, { color: netColor }]} numeric numberOfLines={1}>
-            {m(signedUsd(netPnl))}
+            {netPnl == null ? '—' : m(signedUsd(netPnl))}
           </AppText>
         ) : null}
         <Ionicons
@@ -2296,15 +2304,15 @@ function FillCardImpl({
           <View style={styles.gridRow}>
             <Cell
               label="Closed PnL"
-              value={showPnl ? m(signMoneyExact(f.closedPnl)) : '—'}
+              value={showPnl && f.pnlKnown === true ? m(signMoneyExact(f.closedPnl)) : '—'}
               color={showPnl ? pnlColor : undefined}
               sub={showPnl ? 'before fees' : undefined}
             />
             <Cell
               label="Net PnL"
-              value={showPnl ? m(signMoneyExact(netPnl)) : '—'}
+              value={showPnl && netPnl != null ? m(signMoneyExact(netPnl)) : '—'}
               color={showPnl ? netColor : undefined}
-              sub={showPnl ? 'after fees' : undefined}
+              sub={showPnl ? netPnl == null ? 'USD fee unavailable' : 'after fees' : undefined}
             />
             <Cell label="Time" value={fullWhen(f.timestamp)} />
           </View>
@@ -2326,6 +2334,30 @@ function FillCardImpl({
   );
 }
 
+function AccountReadStatus({ label, query, freshForMs }: {
+  label: string;
+  query: { data: unknown; isError: boolean; isFetching: boolean; dataUpdatedAt: number; refetch: () => Promise<unknown> };
+  freshForMs: number;
+}) {
+  const state = accountReadState(query, freshForMs);
+  const updated = query.dataUpdatedAt > 0 ? new Date(query.dataUpdatedAt).toLocaleTimeString() : null;
+  return (
+    <View style={styles.readStatus}>
+      {query.isFetching ? <ActivityIndicator size="small" color={Colors.accent} /> : null}
+      <AppText variant="caption" muted>
+        {state === 'loading' ? `Loading ${label}…` : state === 'error' ? `Couldn’t load ${label}` : state === 'stale'
+          ? `${label[0].toUpperCase() + label.slice(1)} may be out of date${updated ? ` · last updated ${updated}` : ''}${query.isError ? ' · refresh failed' : ''}`
+          : state === 'refreshing' ? `Refreshing ${label}…` : `Updated ${updated ?? 'just now'}`}
+      </AppText>
+      {state === 'error' || state === 'stale' ? (
+        <Pressable accessibilityRole="button" disabled={query.isFetching} onPress={() => { void query.refetch(); }}>
+          <AppText variant="label" color={Colors.accent}>{query.isFetching ? 'Retrying…' : 'Retry'}</AppText>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 function HistoryLoading() {
   return (
     <View style={styles.historyState}>
@@ -2335,10 +2367,11 @@ function HistoryLoading() {
   );
 }
 
-function HistoryError({ label, onRetry }: { label: string; onRetry: () => void }) {
+function HistoryError({ label, detail, onRetry }: { label: string; detail?: string; onRetry: () => void }) {
   return (
     <View style={styles.historyState}>
       <AppText variant="body" muted>{`Couldn’t load ${label}`}</AppText>
+      {detail ? <AppText variant="caption" muted style={styles.historyEmptyDetail}>{detail}</AppText> : null}
       <Pressable onPress={onRetry} hitSlop={8}>
         <AppText variant="label" color={Colors.accent}>Retry</AppText>
       </Pressable>
@@ -2492,7 +2525,7 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     backgroundColor: Colors.accentSoft,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(120,144,255,0.28)',
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2503,12 +2536,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
     minHeight: 52,
-    backgroundColor: Colors.accentSoft,
+    backgroundColor: Colors.accent,
     borderWidth: 1,
-    borderColor: 'rgba(120,144,255,0.28)',
+    borderColor: Colors.border,
     paddingHorizontal: Spacing.xl,
     paddingVertical: 14,
-    borderRadius: Radius.pill,
+    borderRadius: 6,
     marginTop: Spacing.sm,
   },
   demoLink: { paddingVertical: Spacing.sm },
@@ -2528,21 +2561,30 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.lg,
   },
   balanceLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  equity: { marginTop: 2 },
+  portfolioTitle: { fontSize: 25, lineHeight: 31, fontWeight: '600' },
+  overviewActions: { flexDirection: 'row', alignItems: 'center', gap: 23 },
+  accountAddress: { marginTop: 5 },
+  equityLabel: { marginTop: 24 },
+  equity: { fontSize: 36, lineHeight: 43, fontWeight: '500', marginTop: 5 },
+  overviewMetrics: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 21, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
+  overviewMetric: { width: '50%', minHeight: 60, paddingTop: 11, paddingRight: 10, paddingBottom: 5, gap: 4 },
+  accountDetails: { marginHorizontal: Spacing.lg, marginTop: 12 },
+  overviewValue: { fontSize: 19, lineHeight: 24, fontWeight: '500' },
+  overviewNote: { fontSize: 10, lineHeight: 14 },
+  coverageNote: { marginTop: 7, fontSize: 10, lineHeight: 15 },
+  ledgerRow: { minHeight: 74, paddingHorizontal: Spacing.lg, paddingVertical: 13, flexDirection: 'row', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
+  ledgerCopy: { flex: 1, gap: 5 },
+  ledgerValue: { alignItems: 'flex-end', justifyContent: 'center', gap: 5 },
+  ledgerNote: { marginHorizontal: Spacing.lg, marginBottom: 8, lineHeight: 16 },
   pnlRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
 
-  riskCard: {
-    marginHorizontal: Spacing.lg,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    gap: 10,
-  },
+  riskCard: { marginHorizontal: Spacing.lg, marginTop: 18, paddingVertical: 14, gap: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
   riskHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   riskTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   maintenanceBadge: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 5,
-    borderRadius: Radius.pill,
+    borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.08)',
     backgroundColor: 'rgba(255,255,255,0.055)',
@@ -2552,21 +2594,21 @@ const styles = StyleSheet.create({
   riskMetrics: {
     flexDirection: 'row',
     gap: 2,
-    borderRadius: 14,
+    borderRadius: 6,
     overflow: 'hidden',
     backgroundColor: 'rgba(255,255,255,0.025)',
   },
   riskMetric: {
     flex: 1,
     minWidth: 0,
-    minHeight: 68,
+    minHeight: 64,
     justifyContent: 'center',
     paddingHorizontal: 9,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(255,255,255,0.052)',
+    paddingVertical: 3,
+    backgroundColor: 'transparent',
     gap: 3,
   },
-  riskMetricValue: { fontSize: 16, lineHeight: 20, fontWeight: '700' },
+  riskMetricValue: { fontSize: 16, lineHeight: 20, fontWeight: '600' },
   riskWarning: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2579,11 +2621,7 @@ const styles = StyleSheet.create({
   riskWarningUrgent: { backgroundColor: Colors.down + '12' },
   riskWarningText: { flex: 1 },
 
-  tabBarWrap: {
-    marginTop: Spacing.md,
-    marginHorizontal: Spacing.sm,
-    borderRadius: 18,
-  },
+  tabBarWrap: { marginTop: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
   tabBar: {
     flexDirection: 'row',
     gap: 0,
@@ -2593,23 +2631,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 9,
-    borderRadius: 14,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  tabActive: { backgroundColor: Colors.accentSoft },
+  tabActive: { borderBottomColor: Colors.accent },
   tabCount: {
     minWidth: 20,
     paddingHorizontal: 6,
     paddingVertical: 1,
-    borderRadius: Radius.pill,
+    borderRadius: 6,
     backgroundColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center',
   },
-  tabCountActive: { backgroundColor: 'rgba(120,144,255,0.25)' },
+  tabCountActive: { backgroundColor: Colors.accentSoft },
   noPositions: { padding: Spacing.xl, alignItems: 'center' },
 
   historyList: { paddingTop: Spacing.sm, gap: Spacing.sm },
+  readStatus: {
+    minHeight: 38,
+    marginHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
   historyState: {
     minHeight: 190,
     alignItems: 'center',
@@ -2647,23 +2695,23 @@ const styles = StyleSheet.create({
   historyCard: {
     marginHorizontal: Spacing.lg,
     padding: 14,
-    borderRadius: 18,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.075)',
-    backgroundColor: 'rgba(17,23,31,0.72)',
+    backgroundColor: Colors.surface,
     gap: Spacing.md,
   },
   historyCardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
   historyMarket: { flex: 1, minWidth: 0, gap: 4 },
   historyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  historySymbol: { color: Colors.text, fontSize: 17, lineHeight: 21, fontWeight: '700' },
+  historySymbol: { color: Colors.text, fontSize: 17, lineHeight: 21, fontWeight: '600' },
   historySideBadge: {
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: Radius.pill,
+    borderRadius: 6,
   },
   historyPayment: { flex: 1.2, minWidth: 0, alignItems: 'flex-end', gap: 3 },
-  historyPaymentValue: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  historyPaymentValue: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
   historyMetaRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -2677,7 +2725,7 @@ const styles = StyleSheet.create({
   interestAssetIcon: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.07)',
@@ -2685,23 +2733,26 @@ const styles = StyleSheet.create({
   interestAssetCopy: { flex: 1, gap: 3 },
   interestValues: {
     flexDirection: 'row',
-    borderRadius: 13,
+    borderRadius: 6,
     backgroundColor: 'rgba(255,255,255,0.035)',
     paddingVertical: Spacing.sm,
   },
   interestValueCell: { flex: 1, alignItems: 'center', gap: 2 },
   interestValueDivider: { width: StyleSheet.hairlineWidth, backgroundColor: Colors.border },
-  interestValue: { fontSize: 16, lineHeight: 21, fontWeight: '700' },
+  interestValue: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
 
   // Rows mirror the main watchlist (SymbolRow): full-width hairline, logo 40,
   // 16/700 symbol, 16/600 value, 13px muted sub.
   list: {},
   positionCard: {
     marginHorizontal: Spacing.lg,
-    marginTop: Spacing.md,
-    borderRadius: Radius.lg,
+    marginTop: 12,
+    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
   },
-  positionBody: { padding: 15, gap: 20 },
+  positionBody: { padding: 13, gap: 16 },
   positionDetails: { gap: Spacing.lg },
   positionSummary: { minHeight: 58 },
   positionSummaryTapTarget: { flexDirection: 'row', gap: 10, minHeight: 58 },
@@ -2720,20 +2771,20 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   marketValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32 },
-  positionSymbol: { flexShrink: 0, fontSize: 20, lineHeight: 25, fontWeight: '700' },
+  positionSymbol: { flexShrink: 0, fontSize: 20, lineHeight: 25, fontWeight: '600' },
   positionLeverageBadge: {
     flexShrink: 0,
     minWidth: 25,
     alignItems: 'center',
     paddingHorizontal: 5,
     paddingVertical: 3,
-    borderRadius: Radius.pill,
+    borderRadius: 6,
   },
-  positionLeverageText: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
-  positionPrimaryValue: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  positionLeverageText: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  positionPrimaryValue: { fontSize: 18, lineHeight: 24, fontWeight: '600' },
   pnlValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32 },
   positionPnlText: { flex: 1, minWidth: 0, gap: 1 },
-  positionPnlAmount: { fontSize: 18, lineHeight: 21, fontWeight: '700' },
+  positionPnlAmount: { fontSize: 18, lineHeight: 21, fontWeight: '600' },
   positionRoeText: { fontSize: 12, lineHeight: 15, fontWeight: '600' },
   positionChartButton: {
     position: 'absolute',
@@ -2746,8 +2797,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 9,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(41,98,255,0.35)',
-    backgroundColor: 'rgba(41,98,255,0.10)',
+    borderColor: Colors.border,
+    backgroundColor: Colors.accentSoft,
   },
   positionDivider: {
     height: StyleSheet.hairlineWidth,
@@ -2767,7 +2818,7 @@ const styles = StyleSheet.create({
     height: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 11,
+    borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.08)',
     backgroundColor: 'rgba(255,255,255,0.045)',
@@ -2793,7 +2844,7 @@ const styles = StyleSheet.create({
   },
   mid: { flex: 1, marginLeft: Spacing.md, paddingRight: Spacing.sm, gap: 3 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  symbol: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  symbol: { fontSize: 16, fontWeight: '600', color: Colors.text },
   sub: { fontSize: 13, color: Colors.textMuted },
   sideBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: Radius.sm },
   xyzBadge: { backgroundColor: Colors.surfaceAlt, paddingHorizontal: 5, paddingVertical: 1, borderRadius: Radius.sm },
@@ -2817,7 +2868,7 @@ const styles = StyleSheet.create({
     minHeight: 38,
     paddingHorizontal: 5,
     paddingVertical: Spacing.sm,
-    borderRadius: 11,
+    borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.075)',
     backgroundColor: 'rgba(255,255,255,0.04)',

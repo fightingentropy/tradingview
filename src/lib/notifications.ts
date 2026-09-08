@@ -1,7 +1,5 @@
 /**
- * Local (on-device) notifications for price alerts — no push server involved. Used by
- * the in-app {@link AlertWatcher} when a symbol trips while the app is open, and by the
- * background task when it isn't.
+ * Shared iOS presentation and permission handling for news and Mac mini price alerts.
  */
 import * as Notifications from 'expo-notifications';
 

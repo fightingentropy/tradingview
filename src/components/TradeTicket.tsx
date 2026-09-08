@@ -1,10 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  GlassView,
-  isGlassEffectAPIAvailable,
-  isLiquidGlassAvailable,
-} from 'expo-glass-effect';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -25,6 +20,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { OrderRecoveryNotice } from '@/components/OrderRecoveryNotice';
+import { useOrderRecovery } from '@/data/useOrderRecovery';
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useActiveAsset } from '@/data/useActiveAsset';
@@ -33,6 +30,7 @@ import { useHlMeta } from '@/data/useHlMeta';
 import { useOrderBook } from '@/data/useOrderBook';
 import { estimateExecution } from '@/domain/execution';
 import {
+  OrderRejectedError,
   placeBracket,
   placeOrder,
   updateLeverage,
@@ -54,6 +52,7 @@ import {
   type TradeSizeMode,
 } from '@/lib/tradeTicket';
 import { materiallyDifferentMid } from '@/lib/tradePreflight';
+import { orderRecovery } from '@/store/orderRecovery';
 import { useHlConnection } from '@/store/hlConnection';
 
 type Side = 'buy' | 'sell';
@@ -165,22 +164,14 @@ const DEFAULT_SLIPPAGE_PCT = '0.5';
 /** Ties the numeric fields to their keyboard accessory bar (decimal-pads have no Done key). */
 const ACCESSORY_ID = 'trade-ticket-kb';
 
-const LIQUID_GLASS = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
-// Translucent fills so the dark glass reads through the grouped panels.
-const GLASS_FILL = 'rgba(255,255,255,0.06)';
-const GLASS_FILL_STRONG = 'rgba(255,255,255,0.13)';
-const GLASS_INSET = 'rgba(0,0,0,0.28)';
-const GLASS_HAIRLINE = 'rgba(255,255,255,0.10)';
+// Consistent field surfaces across trading sheets.
+const GLASS_FILL = Colors.surfaceAlt;
+const GLASS_FILL_STRONG = Colors.surfacePress;
+const GLASS_INSET = Colors.background;
+const GLASS_HAIRLINE = Colors.border;
 
-/** The sheet surface: iOS 26 dark Liquid Glass when available, else a near-black panel. */
+/** Opaque sheet keeps prices and order controls readable. */
 function SheetSurface({ style, children }: { style: StyleProp<ViewStyle>; children: ReactNode }) {
-  if (LIQUID_GLASS) {
-    return (
-      <GlassView style={style} glassEffectStyle="regular" colorScheme="dark">
-        {children}
-      </GlassView>
-    );
-  }
   return <View style={[style, styles.sheetFallback]}>{children}</View>;
 }
 
@@ -325,6 +316,7 @@ export function TradeTicket({
   const demo = useHlConnection((s) => s.demo);
   const { data: tradingIdentity } = useTradingIdentity();
   const authenticatedIdentity = signedIdentityBinding(tradingIdentity);
+  const recovery = useOrderRecovery(network, tradingIdentity?.accountAddress);
   const { data: meta } = useHlMeta();
   const { data: account, refetch: refetchAccount } = useHlAccount();
   const {
@@ -588,6 +580,7 @@ export function TradeTicket({
     !closing && !reduceOnly && !active && (!account || !!currentPosition);
 
   const canSubmit =
+    !recovery.blocked &&
     tradable &&
     !!account &&
     !!assetMeta &&
@@ -699,6 +692,7 @@ export function TradeTicket({
       });
 
       const assertContextStillMatches = () => {
+        orderRecovery.assertCanSubmit(draft.network, draft.identity.accountAddress);
         const connection = useHlConnection.getState();
         const liveContext = liveContextRef.current;
         if (
@@ -869,6 +863,7 @@ export function TradeTicket({
         if (draft.needsLeverageUpdate) {
           await updateLeverage({
             network: draft.network,
+            recoveryCoin: draft.coin,
             identity: draft.identity,
             validateImmediatelyBeforeSigning: () => validateDraftState(false),
             assertIdentityCurrent: assertContextStillMatches,
@@ -889,6 +884,7 @@ export function TradeTicket({
         if (legs.length > 0) {
           const results = await placeBracket({
             network: draft.network,
+            recoveryCoin: draft.coin,
             identity: draft.identity,
             validateImmediatelyBeforeSigning: () =>
               validateDraftState(draft.needsLeverageUpdate),
@@ -912,6 +908,7 @@ export function TradeTicket({
 
         const result = await placeOrder({
           network: draft.network,
+          recoveryCoin: draft.coin,
           identity: draft.identity,
           validateImmediatelyBeforeSigning: () =>
             validateDraftState(draft.needsLeverageUpdate),
@@ -931,6 +928,7 @@ export function TradeTicket({
         });
         return makeSubmission([result], []);
       } catch (error) {
+        if (error instanceof OrderRejectedError) throw error;
         if (leveragePostAttempted || orderPostAttempted) {
           throw new TradeSubmissionUnknownError(
             errorMessage(error),
@@ -973,6 +971,11 @@ export function TradeTicket({
       invalidateTradingState();
     },
     onError: (error) => {
+      if (error instanceof OrderRejectedError) {
+        invalidateTradingState();
+        Alert.alert('Order rejected', `${error.message}\n\nThe exchange rejected this order. Review the refreshed ticket before trying again.`);
+        return;
+      }
       if (error instanceof TradeSubmissionUnknownError) {
         invalidateTradingState();
         const leverageWarning = error.leveragePostAttempted
@@ -985,7 +988,7 @@ export function TradeTicket({
           : '\n\nNo order POST began, but an earlier account-setting POST may have changed state.';
         Alert.alert(
           'Submission status unknown',
-          `${error.message}${leverageWarning}${orderWarning}\n\nDo not retry until Account and Open Orders refresh and you verify the actual state.`,
+          `${error.message}${leverageWarning}${orderWarning}\n\nIf an order POST began, new orders are paused while its saved order IDs are checked. Open Account to review the recovered status.`,
         );
         return;
       }
@@ -1233,7 +1236,7 @@ export function TradeTicket({
               </AppText>
               <View style={styles.headerRight}>
                 <AppText variant="caption" muted numeric>
-                  Mark ${formatPrice(triggerMarkPx, priceDecimals)}
+                  Mark {triggerMarkPx > 0 ? `$${formatPrice(triggerMarkPx, priceDecimals)}` : '—'}
                 </AppText>
                 {!closing && assetMeta ? (
                   <View style={styles.levBadge}>
@@ -1246,6 +1249,7 @@ export function TradeTicket({
             </View>
           </View>
 
+          <OrderRecoveryNotice network={network} address={tradingIdentity?.accountAddress} />
           {result ? (
             <ResultView
               coin={label}
@@ -1343,7 +1347,7 @@ export function TradeTicket({
                   Avail. to Trade
                 </AppText>
                 <AppText variant="label" numeric color={Colors.text}>
-                  {compactNumber(avail, 2)} USDC
+                  {account?.totalEquityLoaded === true ? `${compactNumber(avail, 2)} USDC` : '—'}
                 </AppText>
               </View>
 
@@ -1401,7 +1405,7 @@ export function TradeTicket({
                                       style={[styles.marginBtn, on && styles.marginBtnOn]}>
                                       <AppText
                                         variant="caption"
-                                        color={on ? Colors.text : Colors.textMuted}>
+                                        color={on ? Colors.background : Colors.textMuted}>
                                         {lbl}
                                       </AppText>
                                     </Pressable>
@@ -1426,7 +1430,7 @@ export function TradeTicket({
                                     key={L}
                                     onPress={() => setLevOverride(L)}
                                     style={[styles.chip, on && styles.chipOn]}>
-                                    <AppText variant="caption" color={on ? Colors.text : Colors.textMuted}>
+                                    <AppText variant="caption" color={on ? Colors.background : Colors.textMuted}>
                                       {L}×
                                     </AppText>
                                   </Pressable>
@@ -1469,7 +1473,7 @@ export function TradeTicket({
                               style={[styles.chip, slippagePctNum === pct && styles.chipOn]}>
                               <AppText
                                 variant="caption"
-                                color={slippagePctNum === pct ? Colors.text : Colors.textMuted}>
+                                color={slippagePctNum === pct ? Colors.background : Colors.textMuted}>
                                 {pct}%
                               </AppText>
                             </Pressable>
@@ -1509,7 +1513,7 @@ export function TradeTicket({
                     value={limitPrice}
                     onChangeText={setLimitPrice}
                     onFocus={() => setFocused('limit')}
-                    placeholder={formatPrice(triggerMarkPx, priceDecimals)}
+                    placeholder={triggerMarkPx > 0 ? formatPrice(triggerMarkPx, priceDecimals) : 'Price'}
                     placeholderTextColor={Colors.textFaint}
                     keyboardType="decimal-pad"
                     keyboardAppearance="dark"
@@ -1517,7 +1521,8 @@ export function TradeTicket({
                     style={styles.input}
                   />
                   <Pressable
-                    style={styles.midButton}
+                    style={[styles.midButton, !(triggerMarkPx > 0) && { opacity: 0.4 }]}
+                    disabled={!(triggerMarkPx > 0)}
                     onPress={() => setLimitPrice(String(Number(triggerMarkPx.toFixed(priceDecimals))))}>
                     <AppText variant="label" color={Colors.accent}>
                       Mid
@@ -1864,7 +1869,7 @@ export function TradeTicket({
                     </View>
                   ) : (
                     <AppText variant="label" color={canSubmit ? sideColor : Colors.textFaint}>
-                      {closing || actionLabel ? `${submitVerb} ${label}` : 'Place Order'}
+                      {closing || actionLabel ? `${submitVerb} ${label}` : 'Review order'}
                     </AppText>
                   )}
                 </Pressable>
@@ -2127,7 +2132,7 @@ function ResultView({
           </AppText>
         </Pressable>
         <Pressable style={[styles.resultBtn, { backgroundColor: Colors.accent }]} onPress={onDone}>
-          <AppText variant="label">Done</AppText>
+          <AppText variant="label" color={Colors.background}>Done</AppText>
         </Pressable>
       </View>
     </View>
@@ -2161,10 +2166,9 @@ const styles = StyleSheet.create({
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
   sheetMotion: { height: '92%' },
   sheet: {
-    // Dark Liquid Glass; the faint black scrim deepens it to "black glass" and keeps text legible.
-    backgroundColor: 'rgba(0,0,0,0.20)',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: GLASS_HAIRLINE,
     overflow: 'hidden',
@@ -2176,8 +2180,7 @@ const styles = StyleSheet.create({
     // clip the dock when a longer sizing mode is selected.
     flex: 1,
   },
-  // Used only when Liquid Glass isn't available (older iOS) — a near-black solid panel.
-  sheetFallback: { backgroundColor: 'rgba(8,10,14,0.98)' },
+  sheetFallback: { backgroundColor: Colors.surface },
   // Give the scrolling body a bounded flex area so the review dock remains pinned
   // even when a sizing mode (notably Risk) adds more fields than fit on screen.
   ticketContent: {

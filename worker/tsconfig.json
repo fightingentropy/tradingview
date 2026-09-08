@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["news-relay.ts", "worker-configuration.d.ts"]
+  "include": ["index.ts", "news-relay.ts", "worker-configuration.d.ts"]
 }

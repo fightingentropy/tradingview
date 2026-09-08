@@ -8,7 +8,7 @@ import { useMarkets } from '@/data/useMarkets';
 import { useNewsFeed } from '@/data/useNewsFeed';
 import type { Instrument, Quote } from '@/domain/types';
 import { formatCompact, formatPercent, formatPrice, formatSignedPrice, priceDecimalsFor } from '@/lib/format';
-import { useLivePrice } from '@/store/livePrices';
+import { useMarketPrice } from '@/store/livePrices';
 import { useWatchlists } from '@/store/watchlists';
 
 type DiscoverCategory = 'all' | 'perps' | 'spot' | 'traditional';
@@ -34,8 +34,8 @@ function DiscoverMarketRow({
   watched: boolean;
   onToggleWatch: () => void;
 }) {
-  const streamed = useLivePrice(instrument.coinKey);
-  const last = streamed ?? quote?.last;
+  const priceState = useMarketPrice(instrument, quote);
+  const last = priceState.last;
   const decimals = priceDecimalsFor(instrument.priceDecimals, last);
   const change = last != null && quote?.prevClose != null ? last - quote.prevClose : null;
   const positive = (quote?.change24hPct ?? 0) >= 0;
@@ -46,11 +46,11 @@ function DiscoverMarketRow({
         <span><strong>{instrument.symbol}</strong><small>{instrument.name}</small></span>
       </Link>
       <span className="web-capital-trade-share"><small>{share.toFixed(2)}%</small><i style={{ width: `${Math.max(3, Math.min(100, share * 5))}%` }} /></span>
-      <strong>{formatPrice(last, decimals)}</strong>
+      <strong title={priceState.label}>{formatPrice(last, decimals)}{priceState.status !== 'live' ? <small className="web-price-status">{priceState.label}</small> : null}</strong>
       <span>{quote?.dayVolume == null ? '—' : `$${formatCompact(quote.dayVolume)}`}</span>
       <span className={positive ? 'is-up' : 'is-down'}>{formatSignedPrice(change, decimals) || '—'}</span>
       <span className={positive ? 'is-up' : 'is-down'}>{formatPercent(quote?.change24hPct)}</span>
-      <button type="button" className={watched ? 'is-watched' : ''} aria-label={watched ? `Remove ${instrument.symbol} from favourites` : `Add ${instrument.symbol} to favourites`} onClick={onToggleWatch}><Ionicons name={watched ? 'star' : 'star-outline'} size={15} color="currentColor" /></button>
+      <button type="button" className={watched ? 'is-watched' : ''} aria-pressed={watched} aria-label={watched ? `Remove ${instrument.symbol} from watchlist` : `Add ${instrument.symbol} to watchlist`} onClick={onToggleWatch}><Ionicons name={watched ? 'star' : 'star-outline'} size={15} color="currentColor" /></button>
     </div>
   );
 }
@@ -105,14 +105,14 @@ export default function WebMarketsScreen() {
 
   return (
     <div className="web-capital-discover-page">
-      <h1>Good morning.</h1>
+      <header className="web-page-heading"><div><h1>Markets</h1><p>Prices, reported volume and daily movers across your markets.</p></div></header>
       <div className="web-capital-discover-layout">
         <main className="web-capital-discover-main">
           <section className="web-capital-discover-overview">
-            <header><h2>Most traded</h2></header>
+            <header><h2>Market overview</h2></header>
             <div>
               <section className="web-capital-category-share">
-                <h3>Categories</h3>
+                <h3>Share of reported 24h volume</h3>
                 {categories.map((item, index) => {
                   const share = totalVolume > 0 ? (item.volume / totalVolume) * 100 : 0;
                   return <button type="button" key={`${item.label}-${index}`} onClick={() => setCategory(item.id)}><span>{item.label}</span><strong>{share.toFixed(0)}%</strong><i style={{ width: `${Math.max(1, share)}%` }} /></button>;
@@ -126,23 +126,23 @@ export default function WebMarketsScreen() {
           </section>
 
           <section className="web-capital-most-traded">
-            <header><h2>Most traded</h2><label><Ionicons name="search" size={14} color="currentColor" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search markets" /></label></header>
-            <nav>{(['all', 'perps', 'spot', 'traditional'] as const).map((item) => <button type="button" className={category === item ? 'is-active' : ''} key={item} onClick={() => setCategory(item)}>{item === 'all' ? 'All' : item === 'perps' ? 'Perps' : item === 'spot' ? 'Spot' : 'Stocks & macro'}</button>)}</nav>
-            <div className="web-capital-discover-table-head"><span>Market</span><span>Trade %</span><span>Last</span><span>Volume</span><span>Chg</span><span>Chg %</span><span /></div>
+            <header><h2>Markets by volume</h2><label><Ionicons name="search" size={14} color="currentColor" /><input aria-label="Search markets" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search markets" /></label></header>
+            <nav aria-label="Market categories">{(['all', 'perps', 'spot', 'traditional'] as const).map((item) => <button type="button" aria-pressed={category === item} className={category === item ? 'is-active' : ''} key={item} onClick={() => setCategory(item)}>{item === 'all' ? 'All' : item === 'perps' ? 'Perps' : item === 'spot' ? 'Spot' : 'Stocks & macro'}</button>)}</nav>
+            <div className="web-capital-discover-table-head"><span>Market</span><span>Vol. share</span><span>Price</span><span>24h volume</span><span>Change</span><span>24h %</span><span /></div>
             <div className="web-capital-discover-table">
-              {isLoading ? Array.from({ length: 10 }, (_, index) => <span className="web-capital-discover-skeleton" key={index} />) : filtered.map((instrument) => <DiscoverMarketRow key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} share={shareFor(instrument)} watched={watched.has(instrument.id)} onToggleWatch={() => toggle(activeId, instrument.id)} />)}
+              {isLoading ? Array.from({ length: 10 }, (_, index) => <span className="web-capital-discover-skeleton" key={index} />) : filtered.length ? filtered.map((instrument) => <DiscoverMarketRow key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} share={shareFor(instrument)} watched={watched.has(instrument.id)} onToggleWatch={() => toggle(activeId, instrument.id)} />) : <p className="web-market-list-empty">No markets match this search.</p>}
             </div>
           </section>
         </main>
 
         <div className="web-capital-movers-column">
-          <section><header><h2>Risers</h2><span>Daily <Ionicons name="chevron-down" size={12} color="currentColor" /></span></header><div className="web-capital-mover-head"><span>Market</span><span>Chg %</span></div>{risers.map((instrument) => <MoverRow key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} />)}</section>
-          <section><header><h2>Fallers</h2><span>Daily <Ionicons name="chevron-down" size={12} color="currentColor" /></span></header><div className="web-capital-mover-head"><span>Market</span><span>Chg %</span></div>{fallers.map((instrument) => <MoverRow key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} />)}</section>
+          <section><header><h2>Top gainers</h2><span>24 hours</span></header><div className="web-capital-mover-head"><span>Market</span><span>24h change</span></div>{risers.map((instrument) => <MoverRow key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} />)}</section>
+          <section><header><h2>Top decliners</h2><span>24 hours</span></header><div className="web-capital-mover-head"><span>Market</span><span>24h change</span></div>{fallers.map((instrument) => <MoverRow key={instrument.id} instrument={instrument} quote={data?.quotes[instrument.id]} />)}</section>
         </div>
 
         <aside className="web-capital-discover-news">
           <section><header><h2>Major news</h2><Link href="/news"><Ionicons name="chevron-forward" size={20} color="currentColor" /></Link></header>{executiveSummary ? <article className="is-lead"><span>{executiveSummary.pulse.label.replace('-', ' ')}</span><h3>{executiveSummary.headline}</h3><p>{executiveSummary.overview}</p><small><Ionicons name="flash" size={13} color="currentColor" /> Market pulse</small></article> : <article className="is-lead"><h3>Market intelligence is loading</h3></article>}{newsItems.slice(0, 2).map((item) => <article key={item.headline}><h3>{item.headline}</h3><small><Ionicons name="flash" size={13} color="currentColor" /> Curated intelligence</small></article>)}</section>
-          <section><header><h2>For you</h2><Link href="/news"><Ionicons name="chevron-forward" size={20} color="currentColor" /></Link></header>{(executiveSummary?.watchNext ?? []).slice(0, 4).map((item) => <article key={item}><h3>{item}</h3><small><Ionicons name="flash" size={13} color="currentColor" /> Watch next</small></article>)}<Link href="/news" className="web-capital-show-all">Show all</Link></section>
+          <section><header><h2>Watch next</h2><Link href="/news"><Ionicons name="chevron-forward" size={20} color="currentColor" /></Link></header>{(executiveSummary?.watchNext ?? []).slice(0, 4).map((item) => <article key={item}><h3>{item}</h3><small><Ionicons name="flash" size={13} color="currentColor" /> From the briefing</small></article>)}<Link href="/news" className="web-capital-show-all">Read briefing</Link></section>
         </aside>
       </div>
     </div>

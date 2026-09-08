@@ -1,11 +1,15 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "tradingview-news-relay",
-  "main": "worker/news-relay.ts",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-07-10",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
+  "durable_objects": {
+    "bindings": [{ "name": "PRICE_ALERTS", "class_name": "MacMiniAlertRelay" }]
+  },
+  "migrations": [{ "tag": "price-alerts-v1", "new_sqlite_classes": ["MacMiniAlertRelay"] }],
   "kv_namespaces": [
     {
       "binding": "NEWS_RELAY_KV",

@@ -5,6 +5,7 @@
  * reconnects so the feed self-heals after silent drops.
  */
 import { AppState, type AppStateStatus } from 'react-native';
+import type { FeedConnectionStatus } from '../types';
 
 import type { HlCandle } from './rest';
 import { HL_WS_URL } from './rest';
@@ -18,7 +19,9 @@ interface Entry {
   handlers: Set<(data: unknown) => void>;
 }
 
-const PING_INTERVAL = 50_000;
+const PING_INTERVAL = 15_000;
+const MESSAGE_TIMEOUT = 45_000;
+const CONNECT_TIMEOUT = 15_000;
 const MAX_BACKOFF = 15_000;
 
 class HyperliquidSocket {
@@ -28,6 +31,22 @@ class HyperliquidSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private attempts = 0;
   private backgrounded = false;
+  private status: FeedConnectionStatus = 'idle';
+  private statusHandlers = new Set<(status: FeedConnectionStatus) => void>();
+  private lastMessageAt = 0;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  subscribeConnection(handler: (status: FeedConnectionStatus) => void): () => void {
+    this.statusHandlers.add(handler);
+    handler(this.status);
+    return () => { this.statusHandlers.delete(handler); };
+  }
+
+  private setStatus(status: FeedConnectionStatus) {
+    if (this.status === status) return;
+    this.status = status;
+    this.statusHandlers.forEach((handler) => handler(status));
+  }
 
   constructor() {
     AppState.addEventListener('change', this.onAppState);
@@ -40,6 +59,7 @@ class HyperliquidSocket {
     } else if (state === 'background') {
       this.backgrounded = true;
       this.teardown();
+      this.setStatus('paused');
     }
   };
 
@@ -68,28 +88,41 @@ class HyperliquidSocket {
         this.entries.delete(key);
         this.send({ method: 'unsubscribe', subscription: sub });
       }
+      if (this.entries.size === 0) {
+        this.teardown();
+        this.setStatus('idle');
+      }
     };
   }
 
   private connect() {
-    if (this.backgrounded) return;
+    if (this.backgrounded || this.entries.size === 0) return;
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
+    this.setStatus(this.attempts > 0 ? 'reconnecting' : 'connecting');
     const ws = new WebSocket(HL_WS_URL);
     this.ws = ws;
+    this.connectTimer = setTimeout(() => this.reconnect(ws), CONNECT_TIMEOUT);
 
     ws.onopen = () => {
+      if (this.ws !== ws) return;
+      if (this.connectTimer) clearTimeout(this.connectTimer);
+      this.connectTimer = null;
       this.attempts = 0;
+      this.lastMessageAt = Date.now();
       // Re-send every active subscription after a (re)connect.
       this.entries.forEach((entry) => {
         ws.send(JSON.stringify({ method: 'subscribe', subscription: entry.sub }));
       });
       this.startPing();
+      this.setStatus('connected');
     };
 
     ws.onmessage = (event) => {
+      if (this.ws !== ws) return;
       try {
+        this.lastMessageAt = Date.now();
         this.route(JSON.parse(event.data as string));
       } catch {
         // ignore malformed frames
@@ -97,14 +130,18 @@ class HyperliquidSocket {
     };
 
     ws.onerror = () => {
-      // onclose will follow and trigger reconnect
+      this.reconnect(ws);
     };
 
     ws.onclose = () => {
-      this.stopPing();
-      if (this.ws === ws) this.ws = null;
-      this.scheduleReconnect();
+      this.reconnect(ws);
     };
+  }
+
+  private reconnect(ws: WebSocket) {
+    if (this.ws !== ws) return;
+    this.teardown();
+    this.scheduleReconnect();
   }
 
   private route(msg: { channel?: string; data?: unknown }) {
@@ -130,7 +167,13 @@ class HyperliquidSocket {
 
   private startPing() {
     this.stopPing();
-    this.pingTimer = setInterval(() => this.send({ method: 'ping' }), PING_INTERVAL);
+    this.pingTimer = setInterval(() => {
+      if (Date.now() - this.lastMessageAt >= MESSAGE_TIMEOUT) {
+        if (this.ws) this.reconnect(this.ws);
+      } else {
+        this.send({ method: 'ping' });
+      }
+    }, PING_INTERVAL);
   }
 
   private stopPing() {
@@ -142,6 +185,7 @@ class HyperliquidSocket {
 
   private scheduleReconnect() {
     if (this.backgrounded || this.entries.size === 0 || this.reconnectTimer) return;
+    this.setStatus('reconnecting');
     const delay = Math.min(MAX_BACKOFF, 500 * 2 ** this.attempts);
     this.attempts += 1;
     this.reconnectTimer = setTimeout(() => {
@@ -152,12 +196,17 @@ class HyperliquidSocket {
 
   private teardown() {
     this.stopPing();
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     if (this.ws) {
       this.ws.onclose = null;
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onerror = null;
       this.ws.close();
       this.ws = null;
     }

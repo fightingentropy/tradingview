@@ -5,12 +5,24 @@ import {
   fetchFundingHistory,
   fetchUserBorrowLendInterest,
   fetchUserFundingHistory,
+  fetchHlAccountActivity,
   type HlBorrowLendInterest,
   type HlFundingPoint,
   type HlUserFunding,
+  type HlAccountActivity,
 } from '@/lib/hyperliquid/info';
 import { queryKeys } from '@/lib/queryKeys';
 import { useHlConnection } from '@/store/hlConnection';
+
+export function useHlAccountActivity(enabled = true) {
+  const network = useHlConnection((state) => state.network);
+  const { data: account } = useTradingAddress();
+  return useQuery<HlAccountActivity>({
+    queryKey: queryKeys.hlAccountActivity(network, account ?? ''),
+    queryFn: () => fetchHlAccountActivity(account as string, network), enabled: enabled && !!account,
+    staleTime: 60_000, refetchOnWindowFocus: true,
+  });
+}
 
 /** Hourly market funding data changes once per hour, so a five-minute cache is ample. */
 export function useHlFundingHistory(coin: string | undefined, enabled = true) {

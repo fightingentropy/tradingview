@@ -1,10 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import {
-  GlassContainer,
-  GlassView,
-  isGlassEffectAPIAvailable,
-  isLiquidGlassAvailable,
-} from 'expo-glass-effect';
 import { useIsRestoring, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -22,7 +16,7 @@ import { IndicatorMenu } from '@/components/IndicatorMenu';
 import { FundingChart } from '@/components/FundingChart';
 import { PriceChart, type ChartOrderLevel, type ChartType } from '@/components/PriceChart';
 import { RangeBar } from '@/components/RangeBar';
-import { RsiPane } from '@/components/RsiPane';
+import { InstrumentNewsLink } from '@/components/InstrumentNews';
 import { useSymbolMenu } from '@/components/SymbolMenu';
 import {
   floorSizeToDecimals,
@@ -75,13 +69,13 @@ import { priceToWire, sizeToWire } from '@/lib/hyperliquid/sign';
 import { queryKeys } from '@/lib/queryKeys';
 import { useChartSettings } from '@/store/chartSettings';
 import { useHlConnection } from '@/store/hlConnection';
-import { useLivePrice } from '@/store/livePrices';
+import { useMarketPrice } from '@/store/livePrices';
+import { marketCatalogErrorForId, marketDataError } from '@/lib/marketCatalog';
 import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
 /** Stable empty fallback so the loading/empty chart isn't handed a fresh [] each render. */
 const EMPTY_CANDLES: Candle[] = [];
-const LIQUID_GLASS = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
 
 type TicketMode = 'buy' | 'sell' | 'add' | 'reduce' | 'close';
 
@@ -163,7 +157,7 @@ function orderIsMarket(order: HlOpenOrder): boolean {
 
 export default function SymbolScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, isLoading: marketsLoading } = useAllMarkets();
+  const { data, isLoading: marketsLoading, refetch: refreshMarkets } = useAllMarkets();
   const isRestoring = useIsRestoring();
   const instrument = id ? data?.byId[id] : undefined;
   const quote = id ? data?.quotes[id] : undefined;
@@ -181,8 +175,8 @@ export default function SymbolScreen() {
   const { interval, fetch: fetchCount, visible, render, axis } = resolveRange(range);
 
   useLivePriceFeed(instrument ? [instrument] : []);
-  const live = useLivePrice(instrument?.coinKey);
-  const { data: candleData, isLoading: candlesLoading } = useCandles(instrument, interval, fetchCount);
+  const priceState = useMarketPrice(instrument, quote);
+  const { data: candleData, isLoading: candlesLoading, isFetching: candlesRefreshing, historyError, refetch: refreshCandles } = useCandles(instrument, interval, fetchCount);
   const { data: activeAsset } = useActiveAsset(hlTradeCoin);
   const candles = candleData ?? EMPTY_CANDLES;
 
@@ -610,6 +604,13 @@ export default function SymbolScreen() {
         <View style={styles.center}>
           {marketsLoading || isRestoring ? (
             <ActivityIndicator color={Colors.accent} />
+          ) : marketCatalogErrorForId(id, data?.marketErrors) ? (
+            <>
+              <AppText muted>Market unavailable</AppText>
+              <Pressable onPress={() => { void refreshMarkets(); }} accessibilityRole="button" style={{ padding: Spacing.md }}>
+                <AppText color={Colors.accent}>Retry</AppText>
+              </Pressable>
+            </>
           ) : (
             <AppText muted>Not found</AppText>
           )}
@@ -618,7 +619,7 @@ export default function SymbolScreen() {
     );
   }
 
-  const last = live ?? quote?.last ?? null;
+  const last = priceState.last;
   const prev = quote?.prevClose ?? null;
   const changePct =
     last !== null && prev !== null && prev !== 0
@@ -828,6 +829,7 @@ export default function SymbolScreen() {
           title: instrument.symbol,
           headerRight: () => (
             <View style={styles.headerActions}>
+              <InstrumentNewsLink instrument={instrument} />
               <Pressable
                 hitSlop={12}
                 onPress={() => openMenu(instrument)}
@@ -853,28 +855,32 @@ export default function SymbolScreen() {
           <AppText variant="caption" muted numberOfLines={1} style={styles.name}>
             {instrument.name}
           </AppText>
+          <AppText variant="caption" numberOfLines={1} color={priceState.stale ? Colors.warning : Colors.textMuted}>
+            {priceState.label}
+          </AppText>
         </View>
-        <AppText variant="title" numeric>
-          {isOutcome ? formatProbability(last) : formatPrice(last, decimals)}
-        </AppText>
-        <View style={styles.metaRow}>
-          <AppText
-            variant="label"
-            numeric
-            color={changePct === null ? Colors.textMuted : up ? Colors.up : Colors.down}>
+        <View style={styles.priceRow}>
+          <AppText variant="display" numeric numberOfLines={1} adjustsFontSizeToFit style={styles.lastPrice}>
+            {isOutcome ? formatProbability(last) : formatPrice(last, decimals)}
+          </AppText>
+          <AppText variant="label" numeric color={changePct === null ? Colors.textMuted : up ? Colors.up : Colors.down}>
             {isOutcome && last !== null && prev !== null
               ? `${formatProbabilityPointChange(last - prev)} 24h`
               : formatPercent(changePct)}
           </AppText>
+        </View>
+        <View style={styles.metaRow}>
           {quote?.dayVolume ? (
-            <AppText variant="label" numeric muted>
-              · Vol {formatCompact(quote.dayVolume)}
-            </AppText>
+            <View style={styles.marketMetric}>
+              <AppText variant="caption">24h volume</AppText>
+              <AppText variant="label" numeric>{formatCompact(quote.dayVolume)}</AppText>
+            </View>
           ) : null}
           {funding != null ? (
-            <AppText variant="label" numeric color={fundingColor}>
-              · Funding {formatFundingApr(funding)} APR
-            </AppText>
+            <View style={styles.marketMetric}>
+              <AppText variant="caption">Funding / APR</AppText>
+              <AppText variant="label" numeric color={fundingColor}>{formatFundingApr(funding)}</AppText>
+            </View>
           ) : null}
         </View>
       </View>
@@ -908,6 +914,13 @@ export default function SymbolScreen() {
           <View style={styles.center}>
             <ActivityIndicator color={Colors.accent} />
           </View>
+        ) : candles.length === 0 ? (
+          <View style={styles.center}>
+            <AppText variant="body" muted>Chart unavailable</AppText>
+            <Pressable onPress={() => { void refreshCandles(); }} disabled={candlesRefreshing} accessibilityRole="button" style={{ padding: Spacing.md }}>
+              <AppText variant="label" color={Colors.accent}>{candlesRefreshing ? 'Refreshing…' : 'Retry'}</AppText>
+            </Pressable>
+          </View>
         ) : (
           <PriceChart
             // Remount on range change so the history-pan offset resets to the latest.
@@ -926,6 +939,7 @@ export default function SymbolScreen() {
             symbol={instrument.symbol}
             hideValues={privacyMode}
             onPositionPress={openPositionActions}
+            rsiPeriod={rsi ? rsiPeriod : undefined}
           />
         )}
         {!showFunding && position && !chartPositionVisible ? (
@@ -942,8 +956,12 @@ export default function SymbolScreen() {
         ) : null}
       </View>
 
-      {!showFunding && rsi && candles.length > 0 ? (
-        <RsiPane candles={candles} period={rsiPeriod} visibleCount={visible} />
+      {!showFunding && (historyError || marketDataError(instrument, data?.marketErrors)) ? (
+        <Pressable onPress={() => { void refreshCandles(); void refreshMarkets(); }} disabled={candlesRefreshing} accessibilityRole="button" style={{ paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs }}>
+          <AppText variant="caption" color={Colors.warning} numberOfLines={1}>
+            {candlesRefreshing ? 'Refreshing chart…' : historyError ? 'Chart history may be incomplete · Retry' : 'Market details unavailable · Showing saved data'}
+          </AppText>
+        </Pressable>
       ) : null}
 
       {!showFunding ? (
@@ -1049,87 +1067,57 @@ export default function SymbolScreen() {
 }
 
 function FlatTradeBar({ onSell, onBuy }: { onSell: () => void; onBuy: () => void }) {
-  const buttons = (
-    <>
-      <GlassTradeButton side="sell" onPress={onSell} />
-      <GlassTradeButton side="buy" onPress={onBuy} />
-    </>
-  );
-
-  return LIQUID_GLASS ? (
-    <GlassContainer spacing={10} style={styles.tradeBar}>
-      {buttons}
-    </GlassContainer>
-  ) : (
-    <View style={styles.tradeBar}>{buttons}</View>
+  return (
+    <View style={styles.tradeBar}>
+      <TradeButton side="sell" onPress={onSell} />
+      <TradeButton side="buy" onPress={onBuy} />
+    </View>
   );
 }
 
-function GlassTradeButton({ side, onPress }: { side: 'buy' | 'sell'; onPress: () => void }) {
+function TradeButton({ side, onPress }: { side: 'buy' | 'sell'; onPress: () => void }) {
   const buy = side === 'buy';
   const color = buy ? Colors.up : Colors.down;
-  const label = buy ? 'Buy' : 'Sell';
-  const content = (
+  const label = buy ? 'Buy / Long' : 'Sell / Short';
+  return (
     <Pressable
-      style={({ pressed }) => [
-        styles.tradeBtnPressable,
-        pressed && { backgroundColor: color + '1F' },
-      ]}
+      style={({ pressed }) => [styles.tradeBtn, { backgroundColor: color, opacity: pressed ? 0.8 : 1 }]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}>
-      <View pointerEvents="none" style={[styles.tradeBtnTint, { backgroundColor: color + '18' }]} />
-      <View pointerEvents="none" style={styles.tradeBtnHighlight} />
-      <View pointerEvents="none" style={styles.tradeBtnContent}>
-        <Ionicons name={buy ? 'arrow-up' : 'arrow-down'} size={16} color={color} />
-        <AppText style={styles.tradeBtnLabel}>{label}</AppText>
-      </View>
+      <AppText style={styles.tradeBtnLabel}>{label}</AppText>
     </Pressable>
   );
-
-  const surfaceStyle = [styles.tradeBtn, { borderColor: color + '70' }];
-  if (LIQUID_GLASS) {
-    return (
-      <GlassView
-        style={surfaceStyle}
-        glassEffectStyle="clear"
-        colorScheme="dark"
-        tintColor={color + '3D'}
-        isInteractive>
-        {content}
-      </GlassView>
-    );
-  }
-
-  return <View style={[surfaceStyle, styles.tradeBtnFallback]}>{content}</View>;
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
-  header: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: 4 },
+  header: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: 8 },
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  name: { flexShrink: 1 },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.xs, rowGap: 2 },
+  name: { flex: 1, minWidth: 0 },
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: Spacing.md },
+  lastPrice: { flexShrink: 1 },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: Spacing.xl, rowGap: 4 },
+  marketMetric: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   detailTabs: {
     flexDirection: 'row',
     marginHorizontal: Spacing.lg,
     marginTop: Spacing.md,
-    padding: 4,
-    gap: 4,
-    borderRadius: Radius.md,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    gap: Spacing.xl,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
   },
   detailTab: {
-    flex: 1,
-    minHeight: 38,
+    minHeight: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: 0,
     paddingVertical: 8,
-    borderRadius: Radius.sm,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  detailTabActive: { backgroundColor: Colors.accentSoft },
+  detailTabActive: { borderBottomColor: Colors.accent },
   chartArea: { flex: 1, marginTop: Spacing.sm },
   positionFallback: {
     position: 'absolute',
@@ -1165,35 +1153,15 @@ const styles = StyleSheet.create({
   tradeBtn: {
     flex: 1,
     minWidth: 0,
-    minHeight: 56,
-    borderRadius: Radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-  },
-  tradeBtnFallback: { backgroundColor: Colors.surfaceAlt },
-  tradeBtnPressable: {
-    flex: 1,
-    minHeight: 56,
+    minHeight: 48,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Radius.pill,
-    overflow: 'hidden',
   },
-  tradeBtnTint: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  tradeBtnHighlight: {
-    position: 'absolute',
-    top: 0,
-    left: 22,
-    right: 22,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-  },
-  tradeBtnContent: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   tradeBtnLabel: {
-    color: Colors.text,
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '700',
-    letterSpacing: 0.1,
+    color: Colors.background,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600',
   },
 });

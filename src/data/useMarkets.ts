@@ -3,6 +3,8 @@ import { useCallback, useMemo } from 'react';
 
 import type { Instrument, Quote } from '@/domain/types';
 import type { OutcomeEvent } from '@/lib/outcomeMarkets';
+import { retainUnavailableMarkets } from '@/lib/marketCatalog';
+import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/lib/queryKeys';
 import { allProviders } from '@/providers/registry';
 import { usePreferences } from '@/store/preferences';
@@ -17,9 +19,11 @@ export interface MarketsData {
   quotes: Record<string, Quote>;
   outcomeEvents: OutcomeEvent[];
   outcomeMarketsError: string | null;
+  marketErrors?: Record<string, string>;
 }
 
 export async function loadAllMarkets(): Promise<MarketsData> {
+  const previous = queryClient.getQueryData<MarketsData>(queryKeys.instruments());
   const providers = allProviders();
   const results = await Promise.allSettled(providers.map((provider) => provider.loadMarkets()));
 
@@ -27,24 +31,33 @@ export async function loadAllMarkets(): Promise<MarketsData> {
   const quotes: Record<string, Quote> = {};
   const outcomeEvents: OutcomeEvent[] = [];
   let outcomeMarketsError: string | null = null;
+  const marketErrors: Record<string, string> = {};
   for (const [index, result] of results.entries()) {
-    if (result.status === 'fulfilled') {
+    const source = providers[index].source;
+    if (result.status === 'fulfilled' && result.value.instruments.length > 0) {
       instruments.push(...result.value.instruments);
       Object.assign(quotes, result.value.quotes);
       outcomeEvents.push(...(result.value.outcomeEvents ?? []));
       outcomeMarketsError ??= result.value.outcomeMarketsError ?? null;
-    } else if (providers[index]?.source === 'hyperliquid') {
-      outcomeMarketsError =
-        result.reason instanceof Error ? result.reason.message : String(result.reason);
+      Object.assign(marketErrors, result.value.marketErrors);
+    } else {
+      marketErrors[source] = result.status === 'rejected' && result.reason instanceof Error
+        ? result.reason.message : `${source} market data unavailable`;
+      if (source === 'hyperliquid') outcomeMarketsError = marketErrors[source];
     }
+  }
+  const retained = retainUnavailableMarkets({ instruments, quotes }, previous, marketErrors);
+  if ((marketErrors.hyperliquid || marketErrors['hyperliquid:outcome']) && previous) {
+    const eventIds = new Set(outcomeEvents.map((event) => event.id));
+    outcomeEvents.push(...(previous.outcomeEvents ?? []).filter((event) => !eventIds.has(event.id)));
   }
   const byId: Record<string, Instrument> = {};
   const byCoinKey = new Map<string, Instrument>();
-  for (const i of instruments) {
+  for (const i of retained.instruments) {
     byId[i.id] = i;
     byCoinKey.set(i.coinKey, i);
   }
-  return { instruments, byId, byCoinKey, quotes, outcomeEvents, outcomeMarketsError };
+  return { ...retained, byId, byCoinKey, outcomeEvents, outcomeMarketsError, marketErrors };
 }
 
 /**

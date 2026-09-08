@@ -6,7 +6,7 @@ import Reanimated, { LinearTransition } from 'react-native-reanimated';
 
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import type { Instrument } from '@/domain/types';
 import { useMarkets } from '@/data/useMarkets';
 import { useWatchlists } from '@/store/watchlists';
@@ -30,7 +30,6 @@ export default function ListsScreen() {
   const setActive = useWatchlists((s) => s.setActive);
   const createList = useWatchlists((s) => s.createList);
   const deleteList = useWatchlists((s) => s.deleteList);
-  const active = lists.find((l) => l.id === activeId);
   const { data } = useMarkets();
 
   // The app always needs at least one list, so the final one isn't swipe-deletable.
@@ -53,11 +52,11 @@ export default function ListsScreen() {
         <Pressable hitSlop={10} onPress={() => router.back()} style={styles.back}>
           <Ionicons name="chevron-back" size={26} color={Colors.text} />
           <AppText style={styles.backLabel} numberOfLines={1}>
-            {active?.name ?? 'Back'}
+            Back
           </AppText>
         </Pressable>
         <View pointerEvents="none" style={styles.titleWrap}>
-          <AppText style={styles.title}>List</AppText>
+          <AppText style={styles.title}>Watchlists</AppText>
         </View>
         <Pressable
           hitSlop={10}
@@ -75,14 +74,18 @@ export default function ListsScreen() {
           const row = (
             <Pressable
               onPress={() => onSelect(l.id)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
               style={({ pressed }) => [
                 styles.row,
                 isActive && styles.rowActive,
                 pressed && !isActive && styles.rowPressed,
               ]}>
-              <AppText style={[styles.name, isActive && styles.nameActive]} numberOfLines={1}>
-                {l.name}
-              </AppText>
+              <View style={styles.nameRow}>
+                <AppText style={[styles.name, isActive && styles.nameActive]} numberOfLines={1}>{l.name}</AppText>
+                <AppText style={styles.count}>{l.symbolIds.filter((id) => !id.startsWith('hl:outcome:')).length}</AppText>
+                {isActive ? <Ionicons name="checkmark" size={17} color={Colors.accent} /> : null}
+              </View>
               <AppText style={[styles.preview, isActive && styles.previewActive]} numberOfLines={1}>
                 {previewFor(l.symbolIds, data?.byId) || 'Empty list'}
               </AppText>
@@ -140,27 +143,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: { fontSize: 20, lineHeight: 25, fontWeight: '700', color: Colors.text },
-  add: { marginLeft: 'auto', width: 36, alignItems: 'flex-end', zIndex: 1 },
+  add: { marginLeft: 'auto', width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.sm, backgroundColor: Colors.surfaceAlt, zIndex: 1 },
   listContent: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.xxl,
-    gap: 10,
+    gap: 0,
   },
   rowShell: {
-    borderRadius: 18,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
   },
   row: {
-    minHeight: 76,
-    paddingHorizontal: 18,
-    paddingVertical: 15,
+    minHeight: 70,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 14,
     // Opaque so the row slides cleanly over the red Delete action when swiped.
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
   },
-  rowActive: { backgroundColor: Colors.accentSoft },
+  rowActive: { backgroundColor: Colors.surfaceAlt },
   deleteAction: {
     width: 88,
     backgroundColor: Colors.down,
@@ -170,8 +172,10 @@ const styles = StyleSheet.create({
   },
   deleteLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
   rowPressed: { backgroundColor: Colors.surface },
-  name: { fontSize: 20, lineHeight: 25, fontWeight: '700', color: Colors.text },
-  nameActive: { color: Colors.text },
-  preview: { fontSize: 14, lineHeight: 19, color: Colors.textMuted, marginTop: 4 },
+  name: { flex: 1, fontSize: 16, lineHeight: 22, fontWeight: '700', color: Colors.text },
+  nameActive: { color: Colors.accent },
+  preview: { fontSize: 12, lineHeight: 18, color: Colors.textMuted, marginTop: 4 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  count: { fontSize: 12, color: Colors.textFaint, fontVariant: ['tabular-nums'] },
   previewActive: { color: Colors.textMuted },
 });

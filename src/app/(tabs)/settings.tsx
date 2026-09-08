@@ -4,19 +4,20 @@ import { Fragment, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { HlAccountCard } from '@/components/HlAccountCard';
-import { GlassSurface } from '@/components/ui/GlassSurface';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Spacing } from '@/constants/theme';
 import {
   ALL_NEWS_NOTIFICATION_SOURCE_IDS,
   NEWS_NOTIFICATION_SOURCES,
   normalizeNewsNotificationSourceIds,
 } from '@/domain/newsNotificationSources';
-import { registerAlertTask, unregisterAlertTask } from '@/lib/alertTask';
+import { priceAlertDeliveryLabel, priceMonitorLabel } from '@/domain/priceAlerts';
+import { useAllMarkets } from '@/data/useMarkets';
+import { buildRemotePriceRules } from '@/lib/priceAlertRegistration';
+import { setRemotePriceAlertsEnabled, syncRemotePriceAlerts } from '@/lib/priceAlertSync';
 import { formatPrice, formatProbability } from '@/lib/format';
-import { ensureNotificationPermission } from '@/lib/notifications';
 import {
   registerNewsPushNotifications,
   unregisterNewsPushNotifications,
@@ -24,6 +25,7 @@ import {
 import { useAlerts } from '@/store/alerts';
 import { useChartSettings } from '@/store/chartSettings';
 import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
+import { usePriceMonitor } from '@/store/priceMonitor';
 import { useWatchlists } from '@/store/watchlists';
 
 function StatusRow({ label, detail }: { label: string; detail: string }) {
@@ -31,7 +33,7 @@ function StatusRow({ label, detail }: { label: string; detail: string }) {
     <View style={styles.row}>
       <View style={styles.rowLeft}>
         <View style={styles.statusIcon}>
-          <Ionicons name="checkmark" size={12} color={Colors.background} />
+          <Ionicons name="server-outline" size={15} color={Colors.textMuted} />
         </View>
         <AppText variant="body">{label}</AppText>
       </View>
@@ -61,7 +63,13 @@ export default function SettingsScreen() {
   const showPosition = useChartSettings((s) => s.showPosition);
   const setShowPosition = useChartSettings((s) => s.setShowPosition);
   const alertNotifications = usePreferences((s) => s.alertNotifications);
-  const setAlertNotifications = usePreferences((s) => s.setAlertNotifications);
+  const disablePriceAlertsPending = usePreferences((s) => s.priceAlertsDisablePending);
+  const monitor = usePriceMonitor();
+  const { data: markets } = useAllMarkets();
+  let alertChangesPending = false;
+  try {
+    alertChangesPending = monitor.syncedRules !== JSON.stringify(buildRemotePriceRules(alerts, markets?.byId ?? {}, showOutcomeMarkets));
+  } catch { alertChangesPending = true; }
   const newsNotifications = usePreferences((s) => s.newsNotifications);
   const setNewsNotifications = usePreferences((s) => s.setNewsNotifications);
   const storedNewsNotificationSources = usePreferences((s) => s.newsNotificationSources);
@@ -80,23 +88,8 @@ export default function SettingsScreen() {
     if (pendingAction) return;
     setPendingAction('price-alerts');
     try {
-      if (!value) {
-        setAlertNotifications(false);
-        await unregisterAlertTask();
-        return;
-      }
-      const granted = await ensureNotificationPermission();
-      if (!granted) {
-        Alert.alert(
-          'Notifications are off',
-          'Enable notifications for TradingView in iOS Settings to receive price alerts.',
-        );
-        return;
-      }
-      await registerAlertTask();
-      setAlertNotifications(true);
+      await setRemotePriceAlertsEnabled(value);
     } catch (error) {
-      if (value) setAlertNotifications(false);
       Alert.alert(
         'Price alerts unavailable',
         error instanceof Error ? error.message : 'Could not update price alert notifications.',
@@ -161,7 +154,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <Screen>
+    <Screen edges={[]}>
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
@@ -174,7 +167,7 @@ export default function SettingsScreen() {
         <AppText variant="caption" muted style={styles.sectionLabel}>
           DISPLAY
         </AppText>
-        <GlassSurface style={styles.card}>
+        <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowText}>
               <AppText variant="body">Outcome markets</AppText>
@@ -216,41 +209,17 @@ export default function SettingsScreen() {
               accessibilityLabel="Position and PnL on charts"
             />
           </View>
-        </GlassSurface>
-
-        <AppText variant="caption" muted style={styles.sectionLabel}>
-          DATA SOURCES
-        </AppText>
-        <GlassSurface style={styles.card}>
-          <StatusRow label="Hyperliquid" detail="Live · keyless" />
-          <View style={styles.divider} />
-          <StatusRow label="trade.xyz perps" detail="Live · keyless" />
-          <View style={styles.divider} />
-          <StatusRow label="VIX · Cboe" detail="Live · keyless" />
-        </GlassSurface>
-
-        <AppText variant="caption" muted style={styles.sectionLabel}>
-          WATCHLISTS
-        </AppText>
-        <GlassSurface style={styles.card} interactive>
-          <Pressable style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]} onPress={onReset}>
-            <View style={styles.rowLeft}>
-              <Ionicons name="refresh" size={18} color={Colors.text} />
-              <AppText variant="body">Reset to defaults</AppText>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
-          </Pressable>
-        </GlassSurface>
+        </View>
 
         <AppText variant="caption" muted style={styles.sectionLabel}>
           PRICE ALERTS
         </AppText>
-        <GlassSurface style={styles.card}>
+        <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowText}>
-              <AppText variant="body">Notify me</AppText>
+              <AppText variant="body">Monitor on Mac mini</AppText>
               <AppText variant="caption" muted>
-                Get a notification when an alert triggers, even in the background.
+                Watch prices and send notifications while this app is closed. Cboe quotes are delayed.
               </AppText>
             </View>
             <GlassToggle
@@ -261,12 +230,95 @@ export default function SettingsScreen() {
               accessibilityLabel="Price alert notifications"
             />
           </View>
-        </GlassSurface>
+          {alertNotifications || monitor.error ? (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.row}>
+                <View style={styles.rowText}>
+                  <AppText variant="caption" muted>
+                    {disablePriceAlertsPending ? 'Turning monitoring off · waiting for sync' : monitor.error ?? (alertChangesPending
+                      ? 'Changes pending sync · previous rules may still be active'
+                      : priceMonitorLabel(monitor.result, monitor.sources))}
+                  </AppText>
+                </View>
+                <Pressable disabled={monitor.syncing} accessibilityRole="button" accessibilityLabel="Retry price alert sync"
+                  onPress={() => void syncRemotePriceAlerts().catch(() => undefined)}>
+                  <AppText variant="caption">{monitor.syncing ? 'Syncing…' : 'Retry'}</AppText>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
+        </View>
+
+        <AppText variant="caption" muted style={styles.sectionLabel}>
+          SAVED PRICE ALERTS
+        </AppText>
+        <View style={styles.card}>
+          {alerts.length === 0 ? (
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <View style={styles.emptyIcon}>
+                  <Ionicons name="notifications-outline" size={16} color={Colors.textMuted} />
+                </View>
+                <AppText variant="caption" muted style={styles.emptyText}>
+                  Long-press (or right-click) any symbol to set one.
+                </AppText>
+              </View>
+            </View>
+          ) : (
+            alerts.map((a, i) => (
+              <Fragment key={a.id}>
+                {i > 0 ? <View style={styles.divider} /> : null}
+                <View style={styles.row}>
+                  <View style={styles.alertText}>
+                    <AppText variant="body">
+                      {a.symbol} · {a.direction === 'up' ? '▲' : a.direction === 'down' ? '▼' : '±'}
+                      {a.pct}%
+                    </AppText>
+                    {a.remoteTriggered ? (
+                      <AppText variant="caption" muted>
+                        {(() => {
+                          const event = monitor.result?.events.find(event => event.alertId === a.id && event.createdAt === a.createdAt);
+                          return event ? priceAlertDeliveryLabel(event.delivery) : 'Previously triggered on Mac mini';
+                        })()}
+                      </AppText>
+                    ) : null}
+                    <AppText variant="caption" muted>
+                      {a.triggeredAt
+                        ? `Triggered @ ${formatAlertPrice(a.instrumentId, a.triggeredPrice)}`
+                        : `Armed from ${formatAlertPrice(a.instrumentId, a.anchorPrice)}`}
+                    </AppText>
+                  </View>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => removeAlert(a.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete alert">
+                    <Ionicons name="trash-outline" size={18} color={Colors.textMuted} />
+                  </Pressable>
+                </View>
+              </Fragment>
+            ))
+          )}
+        </View>
+        {alerts.length > 0 ? (
+          <View style={styles.card}>
+            <Pressable
+              style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]}
+              onPress={clearAlerts}>
+              <View style={styles.rowLeft}>
+                <Ionicons name="trash-outline" size={18} color={Colors.text} />
+                <AppText variant="body">Clear all alerts</AppText>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
+            </Pressable>
+          </View>
+        ) : null}
 
         <AppText variant="caption" muted style={styles.sectionLabel}>
           NEWS ALERTS
         </AppText>
-        <GlassSurface style={styles.card}>
+        <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowText}>
               <AppText variant="body">Push notifications</AppText>
@@ -302,60 +354,31 @@ export default function SettingsScreen() {
               </View>
             </Fragment>
           ))}
-        </GlassSurface>
-        <GlassSurface style={styles.card}>
-          {alerts.length === 0 ? (
-            <View style={styles.row}>
-              <View style={styles.rowLeft}>
-                <View style={styles.emptyIcon}>
-                  <Ionicons name="notifications-outline" size={16} color={Colors.textMuted} />
-                </View>
-                <AppText variant="caption" muted style={styles.emptyText}>
-                  Long-press (or right-click) any symbol to set one.
-                </AppText>
-              </View>
+        </View>
+
+        <AppText variant="caption" muted style={styles.sectionLabel}>
+          DATA SOURCES
+        </AppText>
+        <View style={styles.card}>
+          <StatusRow label="Hyperliquid" detail="Live · keyless" />
+          <View style={styles.divider} />
+          <StatusRow label="trade.xyz perps" detail="Live · keyless" />
+          <View style={styles.divider} />
+          <StatusRow label="VIX · Cboe" detail="Delayed · keyless" />
+        </View>
+
+        <AppText variant="caption" muted style={styles.sectionLabel}>
+          WATCHLISTS
+        </AppText>
+        <View style={styles.card}>
+          <Pressable style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]} onPress={onReset}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="refresh" size={18} color={Colors.text} />
+              <AppText variant="body">Reset to defaults</AppText>
             </View>
-          ) : (
-            alerts.map((a, i) => (
-              <Fragment key={a.id}>
-                {i > 0 ? <View style={styles.divider} /> : null}
-                <View style={styles.row}>
-                  <View style={styles.alertText}>
-                    <AppText variant="body">
-                      {a.symbol} · {a.direction === 'up' ? '▲' : a.direction === 'down' ? '▼' : '±'}
-                      {a.pct}%
-                    </AppText>
-                    <AppText variant="caption" muted>
-                      {a.triggeredAt
-                        ? `Triggered @ ${formatAlertPrice(a.instrumentId, a.triggeredPrice)}`
-                        : `Armed from ${formatAlertPrice(a.instrumentId, a.anchorPrice)}`}
-                    </AppText>
-                  </View>
-                  <Pressable
-                    hitSlop={8}
-                    onPress={() => removeAlert(a.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Delete alert">
-                    <Ionicons name="trash-outline" size={18} color={Colors.textMuted} />
-                  </Pressable>
-                </View>
-              </Fragment>
-            ))
-          )}
-        </GlassSurface>
-        {alerts.length > 0 ? (
-          <GlassSurface style={styles.card} interactive>
-            <Pressable
-              style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]}
-              onPress={clearAlerts}>
-              <View style={styles.rowLeft}>
-                <Ionicons name="trash-outline" size={18} color={Colors.text} />
-                <AppText variant="body">Clear all alerts</AppText>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
-            </Pressable>
-          </GlassSurface>
-        ) : null}
+            <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
+          </Pressable>
+        </View>
 
         <View style={styles.footer}>
           <AppText variant="caption" muted>
@@ -375,61 +398,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.xxxl,
-    gap: 12,
+    gap: 0,
   },
   sectionLabel: {
     marginTop: Spacing.xl,
-    marginLeft: 8,
+    marginBottom: 8,
     color: Colors.textFaint,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
-    letterSpacing: 1.1,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '600',
+    letterSpacing: 1,
   },
-  card: { borderRadius: Radius.lg },
+  card: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 72,
-    paddingHorizontal: 18,
-    paddingVertical: 15,
+    minHeight: 68,
+    paddingHorizontal: 0,
+    paddingVertical: 14,
   },
   actionRow: {
     minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: 0,
   },
-  rowPressed: { backgroundColor: 'rgba(255,255,255,0.065)' },
-  rowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  rowPressed: { backgroundColor: Colors.surfaceAlt },
+  rowLeft: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   rowText: { flex: 1, gap: 3, paddingRight: Spacing.lg },
-  sourceRow: { paddingLeft: Spacing.lg },
+  sourceRow: { paddingLeft: Spacing.md },
   alertText: { flex: 1, gap: 2 },
   statusIcon: {
     width: 18,
     height: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 9,
-    backgroundColor: Colors.text,
+
   },
   emptyIcon: {
     width: 32,
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+
   },
   emptyText: { flex: 1 },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.lg,
-    backgroundColor: 'rgba(255,255,255,0.075)',
+    backgroundColor: Colors.border,
   },
-  footer: { marginTop: Spacing.xl, marginBottom: Spacing.lg, alignItems: 'center', gap: 4 },
+  footer: { marginTop: Spacing.xl, marginBottom: Spacing.lg, gap: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border, paddingTop: Spacing.lg },
 });

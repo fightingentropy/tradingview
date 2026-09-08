@@ -35,6 +35,9 @@ export function useLivePriceFeed(instruments: Instrument[]) {
     const unsubs: Unsubscribe[] = [];
     bySource.forEach((coinKeys, source) => {
       const provider = getProvider(source);
+      if (provider?.subscribeConnection) {
+        unsubs.push(provider.subscribeConnection((status) => useLivePrices.getState().setConnection(source, status)));
+      }
       if (provider?.subscribePrices) {
         unsubs.push(provider.subscribePrices(coinKeys, applyTicks));
       }
