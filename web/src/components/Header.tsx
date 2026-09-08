@@ -39,7 +39,7 @@ const Header: Component = () => {
           onClick={() => setCurrentPage("trade")}
           class="flex items-center"
         >
-          <span class="shrink-0 select-none text-base font-semibold tracking-tight text-brand-accent">TradingView</span>
+          <span class="shrink-0 select-none text-base font-semibold tracking-tight text-brand-accent">Trading<span class="text-brand-slate-100">View</span></span>
         </button>
         <nav class="flex items-center gap-5">
           <button

@@ -291,7 +291,7 @@ const App: Component = () => {
       <Show when={currentPage() !== "charts"}>
         <header class="flex md:hidden items-center justify-between px-3 py-2 border-b border-brand-border">
           <button onClick={() => setCurrentPage("trade")}>
-            <span class="text-base font-semibold tracking-tight text-brand-accent">TradingView</span>
+            <span class="text-base font-semibold tracking-tight text-brand-accent">Trading<span class="text-brand-slate-100">View</span></span>
           </button>
           <div class="flex items-center gap-2">
             <AccountConnectionControl
