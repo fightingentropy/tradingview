@@ -12,6 +12,6 @@ points. It retains `trade-xyz` storage keys, auth audience and cryptographic
 purpose strings so the migration does not redefine those protocols. The new
 hostname requires signing in again and reconnecting any local API wallet.
 
-The former repository history and its untracked audit workflow were preserved
-in a local migration backup before retiring the standalone checkout. The old
-repository is archived; future changes belong in `tradingview/web`.
+After the consolidation was verified, the standalone GitHub repository,
+retired checkout, and local migration backups were deleted at the owner's
+request. Future changes belong in `tradingview/web`.
