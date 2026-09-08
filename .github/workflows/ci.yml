@@ -20,3 +20,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: web/.bun-version
+      - run: bun install --cwd web --frozen-lockfile
+      - run: bun run --cwd web check
+        env:
+          VITE_CONVEX_URL: https://qualified-zebra-483.eu-west-1.convex.cloud

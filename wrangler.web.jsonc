@@ -7,11 +7,11 @@
   "workers_dev": true,
   "preview_urls": false,
   "assets": {
-    "directory": "./dist",
+    "directory": "./web/dist",
     "binding": "ASSETS",
     "html_handling": "none",
-    "not_found_handling": "none",
-    "run_worker_first": ["/", "/*.html", "/api/*"]
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/account", "/account/", "/economic-calendar", "/economic-calendar/", "/news", "/news/", "/markets", "/markets/", "/symbol/*"]
   },
   "observability": {
     "enabled": true

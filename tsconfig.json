@@ -17,5 +17,5 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],
-  "exclude": ["worker"]
+  "exclude": ["worker", "web"]
 }

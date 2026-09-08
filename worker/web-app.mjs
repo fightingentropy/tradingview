@@ -1,4 +1,3 @@
-const SITE_ORIGIN_PLACEHOLDER = 'https://site-origin.invalid';
 const ECONOMIC_CALENDAR_PATH = '/api/economic-calendar';
 const ECONOMIC_CALENDAR_UPSTREAM = 'https://economic-calendar.tradingview.com/events';
 const MAX_CALENDAR_RANGE_MS = 45 * 24 * 60 * 60 * 1000;
@@ -7,10 +6,33 @@ const ALLOWED_COUNTRIES = new Set([
   'IT', 'CH', 'NZ', 'BR', 'MX', 'IN', 'KR', 'ZA', 'TR',
 ]);
 
-const DYNAMIC_ROUTES = [
-  { pattern: /^\/symbol\/[^/]+\/?$/, asset: '/symbol/%5Bid%5D.html' },
-  { pattern: /^\/outcomes\/[^/]+\/?$/, asset: '/outcomes/%5Bid%5D.html' },
-];
+const LEGACY_ROUTES = new Map([
+  ['/account', '/portfolio'],
+  ['/economic-calendar', '/calendar'],
+  ['/news', '/brief'],
+  ['/markets', '/trade'],
+]);
+
+export function legacyWebPath(pathname) {
+  const path = pathname.replace(/\/$/, '');
+  const route = LEGACY_ROUTES.get(path);
+  if (route) return route;
+  const match = path.match(/^\/symbol\/([^/]+)$/);
+  if (!match) return null;
+  let id;
+  try {
+    id = decodeURIComponent(match[1]);
+  } catch {
+    return '/trade';
+  }
+  // These instrument IDs have an exact counterpart in the imported terminal.
+  // Leave other instruments at market selection instead of guessing a ticker.
+  const perp = id.match(/^hl:perp:([A-Za-z0-9._-]+)$/);
+  if (perp) return `/trade/${perp[1]}`;
+  const xyz = id.match(/^hl:xyz:([A-Za-z0-9._-]+)$/);
+  if (xyz) return `/trade/${xyz[1]}`;
+  return '/trade';
+}
 
 function calendarHeaders() {
   return {
@@ -128,36 +150,6 @@ export async function handleEconomicCalendarRequest(request, fetcher = fetch) {
   }
 }
 
-function assetRequest(request, pathname) {
-  const url = new URL(request.url);
-  url.pathname = pathname;
-  return new Request(url, request);
-}
-
-async function fetchAsset(request, assets, pathname) {
-  return assets.fetch(assetRequest(request, pathname));
-}
-
-async function withSiteOrigin(response, request) {
-  const contentType = response.headers.get('content-type') ?? '';
-  if (request.method !== 'GET' || !contentType.includes('text/html')) {
-    return response;
-  }
-
-  const headers = new Headers(response.headers);
-  headers.delete('content-length');
-  const html = (await response.text()).replaceAll(
-    SITE_ORIGIN_PLACEHOLDER,
-    new URL(request.url).origin,
-  );
-
-  return new Response(html, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -165,26 +157,17 @@ export default {
       return handleEconomicCalendarRequest(request);
     }
 
-    const direct = await env.ASSETS.fetch(request);
-    if (direct.status !== 404 || !['GET', 'HEAD'].includes(request.method)) {
-      return withSiteOrigin(direct, request);
+    if (url.pathname.startsWith('/api/')) {
+      return Response.json({ error: 'not_found' }, { status: 404 });
     }
-
-    const cleanPath = url.pathname === '/' ? '/index' : url.pathname.replace(/\/$/, '');
-    const candidates = [`${cleanPath}.html`, `${cleanPath}/index.html`];
-    const dynamicRoute = DYNAMIC_ROUTES.find(({ pattern }) => pattern.test(url.pathname));
-    if (dynamicRoute) candidates.unshift(dynamicRoute.asset);
-
-    for (const pathname of candidates) {
-      const response = await fetchAsset(request, env.ASSETS, pathname);
-      if (response.status !== 404) return withSiteOrigin(response, request);
+    const legacyPath = legacyWebPath(url.pathname);
+    if (legacyPath) {
+      if (!['GET', 'HEAD'].includes(request.method)) {
+        return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } });
+      }
+      url.pathname = legacyPath;
+      return Response.redirect(url, 308);
     }
-
-    const notFound = await fetchAsset(request, env.ASSETS, '/+not-found.html');
-    const response = new Response(notFound.body, {
-      status: 404,
-      headers: notFound.headers,
-    });
-    return withSiteOrigin(response, request);
+    return env.ASSETS.fetch(request);
   },
 };

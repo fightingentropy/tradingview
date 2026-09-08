@@ -1,7 +1,30 @@
-# TradingView Clone (Expo)
+# TradingView
 
-A fast, snappy TradingView-style mobile app: watchlists of ticker symbols showing
-where they trade, tap a symbol for a live candlestick chart.
+A native Expo app and a SolidJS web terminal in one repository. The native app
+provides watchlists, charts, news and Hyperliquid account tools. The web app in
+`web/` is the former xyz-dex terminal, including its existing Convex backend,
+paper ledger, API-wallet trading, portfolio, vaults, research and multi-chart views.
+
+## Web app
+
+Live: https://tradingview-web.erlinhoxha.workers.dev
+
+```sh
+npm run web:install      # Bun 1.3.10; isolated web dependencies
+npm run web              # Vite at http://localhost:3000
+npm run web:check        # UI/backend types, tests and production build
+npm run web:deploy       # build web/dist and publish the TradingView Worker
+```
+
+Copy `web/.env.example` to the appropriate local environment file and configure
+`VITE_CONVEX_URL`. The existing production Convex deployment is retained. Backend
+secrets stay in Convex. See [web/README.md](web/README.md) for backend setup,
+API-wallet behavior and the hostname change.
+
+The native and web packages intentionally keep independent dependencies and
+compilers. `npm run check` validates the native app and relays; `npm run web:check`
+validates the web package. CI runs both. The old Expo web UI is removed.
+
 
 ## Data sources
 
@@ -70,7 +93,8 @@ The API credentials and reusable session are stored in macOS Keychain, not the r
 ## Structure
 
 ```
-src/app/            Expo Router routes (tabs: Watchlist | Markets | News | Account | Settings)
+web/                SolidJS/Vite web app, Convex functions and independent Bun lockfile
+src/app/            Native Expo Router routes (tabs: Watchlist | Markets | News | Account | Settings)
 src/providers/      hyperliquid/ (rest, ws, coins, provider) · cboe/ · registry
 src/data/           React Query hooks (useMarkets, useCandles, useLivePriceFeed)
 src/store/          Zustand stores (watchlists + MMKV persistence, live prices)

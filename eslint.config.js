@@ -5,7 +5,7 @@ const expoConfig = require("eslint-config-expo/flat");
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ["dist/*"],
+    ignores: ["dist/**", "web/**"],
   },
   {
     // Reanimated shared values and gesture-time frozen refs are intentionally

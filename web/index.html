@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site wss://*.convex.site https://api.hyperliquid.xyz https://api.hyperliquid-testnet.xyz wss://api.hyperliquid.xyz wss://api.hyperliquid-testnet.xyz; img-src 'self' data: https://s3-symbol-logo.tradingview.com; font-src https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://challenges.cloudflare.com; worker-src 'self'; frame-src https://challenges.cloudflare.com; base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
+    />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <title>TradingView</title>
+    <meta name="description" content="A live trading terminal with charts, watchlists, portfolio tools and market research." />
+    <link rel="icon" type="image/svg+xml" href="/tradingview.svg" />
+    <meta name="theme-color" content="#0a0d11" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>
