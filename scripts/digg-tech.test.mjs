@@ -3,7 +3,81 @@ import test from 'node:test';
 
 import { parseDiggTech } from './digg-tech.mjs';
 
-test('parses ranked Digg Tech stories from the current structured payload', () => {
+test('parses the current initialPage feed, preserving rank and topic links', () => {
+  const story = {
+    type: 'cluster',
+    clusterId: 'rank-one',
+    clusterUrlId: 'first123',
+    summary: { title: 'First ranked story', description: 'A useful summary.' },
+    createdAt: '2026-09-12T11:32:36.230723+00:00',
+  };
+  const payload = ['$', '$Llayout', null, {
+    children: ['$', '$Lfeed', null, {
+      basePath: '/tech',
+      defaultView: 'top',
+      topicSlug: 'tech',
+      initialPage: {
+        view: 'top',
+        posts: [
+          story,
+          { ...story, clusterId: 'missing-slug', clusterUrlId: null },
+          { ...story, clusterId: 'bad-date', createdAt: 'invalid' },
+          null,
+          {
+            ...story,
+            clusterId: 'rank-two',
+            clusterUrlId: 'second456',
+            summary: { title: 'Second ranked story' },
+            createdAt: '2026-09-12T12:00:00Z',
+          },
+        ],
+      },
+    }],
+  }];
+  const html = `<head><link rel="icon" href="/icon.svg?current"></head>
+    <script>self.__next_f.push(${JSON.stringify([1, `19:${JSON.stringify(payload)}\n`])})</script>`;
+
+  assert.deepEqual(parseDiggTech(html), [
+    {
+      id: 'rank-one',
+      source: 'digg',
+      author: { name: 'Digg Tech', handle: 'tech', avatarUrl: 'https://digg.com/icon.svg?current' },
+      text: 'First ranked story\n\nA useful summary.',
+      publishedAt: '2026-09-12T11:32:36.230Z',
+      url: 'https://digg.com/tech/first123',
+      media: [],
+    },
+    {
+      id: 'rank-two',
+      source: 'digg',
+      author: { name: 'Digg Tech', handle: 'tech', avatarUrl: 'https://digg.com/icon.svg?current' },
+      text: 'Second ranked story',
+      publishedAt: '2026-09-12T12:00:00.000Z',
+      url: 'https://digg.com/tech/second456',
+      media: [],
+    },
+  ]);
+});
+
+test('selects the top initialPage instead of unrelated feeds and uses topicSlug', () => {
+  const story = {
+    clusterId: 'top-story',
+    clusterUrlId: 'abc123',
+    summary: { title: 'Top story' },
+    createdAt: '2026-09-12T11:00:00Z',
+  };
+  const payload = [
+    { topicSlug: 'news', initialPage: { view: 'latest', posts: [{ ...story, clusterId: 'latest-story' }] } },
+    { topicSlug: 'ai', initialPage: { view: 'top', posts: [story] } },
+  ];
+  const html = `<script>self.__next_f.push(${JSON.stringify([1, `19:${JSON.stringify(payload)}`])})</script>`;
+  const items = parseDiggTech(html);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'top-story');
+  assert.equal(items[0].url, 'https://digg.com/ai/abc123');
+});
+
+test('parses ranked Digg Tech stories from the previous storiesByFilter payload', () => {
   const payload = [
     '$',
     '$Lfeed',

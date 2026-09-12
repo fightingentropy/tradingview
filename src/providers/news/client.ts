@@ -8,12 +8,12 @@ import type {
   NewsSourceFilter,
   NewsSummarySourceReference,
 } from '@/domain/news';
+import { DEFAULT_NEWS_FEED_LIMIT } from '@/domain/news';
 
 const DEV_NEWS_FEED_URL = 'http://127.0.0.1:8430/feed';
 const NEWS_FEED_URL = process.env.EXPO_PUBLIC_NEWS_FEED_URL?.trim() ||
   (__DEV__ ? DEV_NEWS_FEED_URL : undefined);
 const NEWS_RELAY_ACCESS_TOKEN = process.env.EXPO_PUBLIC_NEWS_RELAY_ACCESS_TOKEN?.trim();
-const PAGE_SIZE = 40;
 
 export const isNewsFeedConfigured = Boolean(NEWS_FEED_URL);
 export const usesLocalNewsFeed = NEWS_FEED_URL === DEV_NEWS_FEED_URL;
@@ -227,12 +227,13 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
 export async function loadNewsFeed(
   source: NewsSourceFilter,
   cursor?: string,
+  limit = DEFAULT_NEWS_FEED_LIMIT,
 ): Promise<NewsFeedPage> {
   if (!NEWS_FEED_URL) throw new Error('News feed is not connected');
 
   const url = new URL(NEWS_FEED_URL);
   url.searchParams.set('source', source);
-  url.searchParams.set('limit', String(PAGE_SIZE));
+  url.searchParams.set('limit', String(limit));
   if (cursor) url.searchParams.set('cursor', cursor);
 
   const response = await fetch(url, {

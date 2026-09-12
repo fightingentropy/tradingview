@@ -9,6 +9,7 @@ import { NewsSourceIcon } from '@/components/NewsSourceIcon';
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useNewsFeed } from '@/data/useNewsFeed';
+import { RELATED_NEWS_FEED_LIMIT } from '@/domain/news';
 import { createRelatedNewsMatcher, type RelatedNewsItem } from '@/domain/relatedNews';
 import type { Instrument } from '@/domain/types';
 import { isNewsFeedConfigured } from '@/providers/news/client';
@@ -78,11 +79,11 @@ export function InstrumentNews({ instruments, title }: { instruments: Instrument
   const {
     items, data, notices, isLoading, isError, isRefetching, refetch,
     fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError,
-  } = useNewsFeed('all');
+  } = useNewsFeed('all', RELATED_NEWS_FEED_LIMIT);
   const matcher = useMemo(() => createRelatedNewsMatcher(instruments), [instruments]);
   const related = useMemo(() => matcher(items), [matcher, items]);
   const pagesChecked = data?.pages.length ?? 0;
-  const searchMore = instruments.length > 0 && related.length < 8 && pagesChecked < 5 && hasNextPage;
+  const searchMore = instruments.length > 0 && items.length < RELATED_NEWS_FEED_LIMIT && related.length < 8 && pagesChecked < 5 && hasNextPage;
   const scanning = Boolean(searchMore && !isError && !isFetchNextPageError);
   const updatedAt = data?.pages[0]?.updatedAt;
 

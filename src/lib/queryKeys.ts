@@ -1,11 +1,11 @@
 import type { CandleInterval } from '@/domain/types';
 import type { HlNetwork } from '@/lib/hyperliquid/info';
-import type { NewsSourceFilter } from '@/domain/news';
+import { DEFAULT_NEWS_FEED_LIMIT, type NewsSourceFilter } from '@/domain/news';
 
 /** Centralized query-key factory so cache reads/writes never drift. */
 export const queryKeys = {
   instruments: () => ['instruments'] as const,
-  newsFeed: (source: NewsSourceFilter) => ['news-feed', source] as const,
+  newsFeed: (source: NewsSourceFilter, limit = DEFAULT_NEWS_FEED_LIMIT) => ['news-feed', source, limit] as const,
   economicCalendar: (dateKey: string) => ['economic-calendar', dateKey] as const,
   economicCalendarRange: (fromDateKey: string, toDateKey: string) =>
     ['economic-calendar-range', fromDateKey, toDateKey] as const,

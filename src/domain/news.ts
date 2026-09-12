@@ -1,6 +1,9 @@
 export type NewsSource = 'x' | 'telegram' | 'digg' | 'paste';
 export type NewsSourceFilter = 'all' | NewsSource;
 
+export const DEFAULT_NEWS_FEED_LIMIT = 40;
+export const RELATED_NEWS_FEED_LIMIT = 200;
+
 export interface NewsAuthor {
   name: string;
   /** X @handle, Telegram channel handle, or source slug, without a required leading @. */

@@ -86,6 +86,18 @@ function parseNextDataEnvelope(script) {
 
 function findTopStoriesFeed(value) {
   if (!value || typeof value !== 'object') return undefined;
+  // Digg's current topic pages carry the ranked feed in initialPage.
+  if (
+    isRecord(value) &&
+    isRecord(value.initialPage) &&
+    value.initialPage.view === 'top' &&
+    Array.isArray(value.initialPage.posts)
+  ) {
+    return {
+      posts: value.initialPage.posts,
+      topic: typeof value.topicSlug === 'string' ? value.topicSlug.trim() : '',
+    };
+  }
   if (isRecord(value) && isRecord(value.storiesByFilter)) {
     const top = value.storiesByFilter.top;
     if (isRecord(top) && Array.isArray(top.posts)) {

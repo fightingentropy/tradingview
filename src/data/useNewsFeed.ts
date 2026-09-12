@@ -1,14 +1,14 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import type { NewsFeedNotice, NewsItem, NewsSourceFilter } from '@/domain/news';
+import { DEFAULT_NEWS_FEED_LIMIT, type NewsFeedNotice, type NewsItem, type NewsSourceFilter } from '@/domain/news';
 import { queryKeys } from '@/lib/queryKeys';
 import { isNewsFeedConfigured, loadNewsFeed } from '@/providers/news/client';
 
-export function useNewsFeed(source: NewsSourceFilter) {
+export function useNewsFeed(source: NewsSourceFilter, limit = DEFAULT_NEWS_FEED_LIMIT) {
   const query = useInfiniteQuery({
-    queryKey: queryKeys.newsFeed(source),
-    queryFn: ({ pageParam }) => loadNewsFeed(source, pageParam),
+    queryKey: queryKeys.newsFeed(source, limit),
+    queryFn: ({ pageParam }) => loadNewsFeed(source, pageParam, limit),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled: isNewsFeedConfigured,

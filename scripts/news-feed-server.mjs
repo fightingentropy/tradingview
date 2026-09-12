@@ -541,7 +541,8 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   const requested = Number(url.searchParams.get('limit') ?? 40);
-  const count = Number.isFinite(requested) ? Math.min(MAX_COUNT, Math.max(1, Math.floor(requested))) : 40;
+  const maxCount = source === 'all' ? MAX_RELAY_SNAPSHOT_COUNT : MAX_COUNT;
+  const count = Number.isFinite(requested) ? Math.min(maxCount, Math.max(1, Math.floor(requested))) : 40;
 
   try {
     let items;

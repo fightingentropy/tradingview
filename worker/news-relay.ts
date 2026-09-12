@@ -623,7 +623,7 @@ async function handleFeed(request: Request, env: Env): Promise<Response> {
     return json({ error: 'source must be all, x, telegram, digg, or paste' }, 400, true);
   }
   const requested = Number(url.searchParams.get('limit') ?? 40);
-  const limit = Number.isFinite(requested) ? Math.min(100, Math.max(1, Math.floor(requested))) : 40;
+  const limit = Number.isFinite(requested) ? Math.min(MAX_FEED_ITEMS, Math.max(1, Math.floor(requested))) : 40;
   const items = snapshot.items
     .filter((item) => source === 'all' || item.source === source)
     .slice(0, limit);

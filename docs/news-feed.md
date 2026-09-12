@@ -58,6 +58,11 @@ Authorization: Bearer app-access-token
 
 `source` is `all`, `x`, `telegram`, `digg`, or `paste`.
 
+The relay accepts `limit` up to 200 (default 40). Ticker and watchlist news request
+the latest 200 combined posts and match instrument mentions on the device. Their
+cache is separate from the regular 40-post news feed. The local bridge also allows
+200 for `source=all`; individual upstream pulls remain capped at 100 per source.
+
 ## Response
 
 ```json
