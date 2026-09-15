@@ -134,10 +134,11 @@ const MarketInfo: Component = () => {
   });
 
   return (
-    <div class="flex items-center gap-4 px-4 py-2 bg-brand-surface border-b border-brand-border">
+    <div class="market-overview">
       {/* Market Selector */}
       <button
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-800/50 transition-colors"
+        class="market-selector"
+        aria-label="Choose market"
         onClick={() => setSearchOpen(true)}
       >
         <Show
@@ -150,23 +151,29 @@ const MarketInfo: Component = () => {
         >
           <img src={iconSrc()} alt={displaySymbol()} class="w-6 h-6" />
         </Show>
-        <span class="font-semibold text-slate-100">{displayMarketName()}</span>
-        <span class="text-xs px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded">
-          {leverageLabel()}
+        <span class="market-selector-copy">
+          <span class="font-semibold text-slate-100">
+            {displayMarketName()}
+          </span>
+          <span class="market-subtitle">
+            {currentMarketType() === "spot" ? "Spot market" : "Perpetual"}
+            <Show when={currentMarketType() !== "spot"}>
+              <span>·</span>
+              {leverageLabel()}
+            </Show>
+          </span>
         </span>
         <ChevronDown />
       </button>
 
       {/* Price */}
-      <div class="flex flex-col">
-        <span class="text-lg font-bold text-brand-green-400 font-mono">
-          {markPrice()}
-        </span>
+      <div class="market-mark">
+        <span class="market-mark-price">{markPrice()}</span>
         <span class="text-xs text-brand-slate-400">Mark Price</span>
       </div>
 
       {/* Stats */}
-      <div class="flex items-center gap-6 ml-4 text-sm">
+      <div class="market-stats">
         <div class="flex flex-col">
           <span class={`font-mono ${changeColor()}`}>{changeText()}</span>
           <span class="text-xs text-brand-slate-500">24h Change</span>
@@ -190,7 +197,7 @@ const MarketInfo: Component = () => {
               <span class="font-mono text-slate-200">{fundingCountdown()}</span>
             </div>
             <span class="text-xs text-brand-slate-500">
-              Funding / Countdown
+              Funding / Next payment
             </span>
           </div>
         </Show>

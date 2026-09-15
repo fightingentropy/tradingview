@@ -55,7 +55,7 @@ const OrderHistoryTable = lazy(() =>
 const TradeHistoryTable = lazy(() => import("./TradeHistoryTable"));
 
 const HEIGHT_STORAGE_KEY = "trade-xyz-trade-panel-height";
-const DEFAULT_HEIGHT = 220;
+const DEFAULT_HEIGHT = 200;
 const MIN_HEIGHT = 160;
 const ACTIVITY_POLL_MS = 60_000;
 
@@ -79,8 +79,7 @@ const loadHeight = () => {
 
 const TradePanel: Component = () => {
   const [activeTab, setActiveTab] = createSignal<AccountTab>("positions");
-  const [sideFilter, setSideFilter] =
-    createSignal<AccountSideFilter>("all");
+  const [sideFilter, setSideFilter] = createSignal<AccountSideFilter>("all");
   const [marketFilter, setMarketFilter] = createSignal("all");
   const [panelHeight, setPanelHeight] = createSignal(loadHeight());
   let moveHandler: ((event: MouseEvent) => void) | null = null;
@@ -174,7 +173,7 @@ const TradePanel: Component = () => {
 
   return (
     <div
-      class="flex shrink-0 flex-col border-t border-brand-border bg-brand-surface"
+      class="account-dock flex shrink-0 flex-col border-t border-brand-border bg-brand-surface"
       style={{ height: `${panelHeight()}px` }}
     >
       <div

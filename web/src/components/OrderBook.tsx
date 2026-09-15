@@ -53,34 +53,10 @@ const OrderBook: Component = () => {
   });
 
   return (
-    <div class="flex flex-col h-full bg-brand-surface border-l border-brand-border">
+    <div class="order-book flex flex-col h-full">
       {/* Header */}
-      <div class="flex items-center justify-between px-3 py-2 border-b border-brand-border">
-        <span class="text-xs font-medium text-slate-200">
-          Order Book (CLOB)
-        </span>
-        <div class="flex gap-1">
-          <button class="p-1 rounded hover:bg-slate-800">
-            <svg
-              class="w-4 h-4 text-brand-slate-400"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-            >
-              <rect x="2" y="2" width="5" height="12" rx="1" />
-              <rect x="9" y="2" width="5" height="12" rx="1" />
-            </svg>
-          </button>
-          <button class="p-1 rounded bg-slate-800">
-            <svg
-              class="w-4 h-4 text-brand-accent"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-            >
-              <rect x="2" y="2" width="12" height="5" rx="1" />
-              <rect x="2" y="9" width="12" height="5" rx="1" />
-            </svg>
-          </button>
-        </div>
+      <div class="book-heading flex items-center justify-between px-3 border-b border-brand-border">
+        <span class="text-xs font-medium text-slate-200">Order book</span>
       </div>
 
       {/* Column Headers */}
@@ -98,71 +74,71 @@ const OrderBook: Component = () => {
           </div>
         }
       >
-      {/* Asks */}
-      <div class="flex-1 overflow-hidden flex flex-col justify-end">
-        <For each={asksForDisplay()}>
-          {(level) => (
-            <div class="grid grid-cols-3 gap-2 px-3 py-0.5 text-xs relative">
-              <div
-                class="absolute inset-0 bg-brand-red-400/10"
-                style={{
-                  width: `${(level.total / maxTotal()) * 100}%`,
-                  right: 0,
-                  left: "auto",
-                }}
-              />
-              <div class="text-brand-red-400 font-mono relative z-10">
-                {level.price.toFixed(priceDecimals())}
+        {/* Asks */}
+        <div class="flex-1 overflow-hidden flex flex-col justify-end">
+          <For each={asksForDisplay()}>
+            {(level) => (
+              <div class="book-level grid grid-cols-3 gap-2 px-3 text-xs relative">
+                <div
+                  class="absolute inset-0 bg-brand-red-400/7"
+                  style={{
+                    width: `${(level.total / maxTotal()) * 100}%`,
+                    right: 0,
+                    left: "auto",
+                  }}
+                />
+                <div class="text-brand-red-400 font-mono relative z-10">
+                  {level.price.toFixed(priceDecimals())}
+                </div>
+                <div class="text-right text-slate-300 font-mono relative z-10">
+                  {formatSize(level.size)}
+                </div>
+                <div class="text-right text-brand-slate-400 font-mono relative z-10">
+                  {formatSize(level.total)}
+                </div>
               </div>
-              <div class="text-right text-slate-300 font-mono relative z-10">
-                {formatSize(level.size)}
-              </div>
-              <div class="text-right text-brand-slate-400 font-mono relative z-10">
-                {formatSize(level.total)}
-              </div>
-            </div>
-          )}
-        </For>
-      </div>
-
-      {/* Spread */}
-      <div class="px-3 py-2 border-y border-brand-border bg-brand-screen/50">
-        <div class="flex items-center justify-between text-xs">
-          <span class="text-brand-green-400 font-mono font-semibold">
-            {markPrice()}
-          </span>
-          <span class="text-brand-slate-500">
-            Spread: {spreadPercent().toFixed(3)}%
-          </span>
+            )}
+          </For>
         </div>
-      </div>
 
-      {/* Bids */}
-      <div class="flex-1 overflow-hidden">
-        <For each={bids()}>
-          {(level) => (
-            <div class="grid grid-cols-3 gap-2 px-3 py-0.5 text-xs relative">
-              <div
-                class="absolute inset-0 bg-brand-green-400/10"
-                style={{
-                  width: `${(level.total / maxTotal()) * 100}%`,
-                  right: 0,
-                  left: "auto",
-                }}
-              />
-              <div class="text-brand-green-400 font-mono relative z-10">
-                {level.price.toFixed(priceDecimals())}
+        {/* Spread */}
+        <div class="px-3 py-2 border-y border-brand-border bg-brand-screen/50">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-brand-green-400 font-mono font-semibold">
+              {markPrice()}
+            </span>
+            <span class="text-brand-slate-500">
+              Spread: {spreadPercent().toFixed(3)}%
+            </span>
+          </div>
+        </div>
+
+        {/* Bids */}
+        <div class="flex-1 overflow-hidden">
+          <For each={bids()}>
+            {(level) => (
+              <div class="book-level grid grid-cols-3 gap-2 px-3 text-xs relative">
+                <div
+                  class="absolute inset-0 bg-brand-green-400/7"
+                  style={{
+                    width: `${(level.total / maxTotal()) * 100}%`,
+                    right: 0,
+                    left: "auto",
+                  }}
+                />
+                <div class="text-brand-green-400 font-mono relative z-10">
+                  {level.price.toFixed(priceDecimals())}
+                </div>
+                <div class="text-right text-slate-300 font-mono relative z-10">
+                  {formatSize(level.size)}
+                </div>
+                <div class="text-right text-brand-slate-400 font-mono relative z-10">
+                  {formatSize(level.total)}
+                </div>
               </div>
-              <div class="text-right text-slate-300 font-mono relative z-10">
-                {formatSize(level.size)}
-              </div>
-              <div class="text-right text-brand-slate-400 font-mono relative z-10">
-                {formatSize(level.total)}
-              </div>
-            </div>
-          )}
-        </For>
-      </div>
+            )}
+          </For>
+        </div>
       </Show>
     </div>
   );

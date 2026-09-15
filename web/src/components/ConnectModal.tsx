@@ -6,11 +6,7 @@ import {
   onCleanup,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import {
-  authReady,
-  isAuthenticated,
-  login,
-} from "../stores/auth";
+import { authReady, isAuthenticated, login } from "../stores/auth";
 import {
   apiWalletConnectionLabel,
   closeConnect,
@@ -28,9 +24,6 @@ import {
 } from "../stores/apiWalletVault";
 import { unlockSavedApiWallet } from "../stores/apiWalletConnection";
 import { openSettings } from "../stores/settings";
-
-const WALLETCONNECT_UNAVAILABLE_REASON =
-  "WalletConnect is unavailable in this build because its provider SDK and project configuration are not installed.";
 
 const ConnectModal: Component = () => {
   let dialogRef: HTMLDivElement | undefined;
@@ -195,46 +188,6 @@ const ConnectModal: Component = () => {
             <div class="space-y-2 p-4">
               <button
                 type="button"
-                disabled
-                aria-describedby="walletconnect-unavailable-reason"
-                class="flex w-full cursor-not-allowed items-start gap-3 rounded-lg border border-brand-border bg-brand-screen/50 p-4 text-left opacity-60"
-              >
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border text-brand-slate-400">
-                  <svg
-                    aria-hidden="true"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M8 12.5 11.5 9a3.5 3.5 0 0 1 5 5L14 16.5" />
-                    <path d="m16 11.5-3.5 3.5a3.5 3.5 0 0 1-5-5L10 7.5" />
-                  </svg>
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-semibold text-slate-200">
-                      WalletConnect
-                    </span>
-                    <span class="rounded border border-brand-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-brand-slate-500">
-                      Unavailable
-                    </span>
-                  </span>
-                  <span
-                    id="walletconnect-unavailable-reason"
-                    class="mt-1 block text-xs leading-5 text-brand-slate-500"
-                  >
-                    {WALLETCONNECT_UNAVAILABLE_REASON}
-                  </span>
-                </span>
-              </button>
-
-              <button
-                type="button"
                 disabled={
                   apiWalletVaultUnlockPending() ||
                   hyperliquidConnectionStatus() === "connecting"
@@ -332,7 +285,7 @@ const ConnectModal: Component = () => {
                   <span class="mt-1 block text-xs leading-5 text-brand-slate-500">
                     {isAuthenticated()
                       ? "Your TradingView account is already signed in."
-                      : "Use your TradingView email account for the paper ledger, vaults and profile."}
+                      : "Use your TradingView email account for the paper ledger and profile."}
                   </span>
                 </span>
               </button>

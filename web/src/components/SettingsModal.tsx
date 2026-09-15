@@ -50,7 +50,6 @@ import {
   setHyperliquidAccountMode,
   setHyperliquidExecutionEnabled,
 } from "../stores/hyperliquidExecution";
-import { isVaultTradingAccount } from "../stores/tradingAccount";
 import {
   apiWalletVaultError,
   apiWalletVaultMetadata,
@@ -169,8 +168,7 @@ const SettingsModal: Component = () => {
   const marginDisabled = () =>
     isTogglingMargin() ||
     isHyperliquidExecution() ||
-    !isAuthenticated() ||
-    isVaultTradingAccount();
+    !isAuthenticated();
 
   const marginDescription = () => {
     if (isHyperliquidExecution()) {
@@ -180,9 +178,6 @@ const SettingsModal: Component = () => {
       return "Controls simulated collateral only while Hyperliquid execution is paused.";
     }
     if (!isAuthenticated()) return "Sign in to change your account margin mode.";
-    if (isVaultTradingAccount()) {
-      return "Paper vault accounts use the standard simulated margin model.";
-    }
     return "Use eligible simulated spot balances as collateral for paper perpetual positions.";
   };
 

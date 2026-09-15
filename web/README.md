@@ -11,7 +11,7 @@ future-dated oracle data fails closed.
 ## Features
 - Trade view with market stats, chart, order book, and order form
 - Portfolio view and simple mobile navigation
-- Brief, economic-calendar, multi-chart, options, and vault views
+- Brief, economic-calendar, and multi-chart views
 - Symbol search modal with keyboard shortcuts
 - Candlestick chart with volume and moving averages
 - Local caching for chart data and UI settings
@@ -20,6 +20,14 @@ future-dated oracle data fails closed.
 - Hyperliquid Standard, Unified, and Portfolio account-mode display
 - Live spot/perp placement, cancellation, position close, leverage, and
   position-level TP/SL updates
+
+## Retired features
+
+Options and pooled Vaults have been removed from navigation, routes, client
+stores, and server endpoints. Old links return to Trade. Legacy vault tables
+and owner fields remain in the schema only to preserve historical records;
+no vault money movement or trading endpoints remain. Encrypted API-wallet
+storage is a separate security feature and is retained.
 
 ## Execution modes
 
@@ -64,9 +72,8 @@ is still in the `default` mode. Changing an already initialized mode requires
 the master wallet in official Hyperliquid settings; this app never requests the
 master key.
 
-Only spot and perpetual orders from the Trade view use the API wallet. Options
-and the Convex-specific vault/admin workflows remain paper/application
-features. One API wallet is limited to one active TradingView tab; use a separate
+Only spot and perpetual orders from the Trade view use the API wallet.
+The Convex admin workflow manages the paper ledger. One API wallet is limited to one active TradingView tab; use a separate
 agent for another tab or trading process. When execution is paused, market data
 returns to mainnet so it stays aligned with the Convex paper-settlement oracle.
 Live TP/SL can be added to a filled position from the Positions table. It is
@@ -147,6 +154,13 @@ bun run dev
 `bun run dev` and `bun run dev:ui` both run Vite only. For a local Convex
 backend, run `bun run dev:convex` in one terminal and `bun run dev:ui` in
 another.
+
+The economic calendar loads a week at a time from the existing
+`/api/economic-calendar` endpoint. Vite proxies this read-only feed to
+`trade.erlin.org` during local development. The calendar supports previous/next
+weeks and date jumps, shows release times in Europe/London (including daylight
+saving changes), and refreshes the current week every minute while visible.
+Future weeks show only events already published by the provider.
 
 Build and preview:
 
@@ -266,7 +280,7 @@ widget alone.
 
 ## Fixed-point accounting migration
 
-New balance, order, position, trade, vault and price writes include canonical
+New balance, order, position, trade and price writes include canonical
 decimal values plus `fixed-point-v1` precision metadata. Existing rows remain
 readable and are lazily upgraded when mutated. Before declaring an existing
 deployment fully migrated, run `migrations:backfillAccountingV1` for every
@@ -301,8 +315,6 @@ env files.
   - `/brief`
   - `/calendar`
   - `/charts`
-  - `/options`
-  - `/vaults` or `/vaults/VAULT_ID`
 - The app expects network access to the selected Hyperliquid endpoint for live
   market/account data and to Convex for paper trading and custom auth.
 - Unit tests, type-checks, builds, and dependency audits do not prove exchange

@@ -5,27 +5,12 @@
     "cash": 6,
     "price": 8,
     "quantity": 8,
-    "shares": 8,
     "fundingRate": 12
   },
   "notional": {
     "size": "2.5",
     "price": "123.45678901",
     "expectedCash": "308.641973"
-  },
-  "vaultInitialDeposit": {
-    "depositCash": "1000",
-    "expectedShares": "1000"
-  },
-  "vaultWithdrawal": {
-    "shares": "10",
-    "memberShares": "10",
-    "totalShares": "10",
-    "equityCash": "125",
-    "memberCostBasisCash": "100",
-    "expectedProfitCash": "25",
-    "expectedFeeCash": "2.5",
-    "expectedPayoutCash": "122.5"
   },
   "funding": {
     "size": "3.5",

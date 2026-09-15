@@ -34,14 +34,6 @@ import {
   placeSpotOrder,
   resolveSpotAssetAlias,
 } from "../stores/wallet";
-import { vaultsList } from "../stores/vaults";
-import type { VaultSummary } from "../stores/vaults";
-import {
-  isVaultTradingAccount,
-  setTradingAccountToUser,
-  setTradingAccountToVault,
-  tradingVault,
-} from "../stores/tradingAccount";
 import AdminDepositModal from "./AdminDepositModal";
 import {
   hyperliquidAccountMode,
@@ -49,6 +41,8 @@ import {
   hyperliquidPortfolioMarginSummary,
   isHyperliquidExecution,
 } from "../stores/hyperliquidExecution";
+import { openConnect } from "../stores/connect";
+import { hyperliquidConnection } from "../stores/hyperliquidExecution";
 import { openSettings } from "../stores/settings";
 
 type OrderSide = "long" | "short";
@@ -128,27 +122,12 @@ const OrderForm: Component = () => {
   const livePortfolioSummary = createMemo(() =>
     hyperliquidPortfolioMarginSummary(),
   );
-  const operatorVault = createMemo(() =>
-    vaultsList().find(
-      (vault: VaultSummary) => vault.isOperator && vault.status === "active",
-    ),
-  );
-  const canTradeAsVault = createMemo(
-    () => !!(operatorVault() ?? tradingVault()),
-  );
-  const vaultLabel = createMemo(
-    () => tradingVault()?.name ?? operatorVault()?.name ?? "My Vault",
-  );
   const canAdminDeposit = createMemo(
-    () =>
-      isAuthenticated() &&
-      adminReady() &&
-      isAdmin() &&
-      !isVaultTradingAccount(),
+    () => isAuthenticated() && adminReady() && isAdmin(),
   );
   const depositButtonClass = createMemo(() => {
     if (!isAuthenticated() || canAdminDeposit()) {
-      return "bg-brand-accent text-brand-screen hover:brightness-105";
+      return "border border-brand-border text-slate-200 hover:bg-brand-border/40";
     }
     return "bg-brand-border text-brand-slate-500 cursor-not-allowed";
   });
@@ -160,8 +139,7 @@ const OrderForm: Component = () => {
   const isSpot = createMemo(() => currentMarketType() === "spot");
   const spotAsset = createMemo(() => resolveSpotAssetAlias(currentSymbol()));
   const liveLimitTpslUnavailable = createMemo(
-    () =>
-      isHyperliquidExecution() && !isSpot() && orderType() === "limit",
+    () => isHyperliquidExecution() && !isSpot() && orderType() === "limit",
   );
   const effectiveLeverage = createMemo(() => (isSpot() ? 1 : leverage()));
   const maxLeverage = createMemo(() => {
@@ -596,7 +574,7 @@ const OrderForm: Component = () => {
 
   const insufficientSpotBalance = createMemo(() => {
     if (isHyperliquidExecution()) return false;
-    if (!isSpot() || !isOrderValid() || isVaultTradingAccount()) return false;
+    if (!isSpot() || !isOrderValid()) return false;
     if (isLong()) {
       return orderValue() > availableBalance();
     }
@@ -606,7 +584,7 @@ const OrderForm: Component = () => {
   const canSubmitOrder = createMemo(() => {
     if (!isOrderValid()) return false;
     if (isHyperliquidExecution()) return true;
-    if (isSpot()) return !insufficientSpotBalance() && !isVaultTradingAccount();
+    if (isSpot()) return !insufficientSpotBalance();
     return !insufficientMargin();
   });
 
@@ -641,16 +619,13 @@ const OrderForm: Component = () => {
   const marginModeLabel = createMemo(() =>
     isHyperliquidExecution()
       ? hyperliquidAccountModeLabel()
-      : isVaultTradingAccount()
-      ? "Classic"
       : isPortfolioMarginEnabled()
         ? "Portfolio"
         : "Classic",
   );
 
   const marginModeButtonLabel = createMemo(() =>
-    isHyperliquidExecution() &&
-    hyperliquidAccountMode() === "portfolioMargin"
+    isHyperliquidExecution() && hyperliquidAccountMode() === "portfolioMargin"
       ? "PM"
       : marginModeLabel(),
   );
@@ -699,7 +674,7 @@ const OrderForm: Component = () => {
       setMarginModeOpen(false);
       return;
     }
-    if (isVaultTradingAccount() || !isAuthenticated()) return;
+    if (!isAuthenticated()) return;
     setMarginModeLoading(true);
     const newEnabled = !isPortfolioMarginEnabled();
     const result = await togglePortfolioMargin(newEnabled);
@@ -845,10 +820,6 @@ const OrderForm: Component = () => {
   });
   createEffect(() => {
     if (!isSpot()) return;
-    if (isVaultTradingAccount() && !isHyperliquidExecution()) {
-      setSpotError("Vaults can only trade perps.");
-      return;
-    }
     if (!isOrderValid()) {
       setSpotError("");
       return;
@@ -888,10 +859,6 @@ const OrderForm: Component = () => {
       } else {
         setOrderError(message);
       }
-      return;
-    }
-    if (isSpot() && isVaultTradingAccount() && !isHyperliquidExecution()) {
-      setSpotError("Vaults can only trade perps.");
       return;
     }
     if (liveLimitTpslUnavailable() && tpsl()) {
@@ -1000,710 +967,676 @@ const OrderForm: Component = () => {
       login();
       return;
     }
-    if (!adminReady() || !isAdmin() || isVaultTradingAccount()) {
+    if (!adminReady() || !isAdmin()) {
       return;
     }
     setAdminDepositOpen(true);
   };
 
   return (
-    <div class="flex flex-col bg-brand-surface border-l border-brand-border h-full overflow-auto">
-      <div class="bg-brand-screen/60 border-b border-brand-border p-3 space-y-3">
-        <Show when={!isHyperliquidExecution()}>
-          <div class="flex items-center justify-between text-xs">
-            <span class="text-brand-slate-400">Trading account</span>
-            <div class="flex items-center rounded-lg border border-brand-border p-0.5">
-              <button
-                type="button"
-                class={`px-2 py-1 rounded-md transition-colors ${
-                  !isVaultTradingAccount()
-                    ? "bg-brand-accent text-brand-screen"
-                    : "text-brand-slate-400 hover:text-slate-200"
-                }`}
-                onClick={() => setTradingAccountToUser()}
-              >
-                Personal
-              </button>
-              <button
-                type="button"
-                disabled={!canTradeAsVault()}
-                class={`px-2 py-1 rounded-md transition-colors ${
-                  isVaultTradingAccount()
-                    ? "bg-brand-accent text-brand-screen"
-                    : "text-brand-slate-400 hover:text-slate-200"
-                } ${!canTradeAsVault() ? "opacity-50 cursor-not-allowed" : ""}`}
-                onClick={() => {
-                  const vault = operatorVault();
-                  if (vault) setTradingAccountToVault(vault._id);
-                }}
-              >
-                {vaultLabel()}
-              </button>
-            </div>
-          </div>
-        </Show>
-        <Show when={!isSpot()}>
-          <div class="space-y-2">
-            <div class="grid grid-cols-3 gap-2">
-              <button
-                class="rounded-xl bg-brand-border/70 py-2 text-sm font-semibold text-slate-100"
-                onClick={() =>
-                  setMarginType(
-                    marginType() === "isolated" ? "cross" : "isolated",
-                  )
-                }
-              >
-                {marginType() === "isolated" ? "Isolated" : "Cross"}
-              </button>
-              <button
-                class="rounded-xl bg-brand-border/70 py-2 text-sm font-semibold text-slate-100"
-                onClick={() => setLeverageMenuOpen(!leverageMenuOpen())}
-              >
-                {leverage()}x
-              </button>
-              <button
-                type="button"
-                aria-label={marginModeButtonDescription()}
-                title={marginModeButtonDescription()}
-                class={`rounded-xl py-2 text-sm font-semibold ${
-                  isVaultTradingAccount() && !isHyperliquidExecution()
-                    ? "bg-brand-border/50 text-brand-slate-500 cursor-not-allowed"
-                    : "bg-brand-border/70 text-slate-100"
-                }`}
-                disabled={isVaultTradingAccount() && !isHyperliquidExecution()}
-                onClick={() => {
-                  if (isHyperliquidExecution()) {
-                    openSettings();
-                  } else {
-                    setMarginModeOpen(true);
+    <div class="order-ticket flex flex-col h-full">
+      <div class="ticket-scroll">
+        <div class="ticket-heading">
+          <h2>Order</h2>
+          <span class="execution-mode">
+            {isHyperliquidExecution()
+              ? hyperliquidConnection()?.network === "mainnet"
+                ? "Mainnet"
+                : "Testnet"
+              : "Paper trading"}
+          </span>
+        </div>
+        <div class="ticket-controls border-b border-brand-border p-4 space-y-4">
+          <Show when={!isSpot()}>
+            <div class="space-y-2">
+              <div class="grid grid-cols-3 gap-2">
+                <button
+                  class="rounded-md border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  onClick={() =>
+                    setMarginType(
+                      marginType() === "isolated" ? "cross" : "isolated",
+                    )
                   }
-                }}
-              >
-                {marginModeButtonLabel()}
-              </button>
-            </div>
-            <Show when={leverageMenuOpen()}>
-              <div class="rounded-xl border border-brand-border bg-brand-surface p-2">
-                <div class="grid grid-cols-5 gap-2">
-                  {leverageOptions().map((option) => (
-                    <button
-                      class={`rounded-md border px-2 py-1 text-xs ${
-                        leverage() === option
-                          ? "border-brand-accent text-brand-accent bg-brand-accent/10"
-                          : "border-brand-border text-brand-slate-400 hover:text-slate-200"
-                      }`}
-                      onClick={() => {
-                        setLeverage(option);
-                        setLeverageMenuOpen(false);
-                      }}
-                    >
-                      {option}x
-                    </button>
-                  ))}
-                </div>
+                >
+                  {marginType() === "isolated" ? "Isolated" : "Cross"}
+                </button>
+                <button
+                  class="rounded-md border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  onClick={() => setLeverageMenuOpen(!leverageMenuOpen())}
+                >
+                  {leverage()}x
+                </button>
+                <button
+                  type="button"
+                  aria-label={marginModeButtonDescription()}
+                  title={marginModeButtonDescription()}
+                  class="rounded-md border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  onClick={() => {
+                    if (isHyperliquidExecution()) {
+                      openSettings();
+                    } else {
+                      setMarginModeOpen(true);
+                    }
+                  }}
+                >
+                  {marginModeButtonLabel()}
+                </button>
               </div>
-            </Show>
-
-            {/* Portfolio Margin Modal */}
-            <Show when={marginModeOpen() && !isHyperliquidExecution()}>
-              <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-                <div class="mx-4 w-full max-w-sm rounded-lg border border-brand-border bg-brand-surface shadow-xl">
-                  <div class="flex items-center justify-between border-b border-brand-border p-4">
-                    <h3 class="text-lg font-semibold text-slate-100">
-                      Paper margin model
-                    </h3>
-                    <button
-                      class="text-brand-slate-400 hover:text-slate-200 transition-colors"
-                      onClick={() => setMarginModeOpen(false)}
-                    >
-                      <svg
-                        class="w-5 h-5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
+              <Show when={leverageMenuOpen()}>
+                <div class="rounded-md border border-brand-border bg-brand-surface p-2">
+                  <div class="grid grid-cols-5 gap-2">
+                    {leverageOptions().map((option) => (
+                      <button
+                        class={`rounded-md border px-2 py-1 text-xs ${
+                          leverage() === option
+                            ? "border-brand-accent text-brand-accent bg-brand-accent/10"
+                            : "border-brand-border text-brand-slate-400 hover:text-slate-200"
+                        }`}
+                        onClick={() => {
+                          setLeverage(option);
+                          setLeverageMenuOpen(false);
+                        }}
                       >
-                        <path d="M18 6 6 18M6 6l12 12" />
-                      </svg>
-                    </button>
+                        {option}x
+                      </button>
+                    ))}
                   </div>
+                </div>
+              </Show>
 
-                  <div class="p-4 space-y-4">
-                    {/* Standard paper mode */}
-                    <button
-                      class={`w-full rounded-xl border p-4 text-left transition-all ${
-                        !isPortfolioMarginEnabled()
-                          ? "border-brand-accent bg-brand-accent/10"
-                          : "border-brand-border hover:border-brand-slate-400"
-                      }`}
-                      onClick={() => {
-                        if (isPortfolioMarginEnabled())
-                          handleToggleMarginMode();
-                      }}
-                      disabled={marginModeLoading()}
-                    >
-                      <div class="flex items-center justify-between">
-                        <span class="font-semibold text-slate-100">
-                          Standard
-                        </span>
-                        <Show when={!isPortfolioMarginEnabled()}>
-                          <span class="text-xs px-2 py-0.5 rounded-full bg-brand-accent/20 text-brand-accent">
-                            Active
-                          </span>
-                        </Show>
-                      </div>
-                      <p class="mt-1 text-sm text-brand-slate-400">
-                        Simulated perps balances are the only collateral used
-                        by the paper ledger.
-                      </p>
-                    </button>
-
-                    {/* Portfolio paper mode */}
-                    <button
-                      class={`w-full rounded-xl border p-4 text-left transition-all ${
-                        isPortfolioMarginEnabled()
-                          ? "border-emerald-500 bg-emerald-500/10"
-                          : "border-brand-border hover:border-brand-slate-400"
-                      }`}
-                      onClick={() => {
-                        if (!isPortfolioMarginEnabled())
-                          handleToggleMarginMode();
-                      }}
-                      disabled={marginModeLoading()}
-                    >
-                      <div class="flex items-center justify-between">
-                        <span class="font-semibold text-slate-100">
-                          Portfolio Margin
-                        </span>
-                        <Show when={isPortfolioMarginEnabled()}>
-                          <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-                            Active
-                          </span>
-                        </Show>
-                      </div>
-                      <p class="mt-1 text-sm text-brand-slate-400">
-                        Simulates eligible spot collateral in the local paper
-                        ledger. This is not Hyperliquid account configuration.
-                      </p>
-                    </button>
-
-                    <Show when={marginModeLoading()}>
-                      <div class="flex items-center justify-center gap-2 text-sm text-brand-slate-400">
+              {/* Portfolio Margin Modal */}
+              <Show when={marginModeOpen() && !isHyperliquidExecution()}>
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+                  <div class="mx-4 w-full max-w-sm rounded-lg border border-brand-border bg-brand-surface shadow-xl">
+                    <div class="flex items-center justify-between border-b border-brand-border p-4">
+                      <h3 class="text-lg font-semibold text-slate-100">
+                        Paper margin model
+                      </h3>
+                      <button
+                        class="text-brand-slate-400 hover:text-slate-200 transition-colors"
+                        onClick={() => setMarginModeOpen(false)}
+                      >
                         <svg
-                          class="w-4 h-4 animate-spin"
+                          class="w-5 h-5"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
                           stroke-width="2"
                         >
-                          <path d="M12 2v4m0 12v4m-8-10h4m12 0h4" />
+                          <path d="M18 6 6 18M6 6l12 12" />
                         </svg>
-                        Updating margin mode...
-                      </div>
-                    </Show>
-                  </div>
+                      </button>
+                    </div>
 
-                  <div class="border-t border-brand-border p-4">
-                    <button
-                      class="w-full rounded-xl bg-brand-border/70 py-2.5 text-sm font-semibold text-slate-100 hover:bg-brand-border transition-colors"
-                      onClick={() => setMarginModeOpen(false)}
-                    >
-                      Close
-                    </button>
+                    <div class="p-4 space-y-4">
+                      {/* Standard paper mode */}
+                      <button
+                        class={`w-full rounded-md border p-4 text-left transition-all ${
+                          !isPortfolioMarginEnabled()
+                            ? "border-brand-accent bg-brand-accent/10"
+                            : "border-brand-border hover:border-brand-slate-400"
+                        }`}
+                        onClick={() => {
+                          if (isPortfolioMarginEnabled())
+                            handleToggleMarginMode();
+                        }}
+                        disabled={marginModeLoading()}
+                      >
+                        <div class="flex items-center justify-between">
+                          <span class="font-semibold text-slate-100">
+                            Standard
+                          </span>
+                          <Show when={!isPortfolioMarginEnabled()}>
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-brand-accent/20 text-brand-accent">
+                              Active
+                            </span>
+                          </Show>
+                        </div>
+                        <p class="mt-1 text-sm text-brand-slate-400">
+                          Simulated perps balances are the only collateral used
+                          by the paper ledger.
+                        </p>
+                      </button>
+
+                      {/* Portfolio paper mode */}
+                      <button
+                        class={`w-full rounded-md border p-4 text-left transition-all ${
+                          isPortfolioMarginEnabled()
+                            ? "border-emerald-500 bg-emerald-500/10"
+                            : "border-brand-border hover:border-brand-slate-400"
+                        }`}
+                        onClick={() => {
+                          if (!isPortfolioMarginEnabled())
+                            handleToggleMarginMode();
+                        }}
+                        disabled={marginModeLoading()}
+                      >
+                        <div class="flex items-center justify-between">
+                          <span class="font-semibold text-slate-100">
+                            Portfolio Margin
+                          </span>
+                          <Show when={isPortfolioMarginEnabled()}>
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                              Active
+                            </span>
+                          </Show>
+                        </div>
+                        <p class="mt-1 text-sm text-brand-slate-400">
+                          Simulates eligible spot collateral in the local paper
+                          ledger. This is not Hyperliquid account configuration.
+                        </p>
+                      </button>
+
+                      <Show when={marginModeLoading()}>
+                        <div class="flex items-center justify-center gap-2 text-sm text-brand-slate-400">
+                          <svg
+                            class="w-4 h-4 animate-spin"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                          >
+                            <path d="M12 2v4m0 12v4m-8-10h4m12 0h4" />
+                          </svg>
+                          Updating margin mode...
+                        </div>
+                      </Show>
+                    </div>
+
+                    <div class="border-t border-brand-border p-4">
+                      <button
+                        class="w-full rounded-md bg-brand-border/70 py-2.5 text-sm font-semibold text-slate-100 hover:bg-brand-border transition-colors"
+                        onClick={() => setMarginModeOpen(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Show>
-          </div>
-        </Show>
+              </Show>
+            </div>
+          </Show>
 
-        {/* Order Type */}
-        <div class="flex items-center gap-6 border-b border-brand-border/70">
-          <button
-            class={`relative pb-3 text-sm font-semibold transition-colors after:content-[''] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full ${
-              orderType() === "market"
-                ? "text-slate-100 after:bg-brand-accent"
-                : "text-brand-slate-400 hover:text-slate-200 after:bg-transparent"
-            }`}
-            onClick={() => setOrderType("market")}
-          >
-            Market
-          </button>
-          <button
-            class={`relative pb-3 text-sm font-semibold transition-colors after:content-[''] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full ${
-              orderType() === "limit"
-                ? "text-slate-100 after:bg-brand-accent"
-                : "text-brand-slate-400 hover:text-slate-200 after:bg-transparent"
-            }`}
-            onClick={() => {
-              setOrderType("limit");
-              if (!limitPrice()) {
-                const price = mark();
-                if (Number.isFinite(price) && price > 0) {
-                  setLimitPrice(price.toFixed(3));
+          {/* Order Type */}
+          <div class="flex items-center gap-6 border-b border-brand-border/70">
+            <button
+              class={`relative pb-3 text-sm font-semibold transition-colors after:content-[''] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full ${
+                orderType() === "market"
+                  ? "text-slate-100 after:bg-brand-accent"
+                  : "text-brand-slate-400 hover:text-slate-200 after:bg-transparent"
+              }`}
+              onClick={() => setOrderType("market")}
+            >
+              Market
+            </button>
+            <button
+              class={`relative pb-3 text-sm font-semibold transition-colors after:content-[''] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full ${
+                orderType() === "limit"
+                  ? "text-slate-100 after:bg-brand-accent"
+                  : "text-brand-slate-400 hover:text-slate-200 after:bg-transparent"
+              }`}
+              onClick={() => {
+                setOrderType("limit");
+                if (!limitPrice()) {
+                  const price = mark();
+                  if (Number.isFinite(price) && price > 0) {
+                    setLimitPrice(price.toFixed(3));
+                  }
                 }
-              }
-            }}
-          >
-            Limit
-          </button>
-          <div class="flex-1" />
-          <button class="flex items-center gap-1 pb-3 text-sm text-brand-slate-400 hover:text-slate-200">
-            Pro
-            <svg
-              class="w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
+              }}
             >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Long/Short Toggle */}
-        <div class="rounded-xl bg-brand-border/60 p-1">
-          <div class="flex">
-            <button
-              class={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
-                isLong()
-                  ? "bg-brand-accent text-brand-screen"
-                  : "text-brand-slate-400 hover:text-slate-200"
-              }`}
-              onClick={() => setSide("long")}
-            >
-              {longLabel()}
+              Limit
             </button>
-            <button
-              class={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
-                !isLong()
-                  ? "bg-brand-accent text-brand-screen"
-                  : "text-brand-slate-400 hover:text-slate-200"
-              }`}
-              onClick={() => setSide("short")}
-            >
-              {shortLabel()}
-            </button>
+            <div class="flex-1" />
           </div>
-        </div>
-      </div>
 
-      <div class="p-3 space-y-4">
-        {/* Available & Position Info */}
-        <div class="space-y-2">
-          <div class="flex justify-between text-sm">
-            <span class="text-brand-slate-500">{availableLabel()}</span>
-            <span class="text-slate-100 font-mono">{availableDisplay()}</span>
-          </div>
-          <div class="flex justify-between text-sm">
-            <span class="text-brand-slate-500">{positionLabel()}</span>
-            <span class={`font-mono ${positionValueClass()}`}>
-              {positionDisplay()}
-            </span>
-          </div>
-        </div>
-
-        {/* Amount Input */}
-        <div>
-          <div class="flex items-center rounded-xl border border-brand-border bg-brand-screen px-3 py-3">
-            <input
-              type="text"
-              inputmode="decimal"
-              pattern="[0-9]*[.]?[0-9]*"
-              autocomplete="off"
-              class="flex-1 bg-transparent text-sm text-slate-100 font-mono text-left"
-              placeholder="Size"
-              value={amount()}
-              onInput={(e) => updateAmountInput(e.currentTarget.value)}
-            />
-            <button class="flex items-center gap-2 text-sm text-slate-100">
-              {displaySymbol()}
-              <svg
-                class="w-4 h-4 text-brand-slate-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
+          {/* Long/Short Toggle */}
+          <div class="ticket-side-switch rounded-md p-1">
+            <div class="flex">
+              <button
+                class={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+                  isLong()
+                    ? "bg-brand-green-400/12 text-brand-green-400"
+                    : "text-brand-slate-400 hover:text-slate-200"
+                }`}
+                aria-pressed={isLong()}
+                onClick={() => setSide("long")}
               >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </button>
+                {longLabel()}
+              </button>
+              <button
+                class={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+                  !isLong()
+                    ? "bg-brand-red-400/12 text-brand-red-400"
+                    : "text-brand-slate-400 hover:text-slate-200"
+                }`}
+                aria-pressed={!isLong()}
+                onClick={() => setSide("short")}
+              >
+                {shortLabel()}
+              </button>
+            </div>
           </div>
         </div>
 
-        <Show when={orderType() === "limit"}>
+        <div class="ticket-body p-4 space-y-4">
+          {/* Available & Position Info */}
+          <div class="space-y-2">
+            <div class="flex justify-between gap-4 text-sm">
+              <span class="text-brand-slate-500">{availableLabel()}</span>
+              <span class="text-slate-100 font-mono">{availableDisplay()}</span>
+            </div>
+            <div class="flex justify-between gap-4 text-sm">
+              <span class="text-brand-slate-500">{positionLabel()}</span>
+              <span class={`font-mono ${positionValueClass()}`}>
+                {positionDisplay()}
+              </span>
+            </div>
+          </div>
+
+          {/* Amount Input */}
           <div>
-            <div class="flex items-center rounded-xl border border-brand-border bg-brand-screen px-3 py-3">
-              <span class="text-sm text-brand-slate-400">Price</span>
+            <div class="mb-2 text-xs text-brand-slate-400">Size</div>
+            <div class="flex items-center rounded-md border border-brand-border bg-brand-screen px-3 py-3">
               <input
                 type="text"
                 inputmode="decimal"
                 pattern="[0-9]*[.]?[0-9]*"
                 autocomplete="off"
-                class="flex-1 bg-transparent px-3 text-sm text-slate-100 font-mono text-right"
-                placeholder={mark().toFixed(3)}
-                value={limitPrice()}
+                class="flex-1 bg-transparent text-sm text-slate-100 font-mono text-left"
+                aria-label="Order size"
+                placeholder="0.00"
+                value={amount()}
+                onInput={(e) => updateAmountInput(e.currentTarget.value)}
+              />
+              <span class="ml-3 text-xs font-medium text-brand-slate-400">
+                {displaySymbol()}
+              </span>
+            </div>
+          </div>
+
+          <Show when={orderType() === "limit"}>
+            <div>
+              <div class="flex items-center rounded-md border border-brand-border bg-brand-screen px-3 py-3">
+                <span class="text-sm text-brand-slate-400">Price</span>
+                <input
+                  type="text"
+                  inputmode="decimal"
+                  pattern="[0-9]*[.]?[0-9]*"
+                  autocomplete="off"
+                  class="flex-1 bg-transparent px-3 text-sm text-slate-100 font-mono text-right"
+                  aria-label="Limit price"
+                  placeholder={mark().toFixed(3)}
+                  value={limitPrice()}
+                  onInput={(e) =>
+                    setLimitPrice(
+                      sanitizeNumericInput(e.currentTarget.value, 3),
+                    )
+                  }
+                />
+                <span class="text-xs text-brand-slate-400">
+                  {isSpot() ? "USDC" : collateral()}
+                </span>
+              </div>
+            </div>
+          </Show>
+
+          {/* Slider */}
+          <div class="flex items-center gap-3">
+            <div class="relative flex-1">
+              <div class="absolute inset-0 flex items-center">
+                <div class="h-1.5 w-full rounded-full bg-brand-border/70" />
+              </div>
+              <div class="absolute inset-0 flex items-center">
+                <div
+                  class="h-1.5 rounded-full bg-brand-accent"
+                  style={{ width: `${sliderValue()}%` }}
+                />
+              </div>
+              <div class="absolute inset-0 flex items-center justify-between px-2 pointer-events-none">
+                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
+                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
+                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
+                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
+                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
+              </div>
+              <input
+                aria-label="Order size percentage"
+                type="range"
+                min="0"
+                max="100"
+                value={sliderValue()}
                 onInput={(e) =>
-                  setLimitPrice(sanitizeNumericInput(e.currentTarget.value, 3))
+                  updateFromSlider(parseInt(e.currentTarget.value, 10))
+                }
+                class="order-slider relative z-10 w-full"
+              />
+            </div>
+            <div class="flex items-center rounded-md border border-brand-border bg-brand-screen px-3 py-2 text-sm">
+              <input
+                type="text"
+                aria-label="Order percentage"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                autocomplete="off"
+                class="w-10 bg-transparent text-right font-mono text-slate-100"
+                value={sliderValue()}
+                onInput={(e) =>
+                  updateFromSlider(parseInt(e.currentTarget.value, 10) || 0)
                 }
               />
-              <span class="text-xs text-brand-slate-400">
-                {isSpot() ? "USDC" : collateral()}
-              </span>
+              <span class="ml-1 text-brand-slate-400">%</span>
             </div>
           </div>
-        </Show>
 
-        {/* Slider */}
-        <div class="flex items-center gap-3">
-          <div class="relative flex-1">
-            <div class="absolute inset-0 flex items-center">
-              <div class="h-1.5 w-full rounded-full bg-brand-border/70" />
-            </div>
-            <div class="absolute inset-0 flex items-center">
-              <div
-                class="h-1.5 rounded-full bg-brand-accent"
-                style={{ width: `${sliderValue()}%` }}
-              />
-            </div>
-            <div class="absolute inset-0 flex items-center justify-between px-2 pointer-events-none">
-              <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-              <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-              <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-              <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-              <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={sliderValue()}
-              onInput={(e) =>
-                updateFromSlider(parseInt(e.currentTarget.value, 10))
-              }
-              class="order-slider relative z-10 w-full"
-            />
-          </div>
-          <div class="flex items-center rounded-xl border border-brand-border bg-brand-screen px-3 py-2 text-sm">
-            <input
-              type="text"
-              inputmode="numeric"
-              pattern="[0-9]*"
-              autocomplete="off"
-              class="w-10 bg-transparent text-right font-mono text-slate-100"
-              value={sliderValue()}
-              onInput={(e) =>
-                updateFromSlider(parseInt(e.currentTarget.value, 10) || 0)
-              }
-            />
-            <span class="ml-1 text-brand-slate-400">%</span>
-          </div>
-        </div>
-
-        {/* Checkboxes */}
-        <Show when={!isSpot()}>
-          <div class="space-y-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={reduceOnly()}
-                onChange={(e) => setReduceOnly(e.currentTarget.checked)}
-                class="h-5 w-5 rounded-md border border-brand-border bg-brand-screen accent-brand-accent"
-              />
-              <span class="text-sm text-slate-100">Reduce Only</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={tpsl()}
-                disabled={liveLimitTpslUnavailable()}
-                onChange={(e) => setTpsl(e.currentTarget.checked)}
-                class="h-5 w-5 rounded-md border border-brand-border bg-brand-screen accent-brand-accent disabled:cursor-not-allowed disabled:opacity-40"
-              />
-              <span
-                class={`text-sm ${
-                  liveLimitTpslUnavailable()
-                    ? "text-brand-slate-500"
-                    : "text-slate-100"
-                }`}
-              >
-                Take Profit / Stop Loss
-              </span>
-            </label>
-            <Show when={liveLimitTpslUnavailable()}>
-              <p class="text-xs leading-5 text-brand-slate-500">
-                Live TP/SL is available for market orders after their fill.
-                A limit ticket may remain unfilled, so it will not change
-                protection on an existing position.
-              </p>
-            </Show>
-          </div>
-
-          <Show when={reduceOnlyError()}>
-            <div class="text-xs text-brand-red-400">{reduceOnlyError()}</div>
-          </Show>
-
-          <Show when={tpsl()}>
+          {/* Checkboxes */}
+          <Show when={!isSpot()}>
             <div class="space-y-2">
-              <div class="flex items-center bg-brand-screen border border-brand-border rounded-lg overflow-hidden">
-                <span class="px-3 text-sm text-brand-slate-400">
-                  Take Profit
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reduceOnly()}
+                  onChange={(e) => setReduceOnly(e.currentTarget.checked)}
+                  class="h-3.5 w-3.5 rounded border border-brand-border bg-brand-screen accent-brand-accent"
+                />
+                <span class="text-sm text-slate-100">Reduce Only</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={tpsl()}
+                  disabled={liveLimitTpslUnavailable()}
+                  onChange={(e) => setTpsl(e.currentTarget.checked)}
+                  class="h-3.5 w-3.5 rounded border border-brand-border bg-brand-screen accent-brand-accent disabled:cursor-not-allowed disabled:opacity-40"
+                />
+                <span
+                  class={`text-sm ${
+                    liveLimitTpslUnavailable()
+                      ? "text-brand-slate-500"
+                      : "text-slate-100"
+                  }`}
+                >
+                  Take Profit / Stop Loss
                 </span>
-                <input
-                  type="text"
-                  inputmode="decimal"
-                  pattern="[0-9]*[.]?[0-9]*"
-                  autocomplete="off"
-                  class="flex-1 bg-transparent px-3 py-3 text-sm text-slate-200 font-mono text-right"
-                  placeholder="--"
-                  value={takeProfit()}
-                  onInput={(e) => setTakeProfit(e.currentTarget.value)}
-                />
+              </label>
+              <Show when={liveLimitTpslUnavailable()}>
+                <p class="text-xs leading-5 text-brand-slate-500">
+                  Live TP/SL is available for market orders after their fill. A
+                  limit ticket may remain unfilled, so it will not change
+                  protection on an existing position.
+                </p>
+              </Show>
+            </div>
+
+            <Show when={reduceOnlyError()}>
+              <div class="text-xs text-brand-red-400">{reduceOnlyError()}</div>
+            </Show>
+
+            <Show when={tpsl()}>
+              <div class="space-y-2">
+                <div class="flex items-center bg-brand-screen border border-brand-border rounded-lg overflow-hidden">
+                  <span class="px-3 text-sm text-brand-slate-400">
+                    Take Profit
+                  </span>
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    pattern="[0-9]*[.]?[0-9]*"
+                    autocomplete="off"
+                    class="flex-1 bg-transparent px-3 py-3 text-sm text-slate-200 font-mono text-right"
+                    aria-label="Take profit price"
+                    placeholder="--"
+                    value={takeProfit()}
+                    onInput={(e) => setTakeProfit(e.currentTarget.value)}
+                  />
+                </div>
+                <div class="flex items-center bg-brand-screen border border-brand-border rounded-lg overflow-hidden">
+                  <span class="px-3 text-sm text-brand-slate-400">
+                    Stop Loss
+                  </span>
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    pattern="[0-9]*[.]?[0-9]*"
+                    autocomplete="off"
+                    class="flex-1 bg-transparent px-3 py-3 text-sm text-slate-200 font-mono text-right"
+                    aria-label="Stop loss price"
+                    placeholder="--"
+                    value={stopLoss()}
+                    onInput={(e) => setStopLoss(e.currentTarget.value)}
+                  />
+                </div>
               </div>
-              <div class="flex items-center bg-brand-screen border border-brand-border rounded-lg overflow-hidden">
-                <span class="px-3 text-sm text-brand-slate-400">Stop Loss</span>
-                <input
-                  type="text"
-                  inputmode="decimal"
-                  pattern="[0-9]*[.]?[0-9]*"
-                  autocomplete="off"
-                  class="flex-1 bg-transparent px-3 py-3 text-sm text-slate-200 font-mono text-right"
-                  placeholder="--"
-                  value={stopLoss()}
-                  onInput={(e) => setStopLoss(e.currentTarget.value)}
-                />
-              </div>
+            </Show>
+          </Show>
+
+          <Show when={spotError()}>
+            <div class="text-xs text-brand-red-400">{spotError()}</div>
+          </Show>
+          <Show when={orderError()}>
+            <div class="text-xs text-brand-red-400">{orderError()}</div>
+          </Show>
+          <Show when={orderNotice()}>
+            <div class="text-xs leading-5 text-brand-green-400" role="status">
+              {orderNotice()}
             </div>
           </Show>
-        </Show>
 
-        <Show when={spotError()}>
-          <div class="text-xs text-brand-red-400">{spotError()}</div>
-        </Show>
-        <Show when={orderError()}>
-          <div class="text-xs text-brand-red-400">{orderError()}</div>
-        </Show>
-        <Show when={orderNotice()}>
-          <div class="text-xs leading-5 text-brand-green-400" role="status">
-            {orderNotice()}
-          </div>
-        </Show>
-
-        {/* Order Details */}
-        <Show
-          when={!isSpot()}
-          fallback={
+          {/* Order Details */}
+          <Show
+            when={!isSpot()}
+            fallback={
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between gap-4">
+                  <span class="text-brand-slate-500">Order Value</span>
+                  <span class="text-slate-100 font-mono">
+                    {orderValueDisplay()}
+                  </span>
+                </div>
+                <div class="flex justify-between gap-4">
+                  <span class="text-brand-slate-500">Estimated Fee</span>
+                  <span class="text-slate-100 font-mono">
+                    {isHyperliquidExecution() ? "Hyperliquid tier" : "0.10%"}
+                  </span>
+                </div>
+              </div>
+            }
+          >
             <div class="space-y-2 text-sm">
-              <div class="flex justify-between">
+              <div class="flex justify-between gap-4">
+                <span class="text-brand-slate-500">Liquidation Price</span>
+                <span class="font-mono text-slate-100">
+                  {isHyperliquidExecution()
+                    ? "Exchange calculated"
+                    : liquidationPreview()}
+                </span>
+              </div>
+              <div class="flex justify-between gap-4">
                 <span class="text-brand-slate-500">Order Value</span>
                 <span class="text-slate-100 font-mono">
                   {orderValueDisplay()}
                 </span>
               </div>
-              <div class="flex justify-between">
-                <span class="text-brand-slate-500">Estimated Fee</span>
+              <div class="flex justify-between gap-4">
+                <span class="text-brand-slate-500">Margin Required</span>
                 <span class="text-slate-100 font-mono">
-                  {isHyperliquidExecution() ? "Hyperliquid tier" : "0.10%"}
+                  {isHyperliquidExecution()
+                    ? "Exchange checks"
+                    : marginRequiredDisplay()}
+                </span>
+              </div>
+              <div class="flex justify-between gap-4">
+                <span class="text-brand-slate-500">Slippage</span>
+                <span class="font-mono text-brand-accent">
+                  {orderType() === "market" ? "1.00% max" : "Limit price"}
+                </span>
+              </div>
+              <div class="flex justify-between gap-4">
+                <span class="text-brand-slate-500">Fees</span>
+                <span class="font-mono text-brand-accent">
+                  {isHyperliquidExecution() ? "Hyperliquid tier" : "0% / 0%"}
                 </span>
               </div>
             </div>
-          }
-        >
-          <div class="space-y-2 text-sm">
-            <div class="flex justify-between">
-              <span class="text-brand-slate-500 underline underline-offset-2 decoration-dashed decoration-brand-slate-500">
-                Liquidation Price
-              </span>
-              <span class="font-mono text-slate-100">
-                {isHyperliquidExecution()
-                  ? "Exchange calculated"
-                  : liquidationPreview()}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-brand-slate-500">Order Value</span>
-              <span class="text-slate-100 font-mono">
-                {orderValueDisplay()}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-brand-slate-500">Margin Required</span>
-              <span class="text-slate-100 font-mono">
-                {isHyperliquidExecution()
-                  ? "Exchange checks"
-                  : marginRequiredDisplay()}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-brand-slate-500 underline underline-offset-2 decoration-dashed decoration-brand-slate-500">
-                Slippage
-              </span>
-              <span class="font-mono text-brand-accent">
-                {orderType() === "market"
-                  ? "Selected-network ref / Max: 1.00%"
-                  : "GTC limit price"}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-brand-slate-500 underline underline-offset-2 decoration-dashed decoration-brand-slate-500">
-                Fees
-              </span>
-              <span class="font-mono text-brand-accent">
-                {isHyperliquidExecution() ? "Hyperliquid tier" : "0% / 0%"}
-              </span>
-            </div>
-          </div>
-        </Show>
+          </Show>
+        </div>
 
-        <button
-          class={`w-full rounded-xl py-3 text-sm font-semibold transition-colors ${
-            canSubmitOrder() && !isSubmitting()
-              ? "bg-brand-accent text-brand-screen hover:brightness-105"
-              : "bg-brand-border text-brand-slate-500 cursor-not-allowed"
-          }`}
-          onClick={submitOrder}
-          disabled={!canSubmitOrder() || isSubmitting()}
-        >
-          {isSubmitting()
-            ? "Placing..."
-            : !isHyperliquidExecution() && isSpot() && insufficientSpotBalance()
-              ? isLong()
-                ? "Not enough USDC"
-                : "Not enough balance"
-              : !isHyperliquidExecution() && insufficientMargin()
-                ? "Not enough margin"
-                : "Place Order"}
-        </button>
-      </div>
+        {/* Portfolio Section */}
+        <div class="ticket-account mt-auto border-t border-brand-border px-4 py-4 space-y-4">
+          <Show when={!isHyperliquidExecution() && canAdminDeposit()}>
+            <div class="flex gap-3">
+              <button
+                class={`flex-1 rounded-md py-2.5 text-sm font-semibold transition-colors ${depositButtonClass()}`}
+                onClick={handleDepositClick}
+                disabled={depositButtonDisabled()}
+              >
+                Add paper funds
+              </button>
+            </div>
+          </Show>
 
-      {/* Portfolio Section */}
-      <div class="mt-auto border-t border-brand-border bg-brand-screen px-4 py-5 space-y-4">
-        <Show when={!isHyperliquidExecution()}>
-          <div class="flex gap-3">
-            <button
-              class={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition-colors ${depositButtonClass()}`}
-              onClick={handleDepositClick}
-              disabled={depositButtonDisabled()}
-            >
-              Deposit
-            </button>
-            <button class="flex-1 rounded-xl border border-brand-accent/60 py-2.5 text-sm font-semibold text-brand-accent hover:bg-brand-accent/10 transition-colors">
-              Withdraw
-            </button>
-          </div>
-        </Show>
-
-        <Show
-          when={
-            isHyperliquidExecution() &&
-            hyperliquidAccountMode() === "portfolioMargin"
-          }
-          fallback={
-            <div class="space-y-2 border-t border-brand-border/70 pt-3">
-              <div class="text-sm text-brand-slate-500">Account Overview</div>
-              <div class="flex justify-between text-sm">
-                <span class="text-brand-slate-500">
-                  {isHyperliquidExecution() ? "Available USDC" : "Balance"}
+          <Show
+            when={
+              isHyperliquidExecution() &&
+              hyperliquidAccountMode() === "portfolioMargin"
+            }
+            fallback={
+              <div class="space-y-2 border-t border-brand-border/70 pt-3">
+                <div class="text-sm text-brand-slate-500">Account Overview</div>
+                <div class="flex justify-between gap-4 text-sm">
+                  <span class="text-brand-slate-500">
+                    {isHyperliquidExecution() ? "Available USDC" : "Balance"}
+                  </span>
+                  <span class="font-mono text-slate-100">
+                    {formatUsd(
+                      isHyperliquidExecution()
+                        ? getAvailableBalance("USDC")
+                        : collateralPool(),
+                    )}
+                  </span>
+                </div>
+                <div class="flex justify-between gap-4 text-sm">
+                  <span class="text-brand-slate-500">Unrealized PNL</span>
+                  <span
+                    class={`font-mono ${
+                      unrealizedPnl() >= 0
+                        ? "text-brand-green-400"
+                        : "text-brand-red-400"
+                    }`}
+                  >
+                    {formatSignedUsd(unrealizedPnl())}
+                  </span>
+                </div>
+                <div class="flex justify-between gap-4 text-sm">
+                  <span class="text-brand-slate-500">Cross margin ratio</span>
+                  <span class="font-mono text-brand-accent">
+                    {`${crossMarginRatio().toFixed(2)}%`}
+                  </span>
+                </div>
+              </div>
+            }
+          >
+            <div class="space-y-3">
+              <div class="text-sm font-semibold text-slate-100">
+                Portfolio Margin Summary
+              </div>
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
+                  Portfolio Margin Ratio
+                </span>
+                <span class="flex items-center gap-2 font-mono text-brand-accent">
+                  <PortfolioMarginGauge
+                    ratio={livePortfolioSummary()?.marginRatio}
+                  />
+                  {formatOptionalPercent(livePortfolioSummary()?.marginRatio)}
+                </span>
+              </div>
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-brand-slate-400">Portfolio Value</span>
+                <span class="font-mono text-slate-100">
+                  {formatOptionalUsd(livePortfolioSummary()?.portfolioValue)}
+                </span>
+              </div>
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-brand-slate-400">Unrealized PNL</span>
+                <span
+                  class={`font-mono ${
+                    livePortfolioSummary() === undefined
+                      ? "text-brand-slate-500"
+                      : livePortfolioSummary()!.unrealizedPnl >= 0
+                        ? "text-brand-green-400"
+                        : "text-brand-red-400"
+                  }`}
+                >
+                  {livePortfolioSummary() === undefined
+                    ? "--"
+                    : formatSignedUsd(livePortfolioSummary()!.unrealizedPnl)}
+                </span>
+              </div>
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
+                  Borrow Cap Used
                 </span>
                 <span class="font-mono text-slate-100">
-                  {formatUsd(
-                    isHyperliquidExecution()
-                      ? getAvailableBalance("USDC")
-                      : collateralPool(),
+                  {formatOptionalPercent(livePortfolioSummary()?.borrowCapUsed)}
+                </span>
+              </div>
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
+                  Perps Maintenance Margin
+                </span>
+                <span class="font-mono text-slate-100">
+                  {formatOptionalUsd(
+                    livePortfolioSummary()?.perpsMaintenanceMargin,
                   )}
                 </span>
               </div>
-              <div class="flex justify-between text-sm">
-                <span class="text-brand-slate-500">Unrealized PNL</span>
-                <span
-                  class={`font-mono ${
-                    unrealizedPnl() >= 0
-                      ? "text-brand-green-400"
-                      : "text-brand-red-400"
-                  }`}
-                >
-                  {formatSignedUsd(unrealizedPnl())}
+              <div class="flex justify-between gap-3 text-sm">
+                <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
+                  Portfolio Account Leverage
                 </span>
-              </div>
-              <div class="flex justify-between text-sm">
-                <span class="text-brand-slate-500">Cross margin ratio</span>
-                <span class="font-mono text-brand-accent">
-                  {`${crossMarginRatio().toFixed(2)}%`}
+                <span class="font-mono text-slate-100">
+                  {livePortfolioSummary()?.accountLeverage === undefined
+                    ? "--"
+                    : `${livePortfolioSummary()!.accountLeverage!.toFixed(2)}x`}
                 </span>
               </div>
             </div>
+          </Show>
+        </div>
+      </div>
+      <div class="ticket-submit">
+        <button
+          class={`w-full rounded-md py-3 text-sm font-semibold transition-colors ${
+            (!isAuthenticated() && !isHyperliquidExecution()) ||
+            (canSubmitOrder() && !isSubmitting())
+              ? "bg-brand-accent text-brand-screen hover:brightness-105"
+              : "bg-brand-border text-brand-slate-500 cursor-not-allowed"
+          }`}
+          onClick={() =>
+            !isAuthenticated() && !isHyperliquidExecution()
+              ? openConnect()
+              : submitOrder()
+          }
+          disabled={
+            (isAuthenticated() || isHyperliquidExecution()) &&
+            (!canSubmitOrder() || isSubmitting())
           }
         >
-          <div class="space-y-3">
-            <div class="text-sm font-semibold text-slate-100">
-              Portfolio Margin Summary
-            </div>
-            <div class="flex items-center justify-between gap-3 text-sm">
-              <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
-                Portfolio Margin Ratio
-              </span>
-              <span class="flex items-center gap-2 font-mono text-brand-accent">
-                <PortfolioMarginGauge
-                  ratio={livePortfolioSummary()?.marginRatio}
-                />
-                {formatOptionalPercent(livePortfolioSummary()?.marginRatio)}
-              </span>
-            </div>
-            <div class="flex justify-between gap-3 text-sm">
-              <span class="text-brand-slate-400">Portfolio Value</span>
-              <span class="font-mono text-slate-100">
-                {formatOptionalUsd(
-                  livePortfolioSummary()?.portfolioValue,
-                )}
-              </span>
-            </div>
-            <div class="flex justify-between gap-3 text-sm">
-              <span class="text-brand-slate-400">Unrealized PNL</span>
-              <span
-                class={`font-mono ${
-                  livePortfolioSummary() === undefined
-                    ? "text-brand-slate-500"
-                    : livePortfolioSummary()!.unrealizedPnl >= 0
-                      ? "text-brand-green-400"
-                      : "text-brand-red-400"
-                }`}
-              >
-                {livePortfolioSummary() === undefined
-                  ? "--"
-                  : formatSignedUsd(livePortfolioSummary()!.unrealizedPnl)}
-              </span>
-            </div>
-            <div class="flex justify-between gap-3 text-sm">
-              <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
-                Borrow Cap Used
-              </span>
-              <span class="font-mono text-slate-100">
-                {formatOptionalPercent(livePortfolioSummary()?.borrowCapUsed)}
-              </span>
-            </div>
-            <div class="flex justify-between gap-3 text-sm">
-              <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
-                Perps Maintenance Margin
-              </span>
-              <span class="font-mono text-slate-100">
-                {formatOptionalUsd(
-                  livePortfolioSummary()?.perpsMaintenanceMargin,
-                )}
-              </span>
-            </div>
-            <div class="flex justify-between gap-3 text-sm">
-              <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
-                Portfolio Account Leverage
-              </span>
-              <span class="font-mono text-slate-100">
-                {livePortfolioSummary()?.accountLeverage === undefined
-                  ? "--"
-                  : `${livePortfolioSummary()!.accountLeverage!.toFixed(2)}x`}
-              </span>
-            </div>
-          </div>
-        </Show>
+          {!isAuthenticated() && !isHyperliquidExecution()
+            ? "Connect to trade"
+            : isSubmitting()
+              ? "Placing..."
+              : !isHyperliquidExecution() &&
+                  isSpot() &&
+                  insufficientSpotBalance()
+                ? isLong()
+                  ? "Not enough USDC"
+                  : "Not enough balance"
+                : !isHyperliquidExecution() && insufficientMargin()
+                  ? "Not enough margin"
+                  : "Place Order"}
+        </button>
       </div>
 
       <AdminDepositModal

@@ -223,6 +223,8 @@ export default defineSchema({
     cashPrecision: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
+  // Retired pooled-vault storage: retained only to preserve existing financial records.
+  // No public queries, mutations, trading routes, or migration jobs use these tables.
   vaults: defineTable({
     name: v.string(),
     operatorUserId: v.id("users"),

@@ -30,7 +30,6 @@ import {
 import { openOrders, positions } from "../stores/clob";
 import { portfolioMetrics, tradeHistory } from "../stores/portfolio";
 import { openSettings } from "../stores/settings";
-import { vaultsTotalEquity } from "../stores/vaults";
 import {
   ChaseTable,
   FundingHistoryTable,
@@ -126,7 +125,15 @@ const latestValue = (points: ChartPoint[]) =>
 const formatUsd = (value?: number, signed = false) => {
   if (!Number.isFinite(value ?? Number.NaN)) return "--";
   const numeric = Number(value);
-  const sign = signed ? (numeric > 0 ? "+" : numeric < 0 ? "-" : "") : numeric < 0 ? "-" : "";
+  const sign = signed
+    ? numeric > 0
+      ? "+"
+      : numeric < 0
+        ? "-"
+        : ""
+    : numeric < 0
+      ? "-"
+      : "";
   return `${sign}$${Math.abs(numeric).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -259,7 +266,7 @@ const Portfolio: Component = () => {
     const rangeEnd = Date.now();
     const rangeStart = rangeMs
       ? rangeEnd - rangeMs
-      : tradeHistory()[0]?.createdAt ?? rangeEnd - DEFAULT_RANGE_MS;
+      : (tradeHistory()[0]?.createdAt ?? rangeEnd - DEFAULT_RANGE_MS);
     const filtered = tradeHistory()
       .filter((trade) => trade.createdAt >= rangeStart)
       .slice()
@@ -298,14 +305,18 @@ const Portfolio: Component = () => {
   });
 
   const chartData = createMemo(() => {
-    const points = chartSeries().slice().sort((a, b) => a.time - b.time);
+    const points = chartSeries()
+      .slice()
+      .sort((a, b) => a.time - b.time);
     const now = Date.now();
     const selected = periodFilter();
     const rangeMs = "rangeMs" in selected ? selected.rangeMs : undefined;
     const start = points[0]?.time ?? now - (rangeMs ?? DEFAULT_RANGE_MS);
     const end = points[points.length - 1]?.time ?? now;
-    let min = points.length > 0 ? Math.min(...points.map((point) => point.value)) : 0;
-    let max = points.length > 0 ? Math.max(...points.map((point) => point.value)) : 0;
+    let min =
+      points.length > 0 ? Math.min(...points.map((point) => point.value)) : 0;
+    let max =
+      points.length > 0 ? Math.max(...points.map((point) => point.value)) : 0;
     if (min === max) {
       const padding = Math.max(1, Math.abs(min) * 0.1);
       min -= padding;
@@ -366,7 +377,6 @@ const Portfolio: Component = () => {
         drawdown: maxDrawdown(accountHistory),
         totalEquity: totalEquity ?? hyperliquidAccountValue(),
         tradingEquity: hyperliquidAccountValue(),
-        vaultEquity: undefined,
       };
     }
     return {
@@ -375,7 +385,6 @@ const Portfolio: Component = () => {
       drawdown: undefined,
       totalEquity: metrics()?.totalEquity,
       tradingEquity: metrics()?.perpsEquity,
-      vaultEquity: vaultsTotalEquity(),
     };
   });
 
@@ -404,12 +413,14 @@ const Portfolio: Component = () => {
       <main class="mx-auto w-full max-w-[1600px] px-4 py-5 lg:px-6">
         <header class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 class="text-3xl font-semibold tracking-tight text-slate-100">
+            <h1 class="text-2xl font-semibold tracking-tight text-slate-100">
               Portfolio
             </h1>
             <Show
               when={connection()?.masterAddress}
-              fallback={<p class="mt-2 text-sm text-brand-slate-400">Paper account</p>}
+              fallback={
+                <p class="mt-2 text-sm text-brand-slate-400">Paper account</p>
+              }
             >
               {(address) => (
                 <div class="mt-2 flex items-center gap-2 text-sm">
@@ -520,7 +531,9 @@ const Portfolio: Component = () => {
 
           <div class="rounded-lg border border-brand-border bg-brand-surface">
             <div class="flex items-center justify-between border-b border-brand-border px-4 py-3 text-sm">
-              <span class="font-medium text-slate-200">Perps + Spot + Vaults</span>
+              <span class="font-medium text-slate-200">
+                Account performance
+              </span>
               <span class="text-brand-slate-400">{periodFilter().label}</span>
             </div>
             <div class="space-y-2.5 p-4">
@@ -547,10 +560,6 @@ const Portfolio: Component = () => {
               <MetricRow
                 label="Trading Equity"
                 value={formatUsd(overview().tradingEquity)}
-              />
-              <MetricRow
-                label="Vault Equity"
-                value={formatUsd(overview().vaultEquity)}
               />
               <MetricRow label="Staking Account" value="--" />
             </div>
@@ -587,7 +596,9 @@ const Portfolio: Component = () => {
                 }}
               >
                 <For each={PERIOD_OPTIONS}>
-                  {(option) => <option value={option.id}>{option.label}</option>}
+                  {(option) => (
+                    <option value={option.id}>{option.label}</option>
+                  )}
                 </For>
               </select>
             </div>
@@ -604,7 +615,9 @@ const Portfolio: Component = () => {
                 <Show when={chartData().points.length > 0}>
                   <div class="absolute inset-0 flex flex-col justify-between">
                     <For each={yTicks()}>
-                      {() => <div class="h-0 border-b border-brand-border/40" />}
+                      {() => (
+                        <div class="h-0 border-b border-brand-border/40" />
+                      )}
                     </For>
                   </div>
                 </Show>
@@ -635,7 +648,9 @@ const Portfolio: Component = () => {
               <Show when={chartData().points.length > 0}>
                 <div class="absolute bottom-2 left-[72px] right-4 flex justify-between font-mono text-[11px] text-brand-slate-500">
                   <For each={xTicks()}>
-                    {(tick) => <span>{formatAxisDate(tick, periodFilter().id)}</span>}
+                    {(tick) => (
+                      <span>{formatAxisDate(tick, periodFilter().id)}</span>
+                    )}
                   </For>
                 </div>
               </Show>

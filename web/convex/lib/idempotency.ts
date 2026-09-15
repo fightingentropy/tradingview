@@ -3,19 +3,18 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { normalizeIdempotencyKey } from "./accounting";
 
-type OwnerType = "user" | "vault";
+type OwnerType = "user";
 
-const ownerKey = (
-  ownerType: OwnerType,
-  ownerId: Id<"users"> | Id<"vaults">,
-) => `${ownerType}:${ownerId}`;
+const ownerKey = (ownerType: OwnerType, ownerId: Id<"users">) =>
+  `${ownerType}:${ownerId}`;
 
 export const requestFingerprint = (
   fields: Record<string, string | number | boolean | null | undefined>,
 ) =>
   Object.entries(fields)
-    .filter((entry): entry is [string, string | number | boolean | null] =>
-      entry[1] !== undefined,
+    .filter(
+      (entry): entry is [string, string | number | boolean | null] =>
+        entry[1] !== undefined,
     )
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
@@ -25,7 +24,7 @@ export const readOperationReceipt = async <T>(
   ctx: MutationCtx,
   input: {
     ownerType: OwnerType;
-    ownerId: Id<"users"> | Id<"vaults">;
+    ownerId: Id<"users">;
     operation: string;
     idempotencyKey?: string;
     fingerprint: string;
@@ -63,7 +62,7 @@ export const writeOperationReceipt = async <T>(
   ctx: MutationCtx,
   input: {
     ownerType: OwnerType;
-    ownerId: Id<"users"> | Id<"vaults">;
+    ownerId: Id<"users">;
     operation: string;
     idempotencyKey?: string;
     fingerprint: string;
@@ -85,7 +84,7 @@ export const writeLedgerEvent = async (
   ctx: MutationCtx,
   input: {
     ownerType: OwnerType;
-    ownerId: Id<"users"> | Id<"vaults">;
+    ownerId: Id<"users">;
     operation: string;
     asset: string;
     amountExact: string;

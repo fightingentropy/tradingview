@@ -28,8 +28,6 @@ import {
 } from "./stores/market";
 import { currentPage, setCurrentPage } from "./stores/page";
 import { openSettings, settingsOpen } from "./stores/settings";
-import { vaultsList } from "./stores/vaults";
-import type { VaultSummary } from "./stores/vaults";
 import { isAdmin, isAuthenticated, logout } from "./stores/auth";
 import { disconnectHyperliquid } from "./stores/hyperliquidExecution";
 import { apiWalletVaultRevocationEpoch } from "./stores/apiWalletVault";
@@ -40,17 +38,13 @@ import {
   loadBrief,
   loadChartsGrid,
   loadEconomicCalendar,
-  loadOptionsTrade,
   loadPortfolio,
-  loadVaults,
   prefetchPage,
 } from "./lib/routeModules";
 
-const OptionsTrade = lazy(loadOptionsTrade);
 const Portfolio = lazy(loadPortfolio);
 const ChartsGrid = lazy(loadChartsGrid);
 const AdminDashboard = lazy(loadAdminDashboard);
-const Vaults = lazy(loadVaults);
 const Brief = lazy(loadBrief);
 const EconomicCalendar = lazy(loadEconomicCalendar);
 
@@ -82,10 +76,7 @@ const ChartsHeaderOverlay: Component = () => {
 
   const hideNavigationAfterDelay = () => {
     clearHideTimeout();
-    hideTimeout = window.setTimeout(
-      hideNavigation,
-      CHARTS_NAV_HIDE_DELAY_MS,
-    );
+    hideTimeout = window.setTimeout(hideNavigation, CHARTS_NAV_HIDE_DELAY_MS);
   };
 
   const revealNavigationBriefly = () => {
@@ -124,7 +115,9 @@ const ChartsHeaderOverlay: Component = () => {
         onPointerLeave={hideNavigationAfterDelay}
         onFocusIn={revealNavigation}
         onFocusOut={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          if (
+            !event.currentTarget.contains(event.relatedTarget as Node | null)
+          ) {
             hideNavigationAfterDelay();
           }
         }}
@@ -142,6 +135,9 @@ const ChartsHeaderOverlay: Component = () => {
 
 const App: Component = () => {
   const [isTabVisible, setIsTabVisible] = createSignal(!document.hidden);
+  const [mobileTradePane, setMobileTradePane] = createSignal<
+    "chart" | "book" | "order"
+  >("chart");
   const [mobileProfileOpen, setMobileProfileOpen] = createSignal(false);
   const [watchlistWidth, setWatchlistWidth] = createSignal(
     DEFAULT_WATCHLIST_WIDTH,
@@ -243,18 +239,6 @@ const App: Component = () => {
     setWatchlistWidth((current) => clampWatchlistWidth(current));
   };
 
-  const handleMyVaultClick = () => {
-    const operatorVault = vaultsList().find(
-      (vault: VaultSummary) => vault.isOperator,
-    );
-    if (operatorVault) {
-      setCurrentPage("vaults", { vaultId: operatorVault._id });
-    } else {
-      setCurrentPage("vaults");
-    }
-    setMobileProfileOpen(false);
-  };
-
   onMount(() => {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -271,13 +255,11 @@ const App: Component = () => {
 
   // Start live price polling
   useLivePrices({
-    enabled: () =>
-      (currentPage() === "trade" || currentPage() === "options") &&
-      isTabVisible(),
+    enabled: () => currentPage() === "trade" && isTabVisible(),
   });
 
   return (
-    <div class="flex h-screen w-full flex-col bg-brand-screen text-slate-200 select-none md:select-auto">
+    <div class="app-shell flex w-full flex-col bg-brand-screen text-slate-200">
       {/* Header */}
       <Show when={currentPage() !== "charts"}>
         <Header />
@@ -289,9 +271,11 @@ const App: Component = () => {
 
       {/* Mobile Header */}
       <Show when={currentPage() !== "charts"}>
-        <header class="flex md:hidden items-center justify-between px-3 py-2 border-b border-brand-border">
+        <header class="mobile-header flex md:hidden items-center justify-between px-4 py-3 border-b border-brand-border">
           <button onClick={() => setCurrentPage("trade")}>
-            <span class="text-base font-semibold tracking-tight text-brand-accent">Trading<span class="text-brand-slate-100">View</span></span>
+            <span class="text-base font-semibold tracking-tight text-brand-slate-100">
+              Trading<span class="text-brand-slate-100">View</span>
+            </span>
           </button>
           <div class="flex items-center gap-2">
             <AccountConnectionControl
@@ -300,84 +284,61 @@ const App: Component = () => {
             />
             <Show when={isAuthenticated()}>
               <div class="relative">
-                  <button
-                    class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-slate-100 border border-brand-border rounded-lg hover:border-brand-accent hover:text-brand-accent transition-colors"
-                    onClick={() => setMobileProfileOpen(!mobileProfileOpen())}
+                <button
+                  class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-slate-100 border border-brand-border rounded-lg hover:border-brand-accent hover:text-brand-accent transition-colors"
+                  onClick={() => setMobileProfileOpen(!mobileProfileOpen())}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                      <circle cx="12" cy="7" r="4" />
-                    </svg>
-                    <span>Profile</span>
-                  </button>
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span>Profile</span>
+                </button>
 
-                  {mobileProfileOpen() && (
-                    <>
-                      <div
-                        class="fixed inset-0 z-40"
-                        onClick={() => setMobileProfileOpen(false)}
-                      />
-                      <div class="absolute right-0 top-full mt-2 w-48 bg-brand-surface border border-brand-border rounded-lg shadow-xl z-50 py-2">
-                        <button
-                          class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-200 hover:bg-brand-border/30 transition-colors"
-                          onClick={handleMyVaultClick}
+                {mobileProfileOpen() && (
+                  <>
+                    <div
+                      class="fixed inset-0 z-40"
+                      onClick={() => setMobileProfileOpen(false)}
+                    />
+                    <div class="absolute right-0 top-full mt-2 w-48 bg-brand-surface border border-brand-border rounded-lg shadow-xl z-50 py-2">
+                      <button
+                        class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-brand-red-400 hover:bg-brand-border/30 transition-colors"
+                        onClick={() => {
+                          setMobileProfileOpen(false);
+                          logout();
+                        }}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <rect x="3" y="4" width="18" height="16" rx="2" />
-                            <path d="M7 12h10" />
-                            <path d="M9 8h6" />
-                            <path d="M9 16h6" />
-                          </svg>
-                          <span>My Vault</span>
-                        </button>
-                        <div class="border-t border-brand-border my-1" />
-                        <button
-                          class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-brand-red-400 hover:bg-brand-border/30 transition-colors"
-                          onClick={() => {
-                            setMobileProfileOpen(false);
-                            logout();
-                          }}
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                            <polyline points="16 17 21 12 16 7" />
-                            <line x1="21" y1="12" x2="9" y2="12" />
-                          </svg>
-                          <span>Sign out</span>
-                        </button>
-                      </div>
-                    </>
-                  )}
+                          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                          <polyline points="16 17 21 12 16 7" />
+                          <line x1="21" y1="12" x2="9" y2="12" />
+                        </svg>
+                        <span>Sign out</span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </Show>
 
@@ -418,8 +379,31 @@ const App: Component = () => {
         {/* Market Info Bar */}
         <MarketInfo />
 
+        <nav class="mobile-trade-tabs md:hidden" aria-label="Trading panels">
+          <button
+            aria-pressed={mobileTradePane() === "chart"}
+            onClick={() => setMobileTradePane("chart")}
+          >
+            Chart
+          </button>
+          <button
+            aria-pressed={mobileTradePane() === "book"}
+            onClick={() => setMobileTradePane("book")}
+          >
+            Order book
+          </button>
+          <button
+            aria-pressed={mobileTradePane() === "order"}
+            onClick={() => setMobileTradePane("order")}
+          >
+            Order
+          </button>
+        </nav>
         {/* Main Content */}
-        <div class="flex flex-1 overflow-hidden">
+        <div
+          class="trading-workspace flex flex-1 min-h-0 overflow-hidden"
+          data-mobile-pane={mobileTradePane()}
+        >
           <Show when={showWatchlist()}>
             <div
               class="relative hidden lg:flex shrink-0 border-r border-brand-border bg-brand-surface"
@@ -433,7 +417,7 @@ const App: Component = () => {
             </div>
           </Show>
           {/* Chart Area */}
-          <div class="flex-1 flex flex-col min-w-0 min-h-0">
+          <div class="trade-chart-column flex-1 flex flex-col min-w-0 min-h-0">
             <DeferredTradingViewChart />
 
             {/* Bottom Panel - Positions/Orders */}
@@ -443,31 +427,19 @@ const App: Component = () => {
           </div>
 
           {/* Order Book */}
-          <Show when={showOrderBook()}>
-            <div class="w-64 hidden lg:block">
+          <Show when={showOrderBook() || mobileTradePane() === "book"}>
+            <div
+              class="trade-book-column"
+              classList={{ "desktop-book-hidden": !showOrderBook() }}
+            >
               <OrderBook />
             </div>
           </Show>
 
           {/* Order Form */}
-          <div class="w-80 hidden md:block">
+          <div class="trade-ticket-column">
             <OrderForm />
           </div>
-        </div>
-      </Show>
-
-      {/* Options View */}
-      <Show when={currentPage() === "options"}>
-        <div class="flex-1 overflow-hidden">
-          <Suspense
-            fallback={
-              <div class="h-full w-full flex items-center justify-center text-brand-slate-400">
-                Loading options…
-              </div>
-            }
-          >
-            <OptionsTrade />
-          </Suspense>
         </div>
       </Show>
 
@@ -482,21 +454,6 @@ const App: Component = () => {
             }
           >
             <Portfolio />
-          </Suspense>
-        </div>
-      </Show>
-
-      {/* Vaults View */}
-      <Show when={currentPage() === "vaults"}>
-        <div class="flex-1 overflow-hidden">
-          <Suspense
-            fallback={
-              <div class="h-full w-full flex items-center justify-center text-brand-slate-400">
-                Loading...
-              </div>
-            }
-          >
-            <Vaults />
           </Suspense>
         </div>
       </Show>
@@ -562,11 +519,131 @@ const App: Component = () => {
       </Show>
 
       {/* Mobile Bottom Nav */}
-      <Show when={currentPage() !== "charts"}>
-        <nav class="flex md:hidden items-center justify-start gap-1 overflow-x-auto px-2 py-2 border-t border-brand-border bg-brand-surface [&>button]:min-w-16 [&>button]:shrink-0">
+      <nav
+        class="mobile-nav flex md:hidden items-center justify-around border-t border-brand-border"
+        aria-label="Main navigation"
+      >
+        <button
+          class={`flex flex-col items-center gap-1 ${currentPage() === "trade" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          onClick={() => setCurrentPage("trade")}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="m3 17 2.5-8.5L12 6l6.5 2.5L21 17" />
+            <path d="m3 17 9 4 9-4" />
+            <path d="M12 10v12" />
+          </svg>
+          <span class="text-xs">Trade</span>
+        </button>
+
+        <button
+          class={`flex flex-col items-center gap-1 ${currentPage() === "portfolio" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          onPointerEnter={() => prefetchPage("portfolio")}
+          onFocus={() => prefetchPage("portfolio")}
+          onClick={() => setCurrentPage("portfolio")}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+            <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
+            <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
+          </svg>
+          <span class="text-xs">Portfolio</span>
+        </button>
+
+        <button
+          class={`flex flex-col items-center gap-1 ${currentPage() === "brief" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          onPointerEnter={() => prefetchPage("brief")}
+          onFocus={() => prefetchPage("brief")}
+          onClick={() => setCurrentPage("brief")}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M4 4h16v16H4z" />
+            <path d="M8 8h8" />
+            <path d="M8 12h8" />
+            <path d="M8 16h5" />
+          </svg>
+          <span class="text-xs">Brief</span>
+        </button>
+        <button
+          class={`flex flex-col items-center gap-1 ${currentPage() === "calendar" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          onPointerEnter={() => prefetchPage("calendar")}
+          onFocus={() => prefetchPage("calendar")}
+          onClick={() => setCurrentPage("calendar")}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="3" y="5" width="18" height="16" rx="2" />
+            <path d="M16 3v4M8 3v4M3 10h18" />
+            <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
+          </svg>
+          <span class="text-xs">Calendar</span>
+        </button>
+        <button
+          class={`flex flex-col items-center gap-1 ${currentPage() === "charts" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          onPointerEnter={() => prefetchPage("charts")}
+          onFocus={() => prefetchPage("charts")}
+          onClick={() => setCurrentPage("charts")}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M3 3v18h18" />
+            <path d="m7 14 3-3 3 3 5-6" />
+          </svg>
+          <span class="text-xs">Charts</span>
+        </button>
+        <Show when={isAdmin()}>
           <button
-            class={`flex flex-col items-center gap-1 ${currentPage() === "trade" ? "text-brand-accent" : "text-brand-slate-400"}`}
-            onClick={() => setCurrentPage("trade")}
+            class={`flex flex-col items-center gap-1 ${currentPage() === "admin" ? "text-brand-accent" : "text-brand-slate-400"}`}
+            onPointerEnter={() => prefetchPage("admin")}
+            onFocus={() => prefetchPage("admin")}
+            onClick={() => setCurrentPage("admin")}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -579,178 +656,13 @@ const App: Component = () => {
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <path d="m3 17 2.5-8.5L12 6l6.5 2.5L21 17" />
-              <path d="m3 17 9 4 9-4" />
-              <path d="M12 10v12" />
+              <path d="M12 3l8 4v4c0 5.55-3.84 10.74-8 12-4.16-1.26-8-6.45-8-12V7l8-4Z" />
+              <path d="M9 12l2 2 4-4" />
             </svg>
-            <span class="text-xs">Trade</span>
+            <span class="text-xs">Admin</span>
           </button>
-          <button
-            class={`flex flex-col items-center gap-1 ${currentPage() === "options" ? "text-brand-accent" : "text-brand-slate-400"}`}
-            onPointerEnter={() => prefetchPage("options")}
-            onFocus={() => prefetchPage("options")}
-            onClick={() => setCurrentPage("options")}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="3" y="4" width="18" height="16" rx="2" />
-              <path d="M7 9h10" />
-              <path d="M7 13h5" />
-              <path d="M7 17h8" />
-            </svg>
-            <span class="text-xs">Options</span>
-          </button>
-          <button
-            class={`flex flex-col items-center gap-1 ${currentPage() === "portfolio" ? "text-brand-accent" : "text-brand-slate-400"}`}
-            onPointerEnter={() => prefetchPage("portfolio")}
-            onFocus={() => prefetchPage("portfolio")}
-            onClick={() => setCurrentPage("portfolio")}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
-              <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
-              <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
-            </svg>
-            <span class="text-xs">Portfolio</span>
-          </button>
-          <button
-            class={`flex flex-col items-center gap-1 ${currentPage() === "vaults" ? "text-brand-accent" : "text-brand-slate-400"}`}
-            onPointerEnter={() => prefetchPage("vaults")}
-            onFocus={() => prefetchPage("vaults")}
-            onClick={() => setCurrentPage("vaults")}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="3" y="4" width="18" height="16" rx="2" />
-              <path d="M7 12h10" />
-              <path d="M9 8h6" />
-              <path d="M9 16h6" />
-            </svg>
-            <span class="text-xs">Vaults</span>
-          </button>
-          <button
-            class={`flex flex-col items-center gap-1 ${currentPage() === "brief" ? "text-brand-accent" : "text-brand-slate-400"}`}
-            onPointerEnter={() => prefetchPage("brief")}
-            onFocus={() => prefetchPage("brief")}
-            onClick={() => setCurrentPage("brief")}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M4 4h16v16H4z" />
-              <path d="M8 8h8" />
-              <path d="M8 12h8" />
-              <path d="M8 16h5" />
-            </svg>
-            <span class="text-xs">Brief</span>
-          </button>
-          <button
-            class={`flex flex-col items-center gap-1 ${currentPage() === "calendar" ? "text-brand-accent" : "text-brand-slate-400"}`}
-            onPointerEnter={() => prefetchPage("calendar")}
-            onFocus={() => prefetchPage("calendar")}
-            onClick={() => setCurrentPage("calendar")}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="3" y="5" width="18" height="16" rx="2" />
-              <path d="M16 3v4M8 3v4M3 10h18" />
-              <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
-            </svg>
-            <span class="text-xs">Calendar</span>
-          </button>
-          <button
-            class={`flex flex-col items-center gap-1 ${currentPage() === "charts" ? "text-brand-accent" : "text-brand-slate-400"}`}
-            onPointerEnter={() => prefetchPage("charts")}
-            onFocus={() => prefetchPage("charts")}
-            onClick={() => setCurrentPage("charts")}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M3 3v18h18" />
-              <path d="m7 14 3-3 3 3 5-6" />
-            </svg>
-            <span class="text-xs">Charts</span>
-          </button>
-          <Show when={isAdmin()}>
-            <button
-              class={`flex flex-col items-center gap-1 ${currentPage() === "admin" ? "text-brand-accent" : "text-brand-slate-400"}`}
-              onPointerEnter={() => prefetchPage("admin")}
-              onFocus={() => prefetchPage("admin")}
-              onClick={() => setCurrentPage("admin")}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M12 3l8 4v4c0 5.55-3.84 10.74-8 12-4.16-1.26-8-6.45-8-12V7l8-4Z" />
-                <path d="M9 12l2 2 4-4" />
-              </svg>
-              <span class="text-xs">Admin</span>
-            </button>
-          </Show>
-        </nav>
-      </Show>
+        </Show>
+      </nav>
 
       <ModalHost />
 

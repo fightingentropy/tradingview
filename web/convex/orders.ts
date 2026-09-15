@@ -46,7 +46,6 @@ const sideValidator = v.union(v.literal("buy"), v.literal("sell"));
 const typeValidator = v.union(v.literal("market"), v.literal("limit"));
 const marginTypeValidator = v.union(v.literal("isolated"), v.literal("cross"));
 const OWNER_TYPE_USER = "user" as const;
-const OWNER_TYPE_VAULT = "vault" as const;
 
 type MarginType = "isolated" | "cross";
 
@@ -68,51 +67,10 @@ const validateLeverage = (value: number) => {
   return value;
 };
 
-type OwnerContext = {
-  ownerType: typeof OWNER_TYPE_USER | typeof OWNER_TYPE_VAULT;
-  ownerId: Id<"users"> | Id<"vaults">;
-  userId: Id<"users">;
-};
-
-const resolveOwner = async (
-  ctx: MutationCtx | QueryCtx,
-  userId: Id<"users">,
-  vaultId?: Id<"vaults">,
-): Promise<OwnerContext> => {
-  if (!vaultId) {
-    return { ownerType: OWNER_TYPE_USER, ownerId: userId, userId };
-  }
-  const vault = await ctx.db.get(vaultId);
-  if (!vault) {
-    throw new ConvexError("Vault not found.");
-  }
-  if (vault.operatorUserId !== userId) {
-    throw new ConvexError("Not authorized to trade this vault.");
-  }
-  if (vault.status !== "active") {
-    throw new ConvexError("Vault is not active.");
-  }
-  return { ownerType: OWNER_TYPE_VAULT, ownerId: vaultId, userId };
-};
-
-const resolveOwnerForQuery = async (
-  ctx: QueryCtx,
-  userId: Id<"users">,
-  vaultId?: Id<"vaults">,
-) => {
-  if (!vaultId) {
-    return { ownerType: OWNER_TYPE_USER, ownerId: userId };
-  }
-  const vault = await ctx.db.get(vaultId);
-  if (!vault || vault.operatorUserId !== userId) return null;
-  if (vault.status !== "active") return null;
-  return { ownerType: OWNER_TYPE_VAULT, ownerId: vaultId };
-};
-
 const getPosition = async (
   ctx: MutationCtx | QueryCtx,
-  ownerType: typeof OWNER_TYPE_USER | typeof OWNER_TYPE_VAULT,
-  ownerId: Id<"users"> | Id<"vaults">,
+  ownerType: typeof OWNER_TYPE_USER,
+  ownerId: Id<"users">,
   symbol: string,
 ) =>
   ctx.db
@@ -124,8 +82,8 @@ const getPosition = async (
 
 const getPerpsBalanceAtoms = async (
   ctx: MutationCtx | QueryCtx,
-  ownerType: typeof OWNER_TYPE_USER | typeof OWNER_TYPE_VAULT,
-  ownerId: Id<"users"> | Id<"vaults">,
+  ownerType: typeof OWNER_TYPE_USER,
+  ownerId: Id<"users">,
   asset: "USDC" | "USDT",
 ) => {
   const balance = await ctx.db
@@ -192,11 +150,7 @@ const calculateMarginUsed = (
     );
     const size = signedSize < 0n ? -signedSize : signedSize;
     if (size <= 0n) continue;
-    marginUsed += mulDiv(
-      notionalCashAtoms(size, mark),
-      1n,
-      BigInt(leverage),
-    );
+    marginUsed += mulDiv(notionalCashAtoms(size, mark), 1n, BigInt(leverage));
   }
   return marginUsed;
 };
@@ -284,8 +238,8 @@ const calculateTotalUnrealizedPnl = (
 
 const adjustPerpsBalance = async (
   ctx: MutationCtx,
-  ownerType: typeof OWNER_TYPE_USER | typeof OWNER_TYPE_VAULT,
-  ownerId: Id<"users"> | Id<"vaults">,
+  ownerType: typeof OWNER_TYPE_USER,
+  ownerId: Id<"users">,
   userId: Id<"users"> | null,
   asset: "USDC" | "USDT",
   delta: bigint,
@@ -339,8 +293,8 @@ const adjustPerpsBalance = async (
 
 const applyFillToPosition = async (
   ctx: MutationCtx,
-  ownerType: typeof OWNER_TYPE_USER | typeof OWNER_TYPE_VAULT,
-  ownerId: Id<"users"> | Id<"vaults">,
+  ownerType: typeof OWNER_TYPE_USER,
+  ownerId: Id<"users">,
   userId: Id<"users"> | null,
   symbol: string,
   signedSize: bigint,
@@ -510,8 +464,8 @@ const recordTrade = async (
     price,
     pnl,
   }: {
-    ownerType: typeof OWNER_TYPE_USER | typeof OWNER_TYPE_VAULT;
-    ownerId: Id<"users"> | Id<"vaults">;
+    ownerType: typeof OWNER_TYPE_USER;
+    ownerId: Id<"users">;
     userId: Id<"users"> | null;
     orderId?: Id<"orders">;
     symbol: string;
@@ -588,8 +542,8 @@ const executeFill = async (
     collateral,
     marginType,
   }: {
-    ownerType: typeof OWNER_TYPE_USER | typeof OWNER_TYPE_VAULT;
-    ownerId: Id<"users"> | Id<"vaults">;
+    ownerType: typeof OWNER_TYPE_USER;
+    ownerId: Id<"users">;
     userId: Id<"users"> | null;
     orderId?: Id<"orders">;
     symbol: string;
@@ -636,12 +590,11 @@ const executeFill = async (
 };
 
 export const listOpenOrders = query({
-  args: { vaultId: v.optional(v.id("vaults")) },
-  handler: async (ctx, args) => {
+  args: {},
+  handler: async (ctx) => {
     const user = await getAuthUser(ctx);
     if (!user) return [];
-    const owner = await resolveOwnerForQuery(ctx, user._id, args.vaultId);
-    if (!owner) return [];
+    const owner = { ownerType: OWNER_TYPE_USER, ownerId: user._id };
     // Use the by_owner_status_created index with database ordering for efficiency
     const orders = await ctx.db
       .query("orders")
@@ -658,12 +611,11 @@ export const listOpenOrders = query({
 });
 
 export const listPositions = query({
-  args: { vaultId: v.optional(v.id("vaults")) },
-  handler: async (ctx, args) => {
+  args: {},
+  handler: async (ctx) => {
     const user = await getAuthUser(ctx);
     if (!user) return [];
-    const owner = await resolveOwnerForQuery(ctx, user._id, args.vaultId);
-    if (!owner) return [];
+    const owner = { ownerType: OWNER_TYPE_USER, ownerId: user._id };
     const positions = await ctx.db
       .query("positions")
       .withIndex("by_owner", (q) =>
@@ -679,11 +631,14 @@ export const updatePositionTpsl = mutation({
     symbol: v.string(),
     takeProfit: v.optional(v.union(v.number(), v.null())),
     stopLoss: v.optional(v.union(v.number(), v.null())),
-    vaultId: v.optional(v.id("vaults")),
   },
   handler: async (ctx, args) => {
     const user = await requireAuthUser(ctx);
-    const owner = await resolveOwner(ctx, user._id, args.vaultId);
+    const owner = {
+      ownerType: OWNER_TYPE_USER,
+      ownerId: user._id,
+      userId: user._id,
+    };
     const symbol = parseFinancial(() => canonicalSymbol(args.symbol));
     const position = await getPosition(
       ctx,
@@ -747,11 +702,14 @@ export const updateFundingForPositions = mutation({
   args: {
     fundingRates: v.optional(v.record(v.string(), v.number())), // Map of symbol -> funding rate (decimal)
     markPrices: v.optional(v.record(v.string(), v.number())), // Map of symbol -> mark price
-    vaultId: v.optional(v.id("vaults")),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx) => {
     const user = await requireAuthUser(ctx);
-    const owner = await resolveOwner(ctx, user._id, args.vaultId);
+    const owner = {
+      ownerType: OWNER_TYPE_USER,
+      ownerId: user._id,
+      userId: user._id,
+    };
     const positions = await ctx.db
       .query("positions")
       .withIndex("by_owner", (q) =>
@@ -861,12 +819,11 @@ export const updateFundingForPositions = mutation({
 });
 
 export const listPerpsBalances = query({
-  args: { vaultId: v.optional(v.id("vaults")) },
-  handler: async (ctx, args) => {
+  args: {},
+  handler: async (ctx) => {
     const user = await getAuthUser(ctx);
     if (!user) return [];
-    const owner = await resolveOwnerForQuery(ctx, user._id, args.vaultId);
-    if (!owner) return [];
+    const owner = { ownerType: OWNER_TYPE_USER, ownerId: user._id };
     return ctx.db
       .query("perpsBalances")
       .withIndex("by_owner", (q) =>
@@ -892,20 +849,20 @@ export const placePerpsOrder = mutation({
     markPrices: v.optional(v.record(v.string(), v.number())),
     spotPrices: v.optional(v.record(v.string(), v.number())),
     marginType: v.optional(marginTypeValidator),
-    vaultId: v.optional(v.id("vaults")),
     idempotencyKey: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await requireAuthUser(ctx);
-    const owner = await resolveOwner(ctx, user._id, args.vaultId);
-    const ownerFields =
-      owner.ownerType === OWNER_TYPE_USER
-        ? {
-            userId: user._id,
-            ownerType: owner.ownerType,
-            ownerId: owner.ownerId,
-          }
-        : { ownerType: owner.ownerType, ownerId: owner.ownerId };
+    const owner = {
+      ownerType: OWNER_TYPE_USER,
+      ownerId: user._id,
+      userId: user._id,
+    };
+    const ownerFields = {
+      userId: user._id,
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+    };
     const symbol = parseFinancial(() => canonicalSymbol(args.symbol));
     if (symbol === "USDC" || symbol === "USDT") {
       throw new ConvexError("Stablecoin perpetual markets are not supported.");
@@ -977,10 +934,7 @@ export const placePerpsOrder = mutation({
     const currentPosition = positions.find(
       (position) => position.symbol === symbol,
     );
-    if (
-      currentPosition &&
-      currentPosition.collateral !== args.collateral
-    ) {
+    if (currentPosition && currentPosition.collateral !== args.collateral) {
       throw new ConvexError(
         "Close the existing position before changing its collateral asset.",
       );
@@ -1188,10 +1142,14 @@ export const placePerpsOrder = mutation({
 });
 
 export const cancelOrder = mutation({
-  args: { orderId: v.id("orders"), vaultId: v.optional(v.id("vaults")) },
+  args: { orderId: v.id("orders") },
   handler: async (ctx, args) => {
     const user = await requireAuthUser(ctx);
-    const owner = await resolveOwner(ctx, user._id, args.vaultId);
+    const owner = {
+      ownerType: OWNER_TYPE_USER,
+      ownerId: user._id,
+      userId: user._id,
+    };
     const order = await ctx.db.get(args.orderId);
     if (
       !order ||
@@ -1213,11 +1171,14 @@ export const fillOpenOrder = mutation({
     orderId: v.id("orders"),
     // markPrice accepted for back-compat but IGNORED — fill settles at server mark.
     markPrice: v.optional(v.number()),
-    vaultId: v.optional(v.id("vaults")),
   },
   handler: async (ctx, args) => {
     const user = await requireAuthUser(ctx);
-    const owner = await resolveOwner(ctx, user._id, args.vaultId);
+    const owner = {
+      ownerType: OWNER_TYPE_USER,
+      ownerId: user._id,
+      userId: user._id,
+    };
     const order = await ctx.db.get(args.orderId);
     if (
       !order ||
@@ -1286,11 +1247,14 @@ export const closePosition = mutation({
     symbol: v.string(),
     // markPrice accepted for back-compat but IGNORED — close settles at server mark.
     markPrice: v.optional(v.number()),
-    vaultId: v.optional(v.id("vaults")),
   },
   handler: async (ctx, args) => {
     const user = await requireAuthUser(ctx);
-    const owner = await resolveOwner(ctx, user._id, args.vaultId);
+    const owner = {
+      ownerType: OWNER_TYPE_USER,
+      ownerId: user._id,
+      userId: user._id,
+    };
     const symbol = parseFinancial(() => canonicalSymbol(args.symbol));
     const position = await getPosition(
       ctx,
@@ -1359,12 +1323,15 @@ export const autoDeleveragePosition = mutation({
     // markPrice accepted for back-compat but IGNORED — ADL settles at server mark.
     markPrice: v.optional(v.number()),
     reduceSize: v.number(),
-    vaultId: v.optional(v.id("vaults")),
     idempotencyKey: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await requireAuthUser(ctx);
-    const owner = await resolveOwner(ctx, user._id, args.vaultId);
+    const owner = {
+      ownerType: OWNER_TYPE_USER,
+      ownerId: user._id,
+      userId: user._id,
+    };
     const symbol = parseFinancial(() => canonicalSymbol(args.symbol));
     const requestedSize = parseFinancial(() => quantityAtoms(args.reduceSize));
     const fingerprint = requestFingerprint({

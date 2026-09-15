@@ -108,7 +108,7 @@ const SectionHeading: Component<{
   subtitle?: string;
 }> = (props) => (
   <div class="mb-4 flex items-start gap-3">
-    <span class="mt-0.5 font-mono text-[10px] font-semibold tracking-[0.2em] text-brand-accent">
+    <span class="mt-0.5 font-mono text-[10px] font-semibold tracking-[0.2em] text-brand-slate-500">
       {props.index}
     </span>
     <div>
@@ -182,18 +182,15 @@ const Brief: Component = () => {
 
   return (
     <main class="h-full overflow-y-auto bg-brand-screen text-slate-200 select-text">
-      <div class="mx-auto w-full max-w-[1540px] px-4 pb-14 pt-5 sm:px-6 lg:px-8 lg:pt-7">
-        <section class="relative overflow-hidden rounded-2xl border border-brand-border bg-brand-surface/70 px-5 py-6 sm:px-7 sm:py-7 lg:px-9 lg:py-8">
-          <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-accent/70 to-transparent" />
-          <div class="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-brand-accent/[0.035] blur-3xl" />
-
+      <div class="mx-auto w-full max-w-[1440px] px-4 pb-14 pt-5 sm:px-6 lg:px-8 lg:pt-7">
+        <section class="border-b border-brand-border pb-7">
           <div class="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div class="max-w-4xl">
-              <div class="mb-4 flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em]">
-                <span class="rounded-full border border-brand-accent/30 bg-brand-accent/10 px-2.5 py-1 text-brand-accent">
+              <div class="mb-5 flex flex-wrap items-center gap-3 text-xs">
+                <span class="font-medium text-slate-200">
                   Global macro PM brief
                 </span>
-                <span class="rounded-full border border-amber-300/20 bg-amber-300/[0.06] px-2.5 py-1 text-amber-200">
+                <span class="border-l border-brand-border pl-3 text-brand-slate-400">
                   Weekend · next-session setup
                 </span>
                 <span class="text-brand-slate-500">Medium confidence</span>
@@ -202,7 +199,7 @@ const Brief: Component = () => {
               <p class="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-brand-slate-400">
                 Market verdict
               </p>
-              <h1 class="max-w-5xl text-2xl font-semibold leading-tight tracking-[-0.035em] text-white sm:text-3xl lg:text-[38px] lg:leading-[1.15]">
+              <h1 class="max-w-5xl text-xl font-medium leading-snug tracking-tight text-white sm:text-2xl lg:text-[28px] lg:leading-[1.3]">
                 Hawkish rate repricing is the dominant impulse, but equities,
                 credit and volatility have not confirmed a full risk-off break.
               </h1>
@@ -210,8 +207,8 @@ const Brief: Component = () => {
                 The tape is rotational and unstable: front-end yields and the
                 dollar tightened, small caps and precious metals sold off, while
                 mega-cap AI strength kept the weekly index complex positive. The
-                next move belongs to labor data, services inflation and Hormuz—not
-                another speech.
+                next move belongs to labor data, services inflation and
+                Hormuz—not another speech.
               </p>
             </div>
 
@@ -242,7 +239,7 @@ const Brief: Component = () => {
                 href={snapshot.source.href}
                 target="_blank"
                 rel="noreferrer"
-                class="group rounded-xl border border-brand-border bg-brand-surface/55 px-3.5 py-3 transition-colors hover:border-brand-slate-600"
+                class="group rounded-md border border-brand-border bg-brand-surface/55 px-3.5 py-3 transition-colors hover:border-brand-slate-600"
               >
                 <div class="flex items-center justify-between gap-2">
                   <p class="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-brand-slate-500">
@@ -266,7 +263,7 @@ const Brief: Component = () => {
 
         <div class="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
           <div class="space-y-3">
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
               <SectionHeading
                 index="01"
                 title="What changed"
@@ -293,14 +290,14 @@ const Brief: Component = () => {
                           {item.detail}
                         </p>
                         <p class="mt-2 border-l border-brand-border pl-3 text-xs leading-5 text-slate-300">
-                          <span class="font-medium text-slate-100">PM read: </span>
+                          <span class="font-medium text-slate-100">
+                            PM read:{" "}
+                          </span>
                           {item.implication}
                         </p>
                         <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                           <For each={item.sources}>
-                            {(source) => (
-                              <SourceLink source={source} compact />
-                            )}
+                            {(source) => <SourceLink source={source} compact />}
                           </For>
                         </div>
                       </div>
@@ -310,7 +307,7 @@ const Brief: Component = () => {
               </div>
             </section>
 
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
               <SectionHeading
                 index="02"
                 title="Cross-asset read"
@@ -319,7 +316,7 @@ const Brief: Component = () => {
               <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 <For each={crossAssetRead}>
                   {(item) => (
-                    <div class="rounded-xl border border-brand-border bg-brand-screen/45 p-4">
+                    <div class="rounded-md border border-brand-border bg-brand-screen/45 p-4">
                       <div class="flex items-center justify-between gap-3">
                         <span class="text-xs font-semibold uppercase tracking-[0.12em] text-brand-slate-400">
                           {item.asset}
@@ -328,7 +325,9 @@ const Brief: Component = () => {
                           class={`h-1.5 w-1.5 rounded-full ${toneDotClass(item.tone)}`}
                         />
                       </div>
-                      <p class={`mt-3 text-sm font-semibold ${toneTextClass(item.tone)}`}>
+                      <p
+                        class={`mt-3 text-sm font-semibold ${toneTextClass(item.tone)}`}
+                      >
                         {item.read}
                       </p>
                       <p class="mt-1.5 text-xs leading-5 text-brand-slate-400">
@@ -336,9 +335,7 @@ const Brief: Component = () => {
                       </p>
                       <div class="mt-2.5 flex flex-wrap gap-x-2 gap-y-1">
                         <For each={item.sources}>
-                          {(source) => (
-                            <SourceLink source={source} compact />
-                          )}
+                          {(source) => <SourceLink source={source} compact />}
                         </For>
                       </div>
                     </div>
@@ -347,14 +344,14 @@ const Brief: Component = () => {
               </div>
             </section>
 
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
               <SectionHeading
                 index="03"
                 title="Risk & opportunity radar"
                 subtitle="Observable paths that can change the current read."
               />
               <div class="grid gap-3 md:grid-cols-2">
-                <div class="rounded-xl border border-brand-accent/15 bg-brand-accent/[0.035] p-4">
+                <div class="rounded-md border border-brand-accent/15 bg-brand-accent/[0.035] p-4">
                   <p class="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-brand-accent">
                     Upside developments
                   </p>
@@ -369,7 +366,7 @@ const Brief: Component = () => {
                     </For>
                   </div>
                 </div>
-                <div class="rounded-xl border border-brand-red-400/15 bg-brand-red-400/[0.035] p-4">
+                <div class="rounded-md border border-brand-red-400/15 bg-brand-red-400/[0.035] p-4">
                   <p class="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-brand-red-400">
                     Downside risks
                   </p>
@@ -387,7 +384,7 @@ const Brief: Component = () => {
               </div>
             </section>
 
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
               <SectionHeading
                 index="04"
                 title="PM bottom line"
@@ -396,9 +393,11 @@ const Brief: Component = () => {
               <div class="space-y-2">
                 <For each={scenarios}>
                   {(scenario) => (
-                    <article class="rounded-xl border border-brand-border bg-brand-screen/45 p-4 sm:p-5">
+                    <article class="rounded-md border border-brand-border bg-brand-screen/45 p-4 sm:p-5">
                       <div class="flex items-center gap-4">
-                        <div class={`font-mono text-2xl font-semibold ${toneTextClass(scenario.tone)}`}>
+                        <div
+                          class={`font-mono text-2xl font-semibold ${toneTextClass(scenario.tone)}`}
+                        >
                           {scenario.probability}%
                         </div>
                         <div class="min-w-0 flex-1">
@@ -409,7 +408,10 @@ const Brief: Component = () => {
                             <div class="h-1 w-24 overflow-hidden rounded-full bg-brand-border sm:w-40">
                               <div
                                 class={toneDotClass(scenario.tone)}
-                                style={{ width: `${scenario.probability}%`, height: "100%" }}
+                                style={{
+                                  width: `${scenario.probability}%`,
+                                  height: "100%",
+                                }}
                               />
                             </div>
                           </div>
@@ -436,7 +438,7 @@ const Brief: Component = () => {
           </div>
 
           <aside class="space-y-3">
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
               <SectionHeading index="A" title="Regime assessment" />
               <div class="space-y-4">
                 <For each={regime}>
@@ -446,7 +448,9 @@ const Brief: Component = () => {
                         <p class="text-xs font-medium text-brand-slate-400">
                           {item.label}
                         </p>
-                        <p class={`text-xs font-semibold ${toneTextClass(item.tone)}`}>
+                        <p
+                          class={`text-xs font-semibold ${toneTextClass(item.tone)}`}
+                        >
                           {item.value}
                         </p>
                       </div>
@@ -457,19 +461,20 @@ const Brief: Component = () => {
                   )}
                 </For>
               </div>
-              <div class="mt-5 rounded-xl border border-amber-300/15 bg-amber-300/[0.035] p-4">
+              <div class="mt-5 rounded-md border border-amber-300/15 bg-amber-300/[0.035] p-4">
                 <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200">
                   Overall regime · medium confidence
                 </p>
                 <p class="mt-2 text-xs leading-5 text-slate-300">
                   Inflation-constrained nominal resilience: strong AI investment
-                  sits beside soft labor and consumption. Invalidated if activity
-                  data roll over while Friday's front-end yield move fully reverses.
+                  sits beside soft labor and consumption. Invalidated if
+                  activity data roll over while Friday's front-end yield move
+                  fully reverses.
                 </p>
               </div>
             </section>
 
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
               <div class="flex items-start justify-between gap-3">
                 <SectionHeading
                   index="B"
@@ -505,7 +510,7 @@ const Brief: Component = () => {
                   {(quote) => {
                     const change = () => quoteChange(quote);
                     return (
-                      <div class="rounded-xl border border-brand-border bg-brand-screen/45 p-3">
+                      <div class="rounded-md border border-brand-border bg-brand-screen/45 p-3">
                         <p class="font-mono text-[10px] font-semibold text-brand-slate-400">
                           {quote.symbol}
                         </p>
@@ -529,13 +534,14 @@ const Brief: Component = () => {
               </div>
               <div class="mt-3 flex items-center justify-between gap-3 font-mono text-[9px] text-brand-slate-500">
                 <span>
-                  {usingLiveCrypto() ? "LIVE" : "SNAPSHOT"} · {cryptoUpdatedAt()}
+                  {usingLiveCrypto() ? "LIVE" : "SNAPSHOT"} ·{" "}
+                  {cryptoUpdatedAt()}
                 </span>
                 <SourceLink source={briefSources.hyperliquid} compact />
               </div>
             </section>
 
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
               <SectionHeading
                 index="C"
                 title="What matters next"
@@ -568,7 +574,7 @@ const Brief: Component = () => {
               </div>
             </section>
 
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
               <SectionHeading
                 index="D"
                 title="Trader pulse"
@@ -581,7 +587,7 @@ const Brief: Component = () => {
                       href={view.href}
                       target="_blank"
                       rel="noreferrer"
-                      class="block rounded-xl border border-brand-border bg-brand-screen/45 p-3.5 transition-colors hover:border-brand-slate-600"
+                      class="block rounded-md border border-brand-border bg-brand-screen/45 p-3.5 transition-colors hover:border-brand-slate-600"
                     >
                       <div class="flex items-center justify-between gap-3">
                         <span class="font-mono text-[10px] font-semibold text-brand-accent">
@@ -608,7 +614,7 @@ const Brief: Component = () => {
               </p>
             </section>
 
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
               <SectionHeading index="E" title="Data caveats" />
               <div class="space-y-2.5">
                 <For each={dataCaveats}>
@@ -622,7 +628,7 @@ const Brief: Component = () => {
               </div>
             </section>
 
-            <section class="rounded-2xl border border-brand-border bg-brand-surface/50 p-5">
+            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
               <SectionHeading index="F" title="Source trail" />
               <div class="flex flex-col items-start gap-2.5">
                 <For each={sourceTrail}>

@@ -1,26 +1,12 @@
-import { Component, Show, createSignal } from "solid-js";
+import { Component, For, Show, createSignal } from "solid-js";
 import { isAdmin, isAuthenticated, logout } from "../stores/auth";
-import { currentPage, setCurrentPage } from "../stores/page";
-import { vaultsList } from "../stores/vaults";
-import type { VaultSummary } from "../stores/vaults";
+import { currentPage, MAIN_PAGES, setCurrentPage } from "../stores/page";
 import { openSettings, settingsOpen } from "../stores/settings";
 import { prefetchPage } from "../lib/routeModules";
 import AccountConnectionControl from "./AccountConnectionControl";
 
 const Header: Component = () => {
   const [profileOpen, setProfileOpen] = createSignal(false);
-
-  const handleMyVaultClick = () => {
-    const operatorVault = vaultsList().find(
-      (vault: VaultSummary) => vault.isOperator,
-    );
-    if (operatorVault) {
-      setCurrentPage("vaults", { vaultId: operatorVault._id });
-    } else {
-      setCurrentPage("vaults");
-    }
-    setProfileOpen(false);
-  };
 
   const toggleProfileMenu = () => {
     const next = !profileOpen();
@@ -33,97 +19,40 @@ const Header: Component = () => {
   };
 
   return (
-    <header class="bg-brand-screen top-0 z-25 hidden items-center gap-2 px-3 py-2 sm:px-4 md:flex">
-      <div class="flex items-center gap-6 pr-4 font-mono text-sm">
-        <button
-          onClick={() => setCurrentPage("trade")}
-          class="flex items-center"
-        >
-          <span class="shrink-0 select-none text-base font-semibold tracking-tight text-brand-accent">Trading<span class="text-brand-slate-100">View</span></span>
+    <header class="app-header hidden md:flex">
+      <div class="flex h-full items-center gap-8">
+        <button onClick={() => setCurrentPage("trade")} class="app-wordmark">
+          <svg
+            aria-hidden="true"
+            width="23"
+            height="23"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+          >
+            <path d="M6 3v18M12 6v13M18 2v18" />
+            <path
+              d="M3.5 7h5v7h-5zM9.5 10h5v5h-5zM15.5 5h5v8h-5z"
+              fill="var(--color-brand-screen)"
+            />
+          </svg>
+          <span>TradingView</span>
         </button>
-        <nav class="flex items-center gap-5">
-          <button
-            class={
-              currentPage() === "trade"
-                ? "text-brand-accent"
-                : "text-brand-slate-400 hover:text-brand-slate-100"
-            }
-            onClick={() => setCurrentPage("trade")}
-          >
-            <p class="truncate">Trade</p>
-          </button>
-          <button
-            class={
-              currentPage() === "options"
-                ? "text-brand-accent"
-                : "text-brand-slate-400 hover:text-brand-slate-100"
-            }
-            onPointerEnter={() => prefetchPage("options")}
-            onFocus={() => prefetchPage("options")}
-            onClick={() => setCurrentPage("options")}
-          >
-            <p class="truncate">Options</p>
-          </button>
-          <button
-            class={
-              currentPage() === "portfolio"
-                ? "text-brand-accent"
-                : "text-brand-slate-400 hover:text-brand-slate-100"
-            }
-            onPointerEnter={() => prefetchPage("portfolio")}
-            onFocus={() => prefetchPage("portfolio")}
-            onClick={() => setCurrentPage("portfolio")}
-          >
-            <p class="truncate">Portfolio</p>
-          </button>
-          <button
-            class={
-              currentPage() === "vaults"
-                ? "text-brand-accent"
-                : "text-brand-slate-400 hover:text-brand-slate-100"
-            }
-            onPointerEnter={() => prefetchPage("vaults")}
-            onFocus={() => prefetchPage("vaults")}
-            onClick={() => setCurrentPage("vaults")}
-          >
-            <p class="truncate">Vaults</p>
-          </button>
-          <button
-            class={
-              currentPage() === "brief"
-                ? "text-brand-accent"
-                : "text-brand-slate-400 hover:text-brand-slate-100"
-            }
-            onPointerEnter={() => prefetchPage("brief")}
-            onFocus={() => prefetchPage("brief")}
-            onClick={() => setCurrentPage("brief")}
-          >
-            <p class="truncate">Brief</p>
-          </button>
-          <button
-            class={
-              currentPage() === "calendar"
-                ? "text-brand-accent"
-                : "text-brand-slate-400 hover:text-brand-slate-100"
-            }
-            onPointerEnter={() => prefetchPage("calendar")}
-            onFocus={() => prefetchPage("calendar")}
-            onClick={() => setCurrentPage("calendar")}
-          >
-            <p class="truncate">Calendar</p>
-          </button>
-          <button
-            class={
-              currentPage() === "charts"
-                ? "text-brand-accent"
-                : "text-brand-slate-400 hover:text-brand-slate-100"
-            }
-            onPointerEnter={() => prefetchPage("charts")}
-            onFocus={() => prefetchPage("charts")}
-            onClick={() => setCurrentPage("charts")}
-          >
-            <p class="truncate">Charts</p>
-          </button>
+        <nav class="primary-nav" aria-label="Main navigation">
+          <For each={MAIN_PAGES}>
+            {(page) => (
+              <button
+                class="nav-link"
+                aria-current={currentPage() === page.id ? "page" : undefined}
+                onPointerEnter={() => prefetchPage(page.id)}
+                onFocus={() => prefetchPage(page.id)}
+                onClick={() => setCurrentPage(page.id)}
+              >
+                {page.label}
+              </button>
+            )}
+          </For>
           <Show when={isAdmin()}>
             <button
               class={
@@ -144,9 +73,7 @@ const Header: Component = () => {
       <div class="flex-1" />
 
       <div class="flex items-center gap-2">
-        <AccountConnectionControl
-          onBeforeOpen={() => setProfileOpen(false)}
-        />
+        <AccountConnectionControl onBeforeOpen={() => setProfileOpen(false)} />
         <Show when={isAuthenticated()}>
           <div class="relative">
             <button
@@ -190,29 +117,6 @@ const Header: Component = () => {
                   onClick={() => setProfileOpen(false)}
                 />
                 <div class="absolute right-0 top-full mt-2 w-56 bg-brand-surface border border-brand-border rounded-lg shadow-xl z-50 py-2">
-                  <button
-                    class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-200 hover:bg-brand-border/30 transition-colors"
-                    onClick={handleMyVaultClick}
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <rect x="3" y="4" width="18" height="16" rx="2" />
-                      <path d="M7 12h10" />
-                      <path d="M9 8h6" />
-                      <path d="M9 16h6" />
-                    </svg>
-                    <span>My Vault</span>
-                  </button>
-                  <div class="border-t border-brand-border my-1" />
                   <button
                     class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-brand-red-400 hover:bg-brand-border/30 transition-colors"
                     onClick={() => {

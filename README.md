@@ -3,7 +3,7 @@
 A native Expo app and a SolidJS web terminal in one repository. The native app
 provides watchlists, charts, news and Hyperliquid account tools. The web app in
 `web/` is the former xyz-dex terminal, including its existing Convex backend,
-paper ledger, API-wallet trading, portfolio, vaults, research and multi-chart views.
+paper ledger, API-wallet trading, portfolio, research and multi-chart views.
 
 ## Web app
 

@@ -1,170 +1,261 @@
-export type CalendarCountry = "US" | "CA";
-export type CalendarCategory = "Labour" | "Growth" | "Central bank";
-export type CalendarImpact = 1 | 2 | 3;
+import {
+  ECONOMIC_CALENDAR_COUNTRIES,
+  countryCodeToFlag,
+  formatEconomicCalendarValue,
+  parseEconomicCalendarEvents,
+  type EconomicCalendarEvent,
+} from "../../../src/domain/economicCalendar";
 
-export type CalendarSource = {
-  label: string;
-  href: string;
-};
+export { countryCodeToFlag };
+export const calendarCountries = ECONOMIC_CALENDAR_COUNTRIES;
+export const CALENDAR_TIME_ZONE = "Europe/London";
 
-export type EconomicCalendarEvent = {
-  id: string;
-  date: string;
-  time: string;
-  country: CalendarCountry;
-  currency: "USD" | "CAD";
-  category: CalendarCategory;
-  impact: CalendarImpact;
-  event: string;
-  period: string;
-  actual?: string;
-  forecast?: string;
-  prior?: string;
-  description: string;
-  marketRead: string;
-  source: CalendarSource;
-};
-
-export const calendarSources = {
-  blsSeptember: {
-    label: "BLS · September 2026 release schedule",
-    href: "https://www.bls.gov/schedule/2026/09_sched.htm",
-  },
-  ism: {
-    label: "ISM · 2026 PMI release calendar",
-    href: "https://www.ismworld.org/supply-management-news-and-reports/reports/rob-report-calendar/",
-  },
-  boc: {
-    label: "Bank of Canada · 2 September decision",
-    href: "https://www.bankofcanada.ca/2026/09/interest-rate-announcement-september-2-2026/",
-  },
-  weekAhead: {
-    label: "Reuters · Week-ahead consensus",
-    href: "https://www.investing.com/news/economy-news/take-five-summers-over-buckle-up-4880557",
-  },
-} satisfies Record<string, CalendarSource>;
-
-export const calendarDays = [
-  { date: "2026-08-31", weekday: "MON", day: "31", month: "AUG" },
-  { date: "2026-09-01", weekday: "TUE", day: "01", month: "SEP" },
-  { date: "2026-09-02", weekday: "WED", day: "02", month: "SEP" },
-  { date: "2026-09-03", weekday: "THU", day: "03", month: "SEP" },
-  { date: "2026-09-04", weekday: "FRI", day: "04", month: "SEP" },
+export const calendarCategories = [
+  "Inflation",
+  "Labour",
+  "Central bank",
+  "Growth",
+  "Business",
+  "Consumer",
+  "Housing",
+  "Trade",
+  "Government",
+  "Energy",
+  "Other",
 ] as const;
+export type CalendarCategory = (typeof calendarCategories)[number];
+export type CalendarEvent = EconomicCalendarEvent & {
+  day: string;
+  time: string;
+  category: CalendarCategory;
+  scale?: string;
+  description?: string;
+  source?: { label: string; href: string };
+};
+export type CalendarFilters = {
+  day: string;
+  countries: readonly string[];
+  category: string;
+  impact: "all" | "important" | "high";
+  query: string;
+};
 
-export const economicCalendarEvents: EconomicCalendarEvent[] = [
-  {
-    id: "us-ism-manufacturing-2026-09",
-    date: "2026-09-01",
-    time: "15:00",
-    country: "US",
-    currency: "USD",
-    category: "Growth",
-    impact: 3,
-    event: "ISM Manufacturing PMI",
-    period: "AUG",
-    description:
-      "The monthly ISM survey tracks activity across U.S. manufacturers through new orders, production, employment and prices.",
-    marketRead:
-      "A stronger print would reinforce the higher-yield, firmer-dollar setup; weakness would favour duration and gold relief.",
-    source: calendarSources.ism,
-  },
-  {
-    id: "us-jolts-2026-07",
-    date: "2026-09-01",
-    time: "15:00",
-    country: "US",
-    currency: "USD",
-    category: "Labour",
-    impact: 2,
-    event: "JOLTS Job Openings",
-    period: "JUL",
-    description:
-      "The Job Openings and Labor Turnover Survey covers vacancies, hires, quits and layoffs across the U.S. economy.",
-    marketRead:
-      "Lower openings would support a softer labour-demand read; resilience would keep pressure on front-end yields.",
-    source: calendarSources.blsSeptember,
-  },
-  {
-    id: "ca-boc-rate-2026-09",
-    date: "2026-09-02",
-    time: "14:45",
-    country: "CA",
-    currency: "CAD",
-    category: "Central bank",
-    impact: 3,
-    event: "Bank of Canada Rate Decision",
-    period: "SEP",
-    description:
-      "The Bank of Canada publishes its scheduled policy-rate decision and accompanying assessment of inflation and growth.",
-    marketRead:
-      "Watch CAD and the Canadian front end first, then the read-through to global duration and risk appetite.",
-    source: calendarSources.boc,
-  },
-  {
-    id: "us-metro-employment-2026-07",
-    date: "2026-09-02",
-    time: "15:00",
-    country: "US",
-    currency: "USD",
-    category: "Labour",
-    impact: 1,
-    event: "Metropolitan Area Employment",
-    period: "JUL",
-    description:
-      "BLS publishes local employment and unemployment estimates for U.S. metropolitan areas.",
-    marketRead:
-      "Usually lower sensitivity than the national payroll report, but useful for checking whether labour weakness is broadening.",
-    source: calendarSources.blsSeptember,
-  },
-  {
-    id: "us-productivity-2026-q2-r",
-    date: "2026-09-03",
-    time: "13:30",
-    country: "US",
-    currency: "USD",
-    category: "Growth",
-    impact: 2,
-    event: "Nonfarm Productivity & Unit Labour Costs",
-    period: "Q2 · R",
-    description:
-      "The revised quarterly release measures output per hour and the labour cost required to produce a unit of output.",
-    marketRead:
-      "The unit-labour-cost revision matters most: an upside surprise would challenge the benign inflation narrative.",
-    source: calendarSources.blsSeptember,
-  },
-  {
-    id: "us-ism-services-2026-09",
-    date: "2026-09-03",
-    time: "15:00",
-    country: "US",
-    currency: "USD",
-    category: "Growth",
-    impact: 3,
-    event: "ISM Services PMI",
-    period: "AUG",
-    description:
-      "The ISM services survey covers the larger, more labour-intensive side of the U.S. economy.",
-    marketRead:
-      "Prices and employment details may matter more than the headline for the inflation and policy-rate path.",
-    source: calendarSources.ism,
-  },
-  {
-    id: "us-employment-situation-2026-08",
-    date: "2026-09-04",
-    time: "13:30",
-    country: "US",
-    currency: "USD",
-    category: "Labour",
-    impact: 3,
-    event: "U.S. Employment Situation",
-    period: "AUG",
-    forecast: "+45K",
-    prior: "−23K",
-    description:
-      "The monthly employment report includes nonfarm payrolls, unemployment, participation and average hourly earnings.",
-    marketRead:
-      "The highest-sensitivity input for the 15–16 September FOMC meeting. Consensus and prior shown are for headline payrolls.",
-    source: calendarSources.weekAhead,
-  },
-];
+const CATEGORY_LABELS: Record<string, CalendarCategory> = {
+  prce: "Inflation",
+  lbr: "Labour",
+  mny: "Central bank",
+  gdp: "Growth",
+  bsnss: "Business",
+  cnsm: "Consumer",
+  hse: "Housing",
+  trd: "Trade",
+  gov: "Government",
+  bnd: "Government",
+  enrg: "Energy",
+};
+const dateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: CALENDAR_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: CALENDAR_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+export function calendarDateKey(date = new Date()): string {
+  const parts = dateFormatter.formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)!.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function dateFromKey(key: string): Date {
+  const date = new Date(`${key}T12:00:00.000Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(key) ||
+    !Number.isFinite(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== key
+  ) {
+    throw new RangeError("Invalid calendar date");
+  }
+  return date;
+}
+
+export function addCalendarDays(key: string, days: number): string {
+  const date = dateFromKey(key);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function calendarWeekStart(key: string): string {
+  return addCalendarDays(key, -((dateFromKey(key).getUTCDay() + 6) % 7));
+}
+
+export function calendarWeekDays(start: string) {
+  return Array.from({ length: 7 }, (_, index) => {
+    const key = addCalendarDays(start, index);
+    const date = dateFromKey(key);
+    return {
+      key,
+      day: date.getUTCDate(),
+      weekday: date.toLocaleDateString("en-GB", {
+        weekday: "short",
+        timeZone: "UTC",
+      }),
+      label: date.toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        timeZone: "UTC",
+      }),
+    };
+  });
+}
+
+export function calendarWeekLabel(start: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).formatRange(dateFromKey(start), dateFromKey(addCalendarDays(start, 6)));
+}
+
+export function calendarTimeZoneLabel(start: string): string {
+  const name = (key: string) =>
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: CALENDAR_TIME_ZONE,
+      timeZoneName: "short",
+    })
+      .formatToParts(dateFromKey(key))
+      .find((part) => part.type === "timeZoneName")!.value;
+  const first = name(start);
+  const last = name(addCalendarDays(start, 6));
+  return first === last ? first : `${first} / ${last}`;
+}
+
+function sourceFromRecord(
+  raw: Record<string, unknown>,
+): CalendarEvent["source"] {
+  if (typeof raw.source_url !== "string" || !raw.source_url.trim())
+    return undefined;
+  try {
+    const url = new URL(raw.source_url);
+    if (!["https:", "http:"].includes(url.protocol)) return undefined;
+    return {
+      href: url.href,
+      label:
+        typeof raw.source === "string" && raw.source.trim()
+          ? raw.source
+          : url.hostname,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseCalendarWeek(
+  raw: unknown,
+  start: string,
+): CalendarEvent[] {
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    !("result" in raw) ||
+    !Array.isArray(raw.result)
+  ) {
+    throw new Error("The calendar feed returned an invalid response.");
+  }
+  const records = new Map<string, Record<string, unknown>>();
+  for (const item of raw.result) {
+    if (item && typeof item === "object" && typeof item.id === "string")
+      records.set(item.id, item);
+  }
+  const end = addCalendarDays(start, 7);
+  const seen = new Set<string>();
+  return parseEconomicCalendarEvents(raw).flatMap((event): CalendarEvent[] => {
+    const day = calendarDateKey(new Date(event.date));
+    if (day < start || day >= end || seen.has(event.id)) return [];
+    seen.add(event.id);
+    const record = records.get(event.id)!;
+    return [
+      {
+        ...event,
+        day,
+        time: timeFormatter.format(new Date(event.date)),
+        category: CATEGORY_LABELS[String(record.category)] ?? "Other",
+        scale:
+          typeof record.scale === "string" ? record.scale.trim() : undefined,
+        description:
+          typeof record.comment === "string" && record.comment.trim()
+            ? record.comment.trim()
+            : undefined,
+        source: sourceFromRecord(record),
+      },
+    ];
+  });
+}
+
+export function formatCalendarValue(
+  event: CalendarEvent,
+  field: "actual" | "forecast" | "previous",
+): string {
+  const value = event[field];
+  if (value === null) return "–";
+  const amount = `${formatEconomicCalendarValue(value)}${event.scale ?? ""}`;
+  if (!event.unit) return amount;
+  if (/^[£$€¥]$/.test(event.unit)) return `${event.unit}${amount}`;
+  return event.unit === "%" ? `${amount}%` : `${amount} ${event.unit}`;
+}
+
+export function filterCalendarEvents(
+  events: CalendarEvent[],
+  filters: CalendarFilters,
+): CalendarEvent[] {
+  const query = filters.query.trim().toLowerCase();
+  const countries = new Set(filters.countries);
+  return events.filter((event) => {
+    if (filters.day !== "week" && event.day !== filters.day) return false;
+    if (!countries.has(event.country)) return false;
+    if (filters.category !== "all" && event.category !== filters.category)
+      return false;
+    if (filters.impact === "high" && event.importance !== 1) return false;
+    if (filters.impact === "important" && event.importance < 0) return false;
+    const country =
+      calendarCountries.find((item) => item.code === event.country)?.name ??
+      event.country;
+    return (
+      !query ||
+      `${event.title} ${event.currency ?? ""} ${country} ${event.country} ${event.category}`
+        .toLowerCase()
+        .includes(query)
+    );
+  });
+}
+
+export async function loadCalendarWeek(
+  start: string,
+  signal?: AbortSignal,
+  fetcher: typeof fetch = fetch,
+): Promise<CalendarEvent[]> {
+  // Include Monday's first hour during British Summer Time, then trim the
+  // padded UTC response precisely to seven London calendar days above.
+  const query = new URLSearchParams({
+    from: `${addCalendarDays(start, -1)}T00:00:00.000Z`,
+    to: `${addCalendarDays(start, 7)}T00:00:00.000Z`,
+    countries: calendarCountries.map((country) => country.code).join(","),
+    minImportance: "-1",
+  });
+  const response = await fetcher(`/api/economic-calendar?${query}`, {
+    headers: { Accept: "application/json" },
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+      : AbortSignal.timeout(15_000),
+  });
+  if (!response.ok)
+    throw new Error("The calendar feed is unavailable. Please try again.");
+  return parseCalendarWeek(await response.json(), start);
+}

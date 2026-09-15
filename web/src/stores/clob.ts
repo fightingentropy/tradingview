@@ -14,7 +14,6 @@ import { resolveHyperliquidMarketCoin } from "../lib/hyperliquid";
 import { isAuthenticated } from "./auth";
 import { currentMarketType, currentSymbol, markPrice, MARKETS } from "./market";
 import type { L2Book as OrderBook } from "../lib/format";
-import { isVaultTradingAccount, tradingVaultId } from "./tradingAccount";
 import { normalizeSymbol } from "../lib/format";
 import {
   cancelHyperliquidOrder,
@@ -42,8 +41,7 @@ export type OrderType = "market" | "limit";
 export type MarginType = "isolated" | "cross";
 
 export type ClobActionResult =
-  | { ok: true; message?: string }
-  | { ok: false; error: string };
+  { ok: true; message?: string } | { ok: false; error: string };
 
 export type { OrderBook };
 
@@ -129,72 +127,66 @@ type PerpsBalance = {
 const isCollateral = (asset: string): asset is Collateral =>
   asset === "USDC" || asset === "USDT";
 
-const getOwnerArgs = () => {
-  const vaultId = tradingVaultId();
-  return isVaultTradingAccount() && vaultId ? { vaultId } : {};
-};
-
 const {
   simulationOpenOrders,
   simulationPositions,
   simulationPerpsBalances,
   simulationPortfolioMarginStatus,
-} =
-  createRoot(() => {
-    const openOrdersQuery = createConvexQuery(
-      api.orders.listOpenOrders,
-      () => {
-        return isAuthenticated() ? getOwnerArgs() : null;
-      },
-      [],
-    );
+} = createRoot(() => {
+  const openOrdersQuery = createConvexQuery(
+    api.orders.listOpenOrders,
+    () => {
+      return isAuthenticated() ? {} : null;
+    },
+    [],
+  );
 
-    const positionsQuery = createConvexQuery(
-      api.orders.listPositions,
-      () => {
-        return isAuthenticated() ? getOwnerArgs() : null;
-      },
-      [],
-    );
+  const positionsQuery = createConvexQuery(
+    api.orders.listPositions,
+    () => {
+      return isAuthenticated() ? {} : null;
+    },
+    [],
+  );
 
-    const balancesQuery = createConvexQuery(
-      api.orders.listPerpsBalances,
-      () => {
-        return isAuthenticated() ? getOwnerArgs() : null;
-      },
-      [],
-    );
+  const balancesQuery = createConvexQuery(
+    api.orders.listPerpsBalances,
+    () => {
+      return isAuthenticated() ? {} : null;
+    },
+    [],
+  );
 
-    const portfolioMarginQuery = createConvexQuery(
-      api.portfolioMargin.getPortfolioMarginStatus,
-      () => {
-        return isAuthenticated() && !isVaultTradingAccount() ? {} : null;
-      },
-    );
+  const portfolioMarginQuery = createConvexQuery(
+    api.portfolioMargin.getPortfolioMarginStatus,
+    () => {
+      return isAuthenticated() ? {} : null;
+    },
+  );
 
-    const perpsBalances = createMemo<Record<Collateral, number>>(() => {
-      const next: Record<Collateral, number> = { USDC: 0, USDT: 0 };
-      const balances = (balancesQuery() ?? []) as PerpsBalance[];
-      for (const balance of balances) {
-        if (isCollateral(balance.asset)) {
-          next[balance.asset] = balance.balance;
-        }
+  const perpsBalances = createMemo<Record<Collateral, number>>(() => {
+    const next: Record<Collateral, number> = { USDC: 0, USDT: 0 };
+    const balances = (balancesQuery() ?? []) as PerpsBalance[];
+    for (const balance of balances) {
+      if (isCollateral(balance.asset)) {
+        next[balance.asset] = balance.balance;
       }
-      return next;
-    });
-
-    const positionsAccessor = () => (positionsQuery() ?? []) as Position[];
-
-    const openOrdersAccessor = () => (openOrdersQuery() ?? []) as Order[];
-
-    return {
-      simulationOpenOrders: openOrdersAccessor,
-      simulationPositions: positionsAccessor,
-      simulationPerpsBalances: perpsBalances,
-      simulationPortfolioMarginStatus: () =>
-        portfolioMarginQuery() as PortfolioMarginStatus,
-    };
+    }
+    return next;
   });
+
+  const positionsAccessor = () => (positionsQuery() ?? []) as Position[];
+
+  const openOrdersAccessor = () => (openOrdersQuery() ?? []) as Order[];
+
+  return {
+    simulationOpenOrders: openOrdersAccessor,
+    simulationPositions: positionsAccessor,
+    simulationPerpsBalances: perpsBalances,
+    simulationPortfolioMarginStatus: () =>
+      portfolioMarginQuery() as PortfolioMarginStatus,
+  };
+});
 
 const { openOrders, positions, perpsBalances, portfolioMarginStatus } =
   createRoot(() => {
@@ -509,7 +501,6 @@ const triggerAdlReduction = async (position: Position, mark: number) => {
       markPrice: mark,
       reduceSize,
       idempotencyKey: crypto.randomUUID().replaceAll("-", ""),
-      ...getOwnerArgs(),
     });
   } catch (error) {
     console.error("ADL reduction failed:", error);
@@ -624,7 +615,6 @@ createRoot(() => {
         .mutation(api.orders.fillOpenOrder, {
           orderId: order._id,
           markPrice: mark,
-          ...getOwnerArgs(),
         })
         .catch((error) => {
           console.error("Failed to auto-fill limit order:", error);
@@ -666,7 +656,6 @@ createRoot(() => {
         .mutation(api.orders.closePosition, {
           symbol: position.symbol,
           markPrice: mark,
-          ...getOwnerArgs(),
         })
         .catch((error) => {
           console.error("Failed to auto-close position:", error);
@@ -742,7 +731,6 @@ createRoot(() => {
         await convex.mutation(api.orders.updateFundingForPositions, {
           fundingRates,
           ...(includeMarkPrices ? { markPrices } : {}),
-          ...getOwnerArgs(),
         });
       } catch (error) {
         if (isMarkPricesValidationError(error)) {
@@ -750,7 +738,6 @@ createRoot(() => {
           try {
             await convex.mutation(api.orders.updateFundingForPositions, {
               fundingRates,
-              ...getOwnerArgs(),
             });
             return;
           } catch (retryError) {
@@ -929,7 +916,9 @@ createRoot(() => {
           const data = payload?.data;
           if (
             !data ||
-            String(data.coin ?? "").trim().toLowerCase() !== coin.toLowerCase()
+            String(data.coin ?? "")
+              .trim()
+              .toLowerCase() !== coin.toLowerCase()
           ) {
             return;
           }
@@ -983,11 +972,7 @@ createRoot(() => {
       marketType,
       signal: abortController.signal,
     }).then((coin) => {
-      if (
-        !coin ||
-        closed ||
-        subscriptionEpoch !== orderBookSubscriptionEpoch
-      ) {
+      if (!coin || closed || subscriptionEpoch !== orderBookSubscriptionEpoch) {
         return;
       }
       connect(coin);
@@ -1068,14 +1053,12 @@ export function isPortfolioMarginEnabled() {
   if (isHyperliquidExecution()) {
     return hyperliquidAccountMode() === "portfolioMargin";
   }
-  if (isVaultTradingAccount()) return false;
   const status = portfolioMarginStatus();
   return status?.enabled ?? false;
 }
 
 export function getWeightedSpotEquity() {
   if (isHyperliquidExecution()) return 0;
-  if (isVaultTradingAccount()) return 0;
   if (!isPortfolioMarginEnabled()) return 0;
   const breakdown = portfolioMarginStatus()?.collateral?.spot ?? [];
   const markets = MARKETS();
@@ -1128,9 +1111,6 @@ export const togglePortfolioMargin = async (
   }
   if (!isAuthenticated()) {
     return { ok: false, error: "Sign in to change settings." };
-  }
-  if (isVaultTradingAccount()) {
-    return { ok: false, error: "Vaults use classic margin." };
   }
   try {
     await convex.mutation(api.portfolioMargin.togglePortfolioMargin, {
@@ -1249,7 +1229,6 @@ export const placeOrder = async ({
     markPrice: mark,
     maxSlippageBps: 100,
     idempotencyKey,
-    ...getOwnerArgs(),
   };
 
   const buildArgs = (opts: { spots: boolean; marks: boolean }) => ({
@@ -1315,7 +1294,6 @@ export const updatePositionTpsl = async ({
       symbol,
       takeProfit: takeProfit ?? null,
       stopLoss: stopLoss ?? null,
-      ...getOwnerArgs(),
     });
     return { ok: true };
   } catch (error) {
@@ -1345,7 +1323,6 @@ export const cancelOrder = async (
   try {
     await convex.mutation(api.orders.cancelOrder, {
       orderId: orderId as Id<"orders">,
-      ...getOwnerArgs(),
     });
     return { ok: true };
   } catch (error) {
@@ -1370,7 +1347,6 @@ export const fillOpenOrder = async (orderId: Id<"orders"> | string) => {
     await convex.mutation(api.orders.fillOpenOrder, {
       orderId: orderId as Id<"orders">,
       markPrice: fillMark,
-      ...getOwnerArgs(),
     });
   } catch (error) {
     console.error("Failed to fill order:", error);
@@ -1396,7 +1372,6 @@ export const closePosition = async (
     await convex.mutation(api.orders.closePosition, {
       symbol,
       markPrice: mark,
-      ...getOwnerArgs(),
     });
     return { ok: true };
   } catch (error) {

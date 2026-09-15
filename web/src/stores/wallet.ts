@@ -2,7 +2,6 @@ import { createMemo, createRoot, createSignal } from "solid-js";
 import { api } from "../../convex/_generated/api";
 import { convex, createConvexQuery } from "../lib/convex";
 import { isAuthenticated } from "./auth";
-import { isVaultTradingAccount } from "./tradingAccount";
 import {
   hyperliquidSpotAvailableBalances,
   hyperliquidSpotBalances,
@@ -84,7 +83,7 @@ const {
   const balancesQuery = createConvexQuery(
     api.spot.listSpotBalances,
     () => {
-      return isAuthenticated() && !isVaultTradingAccount() ? {} : null;
+      return isAuthenticated() ? {} : null;
     },
     [],
   );
@@ -112,7 +111,6 @@ const {
   const openTransferModal = (
     direction: "perpsToSpot" | "spotToPerps" = "perpsToSpot",
   ) => {
-    if (isVaultTradingAccount()) return;
     setTransferDirection(direction);
     setTransferModalOpen(true);
   };
@@ -137,10 +135,7 @@ export {
 
 export const getSpotBalance = (asset: SpotAsset) =>
   isHyperliquidExecution()
-    ? getHyperliquidSpotBalance(
-        hyperliquidSpotAvailableBalances(),
-        asset,
-      )
+    ? getHyperliquidSpotBalance(hyperliquidSpotAvailableBalances(), asset)
     : (spotBalances()[asset] ?? 0);
 export const getSpotTotalBalance = (asset: SpotAsset) =>
   isHyperliquidExecution()
@@ -173,7 +168,9 @@ export const isSpotAsset = (asset: string): asset is SpotAsset =>
   SPOT_ASSETS.includes(asset as SpotAsset);
 
 export const resolveSpotAssetAlias = (asset: string): SpotAsset | null => {
-  const normalized = String(asset ?? "").trim().toUpperCase();
+  const normalized = String(asset ?? "")
+    .trim()
+    .toUpperCase();
   const pairBase =
     normalized === "USDC"
       ? normalized
@@ -209,9 +206,6 @@ export const placeSpotOrder = async ({
   }
   if (!isAuthenticated()) {
     return { ok: false, error: "Sign in to place orders." };
-  }
-  if (isVaultTradingAccount()) {
-    return { ok: false, error: "Vaults can only trade perps." };
   }
   if (!Number.isFinite(size) || size <= 0) {
     return { ok: false, error: "Enter a valid size." };
@@ -261,12 +255,6 @@ export const transferUSDC = async ({
   }
   if (!isAuthenticated()) {
     return { ok: false, error: "Sign in to transfer." };
-  }
-  if (isVaultTradingAccount()) {
-    return {
-      ok: false,
-      error: "Vaults cannot transfer between spot and perps.",
-    };
   }
   if (!Number.isFinite(amount) || amount <= 0) {
     return { ok: false, error: "Enter a valid amount." };

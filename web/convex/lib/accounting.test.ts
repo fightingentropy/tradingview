@@ -13,15 +13,12 @@ import {
   fundingCashAtoms,
   fundingRateAtoms,
   isExecutionWithinSlippage,
-  issueVaultShares,
   liquidationPriceAtoms,
   normalizeIdempotencyKey,
   notionalCashAtoms,
   priceAtoms,
   quantityAtoms,
   realizedPnlCashAtoms,
-  redeemVaultShares,
-  shareAtoms,
   validateSlippageBps,
   weightedAveragePriceAtoms,
 } from "./accounting";
@@ -135,8 +132,7 @@ describe("economic invariants", () => {
       );
       const total = firstSize + secondSize;
       const aggregateNotional = weighted * total;
-      const fillNotional =
-        firstPrice * firstSize + secondPrice * secondSize;
+      const fillNotional = firstPrice * firstSize + secondPrice * secondSize;
       expect(
         aggregateNotional - fillNotional >= -total / 2n - 1n &&
           aggregateNotional - fillNotional <= total / 2n + 1n,
@@ -151,63 +147,6 @@ describe("economic invariants", () => {
     expect(realizedPnlCashAtoms(entry, fill, size, "long")).toBe(
       -realizedPnlCashAtoms(entry, fill, size, "short"),
     );
-  });
-
-  test("vault deposit, partial withdrawal and full withdrawal conserve shares", () => {
-    let equity = cashAtoms("1000");
-    let totalShares = issueVaultShares({
-      deposit: equity,
-      equity: 0n,
-      totalShares: 0n,
-    });
-    let memberShares = totalShares;
-    let costBasis = equity;
-
-    const secondDeposit = cashAtoms("250");
-    const secondShares = issueVaultShares({
-      deposit: secondDeposit,
-      equity,
-      totalShares,
-    });
-    equity += secondDeposit;
-    totalShares += secondShares;
-    memberShares += secondShares;
-    costBasis += secondDeposit;
-
-    const partial = redeemVaultShares({
-      shares: shareAtoms("125"),
-      memberShares,
-      totalShares,
-      equity,
-      memberCostBasis: costBasis,
-    });
-    equity -= partial.value;
-    totalShares -= shareAtoms("125");
-    memberShares = partial.remainingShares;
-    costBasis = partial.remainingCostBasis;
-
-    const final = redeemVaultShares({
-      shares: memberShares,
-      memberShares,
-      totalShares,
-      equity,
-      memberCostBasis: costBasis,
-    });
-    expect(totalShares - memberShares).toBe(0n);
-    expect(final.remainingShares).toBe(0n);
-    expect(final.remainingCostBasis).toBe(0n);
-  });
-
-  test("performance fee can never exceed realized profit", () => {
-    const result = redeemVaultShares({
-      shares: shareAtoms("10"),
-      memberShares: shareAtoms("10"),
-      totalShares: shareAtoms("10"),
-      equity: cashAtoms("100.000001"),
-      memberCostBasis: cashAtoms("90"),
-    });
-    expect(result.fee).toBeLessThanOrEqual(result.profit);
-    expect(result.payout + result.fee).toBe(result.value);
   });
 
   test("liquidation distance is monotonic with collateral and symmetric", () => {
@@ -283,7 +222,6 @@ test("versioned specs fixture remains executable", () => {
     cash: CASH_PRECISION,
     price: PRICE_PRECISION,
     quantity: QUANTITY_PRECISION,
-    shares: 8,
     fundingRate: 12,
   });
   expect(
@@ -295,32 +233,6 @@ test("versioned specs fixture remains executable", () => {
       CASH_PRECISION,
     ),
   ).toBe(fixture.notional.expectedCash);
-  expect(
-    atomsToDecimal(
-      issueVaultShares({
-        deposit: cashAtoms(fixture.vaultInitialDeposit.depositCash),
-        equity: 0n,
-        totalShares: 0n,
-      }),
-      8,
-    ),
-  ).toBe(fixture.vaultInitialDeposit.expectedShares);
-  const withdrawal = redeemVaultShares({
-    shares: shareAtoms(fixture.vaultWithdrawal.shares),
-    memberShares: shareAtoms(fixture.vaultWithdrawal.memberShares),
-    totalShares: shareAtoms(fixture.vaultWithdrawal.totalShares),
-    equity: cashAtoms(fixture.vaultWithdrawal.equityCash),
-    memberCostBasis: cashAtoms(fixture.vaultWithdrawal.memberCostBasisCash),
-  });
-  expect(atomsToDecimal(withdrawal.profit, CASH_PRECISION)).toBe(
-    fixture.vaultWithdrawal.expectedProfitCash,
-  );
-  expect(atomsToDecimal(withdrawal.fee, CASH_PRECISION)).toBe(
-    fixture.vaultWithdrawal.expectedFeeCash,
-  );
-  expect(atomsToDecimal(withdrawal.payout, CASH_PRECISION)).toBe(
-    fixture.vaultWithdrawal.expectedPayoutCash,
-  );
   expect(
     atomsToDecimal(
       fundingCashAtoms({

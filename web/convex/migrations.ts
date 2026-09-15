@@ -7,7 +7,6 @@ import {
   PRICE_PRECISION,
   QUANTITY_PRECISION,
   ROUNDING_RULE,
-  SHARE_PRECISION,
   atomsToDecimal,
   decimalToAtoms,
 } from "./lib/accounting";
@@ -29,11 +28,7 @@ export const removeDemoSeedVersion = internalMutation({
   },
 });
 
-const legacyExact = (
-  value: number,
-  precision: number,
-  allowNegative = true,
-) =>
+const legacyExact = (value: number, precision: number, allowNegative = true) =>
   atomsToDecimal(
     decimalToAtoms(value, precision, {
       allowNegative,
@@ -55,10 +50,6 @@ export const backfillAccountingV1 = internalMutation({
       v.literal("orders"),
       v.literal("positions"),
       v.literal("trades"),
-      v.literal("vaults"),
-      v.literal("vaultMembers"),
-      v.literal("vaultMetrics"),
-      v.literal("vaultFees"),
       v.literal("portfolioMetrics"),
       v.literal("marketPrices"),
     ),
@@ -79,7 +70,11 @@ export const backfillAccountingV1 = internalMutation({
         });
         updated += 1;
       }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
+      return {
+        updated,
+        isDone: result.isDone,
+        continueCursor: result.continueCursor,
+      };
     }
     if (args.table === "spotBalances") {
       const result = await ctx.db
@@ -98,7 +93,11 @@ export const backfillAccountingV1 = internalMutation({
         });
         updated += 1;
       }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
+      return {
+        updated,
+        isDone: result.isDone,
+        continueCursor: result.continueCursor,
+      };
     }
     if (args.table === "orders") {
       const result = await ctx.db.query("orders").paginate(args.paginationOpts);
@@ -106,7 +105,11 @@ export const backfillAccountingV1 = internalMutation({
         if (row.sizeExact !== undefined) continue;
         await ctx.db.patch(row._id, {
           sizeExact: legacyExact(row.size, QUANTITY_PRECISION, false),
-          filledSizeExact: legacyExact(row.filledSize, QUANTITY_PRECISION, false),
+          filledSizeExact: legacyExact(
+            row.filledSize,
+            QUANTITY_PRECISION,
+            false,
+          ),
           priceExact:
             row.price === undefined
               ? undefined
@@ -122,7 +125,11 @@ export const backfillAccountingV1 = internalMutation({
         });
         updated += 1;
       }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
+      return {
+        updated,
+        isDone: result.isDone,
+        continueCursor: result.continueCursor,
+      };
     }
     if (args.table === "positions") {
       const result = await ctx.db
@@ -154,7 +161,11 @@ export const backfillAccountingV1 = internalMutation({
         });
         updated += 1;
       }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
+      return {
+        updated,
+        isDone: result.isDone,
+        continueCursor: result.continueCursor,
+      };
     }
     if (args.table === "trades") {
       const result = await ctx.db.query("trades").paginate(args.paginationOpts);
@@ -174,68 +185,11 @@ export const backfillAccountingV1 = internalMutation({
         });
         updated += 1;
       }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
-    }
-    if (args.table === "vaults") {
-      const result = await ctx.db.query("vaults").paginate(args.paginationOpts);
-      for (const row of result.page) {
-        if (row.totalSharesExact !== undefined) continue;
-        await ctx.db.patch(row._id, {
-          totalSharesExact: legacyExact(row.totalShares, SHARE_PRECISION, false),
-          accountingVersion: ACCOUNTING_VERSION,
-          sharePrecision: SHARE_PRECISION,
-        });
-        updated += 1;
-      }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
-    }
-    if (args.table === "vaultMembers") {
-      const result = await ctx.db
-        .query("vaultMembers")
-        .paginate(args.paginationOpts);
-      for (const row of result.page) {
-        if (row.sharesExact !== undefined) continue;
-        await ctx.db.patch(row._id, {
-          sharesExact: legacyExact(row.shares, SHARE_PRECISION, false),
-          costBasisUSDCExact: legacyExact(row.costBasisUSDC, CASH_PRECISION, false),
-          accountingVersion: ACCOUNTING_VERSION,
-          sharePrecision: SHARE_PRECISION,
-          cashPrecision: CASH_PRECISION,
-        });
-        updated += 1;
-      }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
-    }
-    if (args.table === "vaultMetrics") {
-      const result = await ctx.db
-        .query("vaultMetrics")
-        .paginate(args.paginationOpts);
-      for (const row of result.page) {
-        if (row.equityUSDCExact !== undefined) continue;
-        await ctx.db.patch(row._id, {
-          equityUSDCExact: legacyExact(row.equityUSDC, CASH_PRECISION),
-          pnlExact: legacyExact(row.pnl, CASH_PRECISION),
-          accountingVersion: ACCOUNTING_VERSION,
-          cashPrecision: CASH_PRECISION,
-        });
-        updated += 1;
-      }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
-    }
-    if (args.table === "vaultFees") {
-      const result = await ctx.db
-        .query("vaultFees")
-        .paginate(args.paginationOpts);
-      for (const row of result.page) {
-        if (row.amountUSDCExact !== undefined) continue;
-        await ctx.db.patch(row._id, {
-          amountUSDCExact: legacyExact(row.amountUSDC, CASH_PRECISION, false),
-          accountingVersion: ACCOUNTING_VERSION,
-          cashPrecision: CASH_PRECISION,
-        });
-        updated += 1;
-      }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
+      return {
+        updated,
+        isDone: result.isDone,
+        continueCursor: result.continueCursor,
+      };
     }
     if (args.table === "portfolioMetrics") {
       const result = await ctx.db
@@ -254,7 +208,11 @@ export const backfillAccountingV1 = internalMutation({
         });
         updated += 1;
       }
-      return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
+      return {
+        updated,
+        isDone: result.isDone,
+        continueCursor: result.continueCursor,
+      };
     }
     const result = await ctx.db
       .query("marketPrices")
@@ -268,15 +226,17 @@ export const backfillAccountingV1 = internalMutation({
             ? undefined
             : legacyExact(row.midPx, PRICE_PRECISION, false),
         fundingExact:
-          row.funding === undefined
-            ? undefined
-            : legacyExact(row.funding, 12),
+          row.funding === undefined ? undefined : legacyExact(row.funding, 12),
         accountingVersion: ACCOUNTING_VERSION,
         pricePrecision: PRICE_PRECISION,
         fundingPrecision: 12,
       });
       updated += 1;
     }
-    return { updated, isDone: result.isDone, continueCursor: result.continueCursor };
+    return {
+      updated,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
   },
 });

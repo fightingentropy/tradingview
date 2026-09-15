@@ -1,591 +1,731 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import {
-  calendarDays,
-  economicCalendarEvents,
+  For,
+  Show,
+  createMemo,
+  createResource,
+  createSignal,
+  onCleanup,
+  onMount,
+  type Component,
+} from "solid-js";
+import {
+  addCalendarDays,
+  calendarCategories,
+  calendarCountries,
+  calendarDateKey,
+  calendarTimeZoneLabel,
+  calendarWeekDays,
+  calendarWeekLabel,
+  calendarWeekStart,
+  countryCodeToFlag,
+  filterCalendarEvents,
+  formatCalendarValue,
+  loadCalendarWeek,
+  type CalendarEvent,
+  type CalendarFilters,
 } from "../data/economicCalendar";
-import type {
-  CalendarCategory,
-  CalendarCountry,
-  CalendarImpact,
-  EconomicCalendarEvent,
-} from "../data/economicCalendar";
+import "./EconomicCalendar.css";
+import CalendarCountryFilter from "./CalendarCountryFilter";
 
-type DayFilter = "week" | (typeof calendarDays)[number]["date"];
-type CountryFilter = "all" | CalendarCountry;
-type CategoryFilter = "all" | CalendarCategory;
-
-const IMPACT_LEVELS = [1, 2, 3] as const;
-
-const countryMeta = {
-  US: { flag: "🇺🇸", label: "United States" },
-  CA: { flag: "🇨🇦", label: "Canada" },
-} satisfies Record<CalendarCountry, { flag: string; label: string }>;
-
-const impactLabel = (impact: CalendarImpact) => {
-  if (impact === 3) return "High impact";
-  if (impact === 2) return "Medium impact";
-  return "Low impact";
-};
-
-const ImpactBars: Component<{ impact: CalendarImpact }> = (props) => (
-  <span
-    class="inline-flex h-4 items-end gap-[2px]"
-    title={impactLabel(props.impact)}
+type IconName =
+  | "calendar"
+  | "left"
+  | "right"
+  | "down"
+  | "search"
+  | "refresh"
+  | "filter"
+  | "external";
+const Icon: Component<{ name: IconName; size?: number }> = (props) => (
+  <svg
+    width={props.size ?? 16}
+    height={props.size ?? 16}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
     aria-hidden="true"
   >
-    <For each={IMPACT_LEVELS}>
-      {(level) => (
-        <span
-          class={`w-[3px] rounded-[1px] ${
-            level <= props.impact
-              ? props.impact === 3
-                ? "bg-brand-red-400"
-                : props.impact === 2
-                  ? "bg-amber-300"
-                  : "bg-brand-slate-500"
-              : "bg-brand-border"
-          }`}
-          style={{ height: `${4 + level * 3}px` }}
-        />
-      )}
+    <Show when={props.name === "calendar"}>
+      <rect x="3" y="5" width="18" height="16" rx="3" />
+      <path d="M16 3v4M8 3v4M3 11h18M8 15h2M14 15h2" />
+    </Show>
+    <Show when={props.name === "left"}>
+      <path d="m14 6-6 6 6 6" />
+    </Show>
+    <Show when={props.name === "right"}>
+      <path d="m10 6 6 6-6 6" />
+    </Show>
+    <Show when={props.name === "down"}>
+      <path d="m6 9 6 6 6-6" />
+    </Show>
+    <Show when={props.name === "search"}>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 4 4" />
+    </Show>
+    <Show when={props.name === "refresh"}>
+      <path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" />
+    </Show>
+    <Show when={props.name === "filter"}>
+      <path d="M4 7h16M4 17h16" />
+      <circle cx="9" cy="7" r="2" fill="var(--color-brand-screen)" />
+      <circle cx="15" cy="17" r="2" fill="var(--color-brand-screen)" />
+    </Show>
+    <Show when={props.name === "external"}>
+      <path d="M14 4h6v6M20 4 10 14M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5" />
+    </Show>
+  </svg>
+);
+
+const impactLabel = (importance: number) =>
+  importance === 1
+    ? "High impact"
+    : importance === 0
+      ? "Medium impact"
+      : "Low impact";
+const Impact: Component<{ importance: number }> = (props) => (
+  <span
+    class="calendar-impact"
+    data-impact={props.importance}
+    title={impactLabel(props.importance)}
+    aria-label={impactLabel(props.importance)}
+  >
+    <For each={[0, 1, 2]}>
+      {(level) => <i classList={{ filled: level <= props.importance + 1 }} />}
     </For>
   </span>
 );
+const eventValue = formatCalendarValue;
+const eventCount = (count: number) =>
+  `${count} ${count === 1 ? "event" : "events"}`;
 
-const CountryBadge: Component<{ event: EconomicCalendarEvent }> = (props) => (
-  <span class="flex min-w-0 items-center gap-2.5">
-    <span class="text-lg leading-none" aria-hidden="true">
-      {countryMeta[props.event.country].flag}
-    </span>
-    <span class="min-w-0">
-      <span class="block font-mono text-xs font-semibold text-slate-200">
-        {props.event.currency}
-      </span>
-      <span class="block truncate text-[11px] text-brand-slate-500">
-        {props.event.country}
-      </span>
-    </span>
-  </span>
-);
-
-const ExternalLinkIcon: Component = () => (
-  <svg
-    aria-hidden="true"
-    width="12"
-    height="12"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  >
-    <path d="M15 3h6v6" />
-    <path d="M10 14 21 3" />
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-  </svg>
-);
-
-const EventDetails: Component<{ event: EconomicCalendarEvent }> = (props) => (
-  <div class="grid gap-4 border-t border-brand-border/70 bg-brand-screen px-4 py-4 md:grid-cols-2 md:pl-[216px] md:pr-4 lg:pl-[232px] lg:pr-8">
+const EventDetails: Component<{ event: CalendarEvent }> = (props) => (
+  <div class="calendar-event-details" id={`calendar-details-${props.event.id}`}>
     <div>
-      <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-slate-500">
-        Indicator
+      <span class="calendar-detail-label">About this release</span>
+      <p>
+        {props.event.description ??
+          "No additional release notes are available from the calendar provider."}
       </p>
-      <p class="mt-1.5 text-[13px] leading-5 text-brand-slate-400">
-        {props.event.description}
-      </p>
+      <Show when={props.event.source}>
+        {(source) => (
+          <a href={source().href} target="_blank" rel="noreferrer">
+            {source().label}
+            <Icon name="external" size={13} />
+          </a>
+        )}
+      </Show>
     </div>
-    <div>
-      <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-slate-500">
-        Market read
-      </p>
-      <p class="mt-1.5 text-[13px] leading-5 text-slate-300">
-        {props.event.marketRead}
-      </p>
-      <a
-        href={props.event.source.href}
-        target="_blank"
-        rel="noreferrer"
-        class="mt-2 inline-flex items-center gap-1.5 text-xs text-brand-slate-400 transition-colors hover:text-slate-200"
-      >
-        {props.event.source.label}
-        <ExternalLinkIcon />
-      </a>
-    </div>
+    <dl>
+      <div>
+        <dt>Country</dt>
+        <dd>
+          {calendarCountries.find(
+            (country) => country.code === props.event.country,
+          )?.name ?? props.event.country}
+        </dd>
+      </div>
+      <div>
+        <dt>Category</dt>
+        <dd>{props.event.category}</dd>
+      </div>
+      <div>
+        <dt>Impact</dt>
+        <dd>{impactLabel(props.event.importance)}</dd>
+      </div>
+      <Show when={props.event.period}>
+        <div>
+          <dt>Reference period</dt>
+          <dd>{props.event.period}</dd>
+        </div>
+      </Show>
+    </dl>
   </div>
 );
 
-const CalendarIcon: Component = () => (
-  <svg
-    aria-hidden="true"
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.8"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  >
-    <rect x="3" y="5" width="18" height="16" rx="2" />
-    <path d="M16 3v4M8 3v4M3 10h18" />
-    <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
-  </svg>
-);
-
-const SearchIcon: Component = () => (
-  <svg
-    aria-hidden="true"
-    width="15"
-    height="15"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  >
-    <circle cx="11" cy="11" r="8" />
-    <path d="m21 21-4.35-4.35" />
-  </svg>
-);
-
-const ChevronIcon: Component<{ open?: boolean }> = (props) => (
-  <svg
-    aria-hidden="true"
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    class={`transition-transform ${props.open ? "rotate-180" : ""}`}
-  >
-    <path d="m6 9 6 6 6-6" />
-  </svg>
-);
+type WeekData = {
+  week: string;
+  events: CalendarEvent[];
+  updatedAt?: number;
+  error?: string;
+};
 
 const EconomicCalendar: Component = () => {
-  const [dayFilter, setDayFilter] = createSignal<DayFilter>("week");
-  const [countryFilter, setCountryFilter] =
-    createSignal<CountryFilter>("all");
-  const [categoryFilter, setCategoryFilter] =
-    createSignal<CategoryFilter>("all");
-  const [highImpactOnly, setHighImpactOnly] = createSignal(false);
+  const [now, setNow] = createSignal(new Date());
+  const today = createMemo(() => calendarDateKey(now()));
+  const currentWeek = createMemo(() => calendarWeekStart(today()));
+  const [week, setWeek] = createSignal(currentWeek());
+  const [day, setDay] = createSignal("week");
+  const [countries, setCountries] = createSignal<string[]>(
+    calendarCountries.map((country) => country.code),
+  );
+  const [category, setCategory] = createSignal("all");
+  const [impact, setImpact] =
+    createSignal<CalendarFilters["impact"]>("important");
   const [query, setQuery] = createSignal("");
-  const [selectedEventId, setSelectedEventId] = createSignal<string>();
+  const [expandedId, setExpandedId] = createSignal<string>();
+  const [filtersOpen, setFiltersOpen] = createSignal(false);
+  const cache = new Map<string, WeekData>();
+  let pending: AbortController | undefined;
+  let eventsContainer: HTMLDivElement | undefined;
 
-  const filteredEvents = createMemo(() => {
-    const normalizedQuery = query().trim().toLowerCase();
-
-    return economicCalendarEvents.filter((event) => {
-      if (dayFilter() !== "week" && event.date !== dayFilter()) return false;
-      if (countryFilter() !== "all" && event.country !== countryFilter()) {
-        return false;
-      }
-      if (categoryFilter() !== "all" && event.category !== categoryFilter()) {
-        return false;
-      }
-      if (highImpactOnly() && event.impact !== 3) return false;
+  const [calendar, { refetch }] = createResource(
+    week,
+    async (selectedWeek, info): Promise<WeekData> => {
+      pending?.abort();
+      const cached = cache.get(selectedWeek);
       if (
-        normalizedQuery &&
-        !`${event.event} ${event.currency} ${event.country} ${countryMeta[event.country].label} ${event.category}`
-          .toLowerCase()
-          .includes(normalizedQuery)
-      ) {
-        return false;
+        !info.refetching &&
+        cached?.updatedAt &&
+        Date.now() - cached.updatedAt < 60_000
+      )
+        return cached;
+      const controller = new AbortController();
+      pending = controller;
+      try {
+        const events = await loadCalendarWeek(selectedWeek, controller.signal);
+        const result = { week: selectedWeek, events, updatedAt: Date.now() };
+        if (!controller.signal.aborted) {
+          cache.set(selectedWeek, result);
+          if (cache.size > 16) cache.delete(cache.keys().next().value!);
+        }
+        return result;
+      } catch (error) {
+        return {
+          week: selectedWeek,
+          events: cached?.events ?? [],
+          updatedAt: cached?.updatedAt,
+          error:
+            error instanceof Error
+              ? error.message
+              : "The calendar could not be loaded.",
+        };
       }
-      return true;
+    },
+  );
+  const data = createMemo(() =>
+    calendar.latest?.week === week() ? calendar.latest : undefined,
+  );
+  const events = createMemo(() => data()?.events ?? []);
+  const filters = (): CalendarFilters => ({
+    day: day(),
+    countries: countries(),
+    category: category(),
+    impact: impact(),
+    query: query(),
+  });
+  const weekEvents = createMemo(() =>
+    filterCalendarEvents(events(), { ...filters(), day: "week" }),
+  );
+  const visibleEvents = createMemo(() =>
+    filterCalendarEvents(events(), filters()),
+  );
+  const days = createMemo(() => calendarWeekDays(week()));
+  const grouped = createMemo(() =>
+    days()
+      .map((item) => ({
+        ...item,
+        events: visibleEvents().filter((event) => event.day === item.key),
+      }))
+      .filter((item) => item.events.length),
+  );
+  const highImpactCount = createMemo(
+    () => visibleEvents().filter((event) => event.importance === 1).length,
+  );
+  const hasFilters = createMemo(
+    () =>
+      countries().length !== calendarCountries.length ||
+      category() !== "all" ||
+      impact() !== "important" ||
+      query().trim() !== "" ||
+      day() !== "week",
+  );
+  const nextEvent = createMemo(() =>
+    weekEvents().find(
+      (event) =>
+        event.importance === 1 && Date.parse(event.date) > now().getTime(),
+    ),
+  );
+
+  const chooseWeek = (date: string) => {
+    if (!date) return;
+    try {
+      setWeek(calendarWeekStart(date));
+      setDay("week");
+      setExpandedId(undefined);
+      eventsContainer?.scrollTo({ top: 0 });
+    } catch {
+      /* A partially entered native date is not yet a valid selection. */
+    }
+  };
+  const resetFilters = () => {
+    setCountries(calendarCountries.map((country) => country.code));
+    setCategory("all");
+    setImpact("important");
+    setQuery("");
+    setDay("week");
+  };
+  const selectDay = (value: string) => {
+    setDay(value);
+    setExpandedId(undefined);
+    eventsContainer?.scrollTo({ top: 0 });
+  };
+
+  onMount(() => {
+    const refreshCurrentWeek = () => {
+      setNow(new Date());
+      if (!document.hidden && week() === currentWeek() && !calendar.loading)
+        void refetch();
+    };
+    const timer = window.setInterval(refreshCurrentWeek, 60_000);
+    document.addEventListener("visibilitychange", refreshCurrentWeek);
+    onCleanup(() => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshCurrentWeek);
     });
   });
-
-  const groupedEvents = createMemo(() =>
-    calendarDays
-      .map((day) => ({
-        ...day,
-        events: filteredEvents().filter((event) => event.date === day.date),
-      }))
-      .filter((day) => day.events.length > 0),
-  );
-
-  const highImpactCount = createMemo(
-    () => filteredEvents().filter((event) => event.impact === 3).length,
-  );
-
-  const hasActiveFilters = createMemo(
-    () =>
-      dayFilter() !== "week" ||
-      countryFilter() !== "all" ||
-      categoryFilter() !== "all" ||
-      highImpactOnly() ||
-      query().trim().length > 0,
-  );
-
-  const resetFilters = () => {
-    setDayFilter("week");
-    setCountryFilter("all");
-    setCategoryFilter("all");
-    setHighImpactOnly(false);
-    setQuery("");
-  };
-
-  const toggleEvent = (id: string) => {
-    setSelectedEventId((current) => (current === id ? undefined : id));
-  };
+  onCleanup(() => pending?.abort());
 
   return (
     <section
+      class="economic-calendar"
       data-testid="calendar-view"
-      class="flex h-full min-h-0 flex-col overflow-hidden bg-brand-screen text-slate-200"
+      aria-label="Economic calendar"
     >
-      <header class="shrink-0 border-b border-brand-border bg-brand-screen px-4 py-5 sm:px-6 lg:px-8">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div class="flex items-start gap-4">
-            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-brand-border bg-brand-surface text-brand-slate-300">
-              <CalendarIcon />
-            </span>
-            <div>
-              <h1 class="text-xl font-semibold tracking-tight text-slate-100 sm:text-2xl">
-                Economic calendar
-              </h1>
-            </div>
+      <div class="calendar-top">
+        <header class="calendar-heading">
+          <div>
+            <h1>Economic calendar</h1>
+            <p>
+              <span class="calendar-description">
+                Releases and decisions that move markets.
+              </span>
+              <span class="calendar-mobile-timezone">
+                London time · {calendarTimeZoneLabel(week())}
+              </span>
+            </p>
           </div>
+          <div class="calendar-heading-meta">
+            <span class="calendar-status-dot" />
+            18 economies
+            <span class="calendar-meta-divider" />
+            London time
+          </div>
+        </header>
 
-          <div class="flex items-center gap-6 border-l border-brand-border py-1 pl-5 pr-1">
-            <div>
-              <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-brand-slate-500">
-                Events
-              </p>
-              <p class="mt-0.5 font-mono text-base font-semibold text-slate-100">
-                {filteredEvents().length}
-              </p>
-            </div>
-            <div class="h-9 w-px bg-brand-border" />
-            <div>
-              <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-brand-slate-500">
-                High impact
-              </p>
-              <p class="mt-0.5 font-mono text-base font-semibold text-brand-red-400">
-                {highImpactCount()}
-              </p>
-            </div>
+        <div class="calendar-week-toolbar">
+          <div class="calendar-week-navigation" aria-label="Week navigation">
+            <button
+              class="calendar-icon-button"
+              type="button"
+              aria-label="Previous week"
+              title="Previous week"
+              onClick={() => chooseWeek(addCalendarDays(week(), -7))}
+            >
+              <Icon name="left" />
+            </button>
+            <label class="calendar-date-picker" title="Jump to any week">
+              <Icon name="calendar" />
+              <span data-testid="calendar-week-label">
+                {calendarWeekLabel(week())}
+              </span>
+              <Icon name="down" size={12} />
+              <input
+                type="date"
+                aria-label="Jump to a date"
+                value={week()}
+                onChange={(event) => chooseWeek(event.currentTarget.value)}
+              />
+            </label>
+            <button
+              class="calendar-icon-button"
+              type="button"
+              aria-label="Next week"
+              title="Next week"
+              onClick={() => chooseWeek(addCalendarDays(week(), 7))}
+            >
+              <Icon name="right" />
+            </button>
+            <button
+              class="calendar-today-button"
+              type="button"
+              onClick={() => chooseWeek(today())}
+            >
+              This week
+            </button>
           </div>
+          <span class="calendar-timezone">
+            Europe/London <span>{calendarTimeZoneLabel(week())}</span>
+          </span>
         </div>
-      </header>
 
-      <div class="shrink-0 border-b border-brand-border bg-brand-screen px-4 sm:px-6 lg:px-8">
-        <div class="flex items-stretch overflow-x-auto">
+        <div class="calendar-days" role="group" aria-label="Filter by day">
           <button
             type="button"
-            data-testid="calendar-day-week"
-            class={`shrink-0 border-b-2 px-4 py-3 text-left transition-colors ${
-              dayFilter() === "week"
-                ? "border-brand-accent text-slate-100"
-                : "border-transparent text-brand-slate-400 hover:text-slate-200"
-            }`}
-            onClick={() => setDayFilter("week")}
+            class="calendar-week-day"
+            aria-pressed={day() === "week"}
+            onClick={() => selectDay("week")}
           >
-            <span class="block font-mono text-[11px] font-semibold uppercase tracking-[0.08em]">
-              Week
-            </span>
-            <span class="mt-0.5 block text-xs">31 Aug–4 Sep</span>
+            <span>Full week</span>
+            <strong>
+              {weekEvents().length}
+              <small>{weekEvents().length === 1 ? "event" : "events"}</small>
+            </strong>
           </button>
-          <For each={calendarDays}>
-            {(day) => (
-              <button
-                type="button"
-                data-testid={`calendar-day-${day.date}`}
-                class={`min-w-20 shrink-0 border-b-2 px-4 py-3 text-center transition-colors ${
-                  dayFilter() === day.date
-                    ? "border-brand-accent text-slate-100"
-                    : "border-transparent text-brand-slate-400 hover:text-slate-200"
-                }`}
-                onClick={() => setDayFilter(day.date)}
-              >
-                <span class="block font-mono text-[11px] font-semibold tracking-[0.08em]">
-                  {day.weekday}
-                </span>
-                <span class="mt-0.5 block font-mono text-xs">
-                  {day.day} {day.month}
-                </span>
-              </button>
-            )}
+          <For each={days()}>
+            {(item) => {
+              const daily = () =>
+                weekEvents().filter((event) => event.day === item.key);
+              return (
+                <button
+                  type="button"
+                  class="calendar-day"
+                  classList={{ "is-today": item.key === today() }}
+                  aria-label={`${item.label}${item.key === today() ? ", today" : ""}, ${eventCount(daily().length)}`}
+                  aria-pressed={day() === item.key}
+                  onClick={() => selectDay(item.key)}
+                >
+                  <span>
+                    {item.weekday}
+                    <Show when={item.key === today()}>
+                      <i class="calendar-today-dot" />
+                    </Show>
+                  </span>
+                  <strong>
+                    {item.day}
+                    <small>{daily().length}</small>
+                  </strong>
+                </button>
+              );
+            }}
           </For>
         </div>
-      </div>
 
-      <div class="shrink-0 border-b border-brand-border bg-brand-screen px-4 py-3 sm:px-6 lg:px-8">
-        <div class="flex flex-wrap items-center gap-2">
-          <label class="flex min-w-[220px] flex-1 items-center gap-2 rounded-md border border-brand-border bg-brand-surface px-3 py-2.5 text-brand-slate-500 transition-colors focus-within:border-brand-slate-600">
-            <SearchIcon />
-            <span class="sr-only">Search events</span>
+        <div class="calendar-filters">
+          <label class="calendar-search">
+            <Icon name="search" />
             <input
-              data-testid="calendar-search"
               type="search"
+              aria-label="Search events"
+              placeholder="Search events or countries"
               value={query()}
-              placeholder="Search events"
-              class="min-w-0 flex-1 bg-transparent text-sm text-slate-200 outline-none placeholder:text-brand-slate-500"
               onInput={(event) => setQuery(event.currentTarget.value)}
             />
           </label>
-
-          <label class="relative">
-            <span class="sr-only">Country</span>
-            <select
-              data-testid="calendar-country-filter"
-              value={countryFilter()}
-              class="appearance-none rounded-md border border-brand-border bg-brand-surface py-2.5 pl-3 pr-9 text-sm text-slate-300 outline-none transition-colors hover:border-brand-slate-600 focus:border-brand-slate-600"
-              onChange={(event) =>
-                setCountryFilter(event.currentTarget.value as CountryFilter)
-              }
-            >
-              <option value="all">All countries</option>
-              <option value="US">United States</option>
-              <option value="CA">Canada</option>
-            </select>
-            <span class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-slate-500">
-              <ChevronIcon />
-            </span>
-          </label>
-
-          <label class="relative">
-            <span class="sr-only">Category</span>
-            <select
-              data-testid="calendar-category-filter"
-              value={categoryFilter()}
-              class="appearance-none rounded-md border border-brand-border bg-brand-surface py-2.5 pl-3 pr-9 text-sm text-slate-300 outline-none transition-colors hover:border-brand-slate-600 focus:border-brand-slate-600"
-              onChange={(event) =>
-                setCategoryFilter(event.currentTarget.value as CategoryFilter)
-              }
-            >
-              <option value="all">All categories</option>
-              <option value="Labour">Labour</option>
-              <option value="Growth">Growth</option>
-              <option value="Central bank">Central bank</option>
-            </select>
-            <span class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-slate-500">
-              <ChevronIcon />
-            </span>
-          </label>
-
           <button
             type="button"
-            data-testid="calendar-high-impact-filter"
-            aria-pressed={highImpactOnly()}
-            class={`inline-flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm transition-colors ${
-              highImpactOnly()
-                ? "border-brand-red-400/40 bg-brand-surface text-brand-red-400"
-                : "border-brand-border bg-brand-surface text-brand-slate-400 hover:border-brand-slate-600 hover:text-slate-200"
-            }`}
-            onClick={() => setHighImpactOnly((current) => !current)}
+            class="calendar-mobile-filters"
+            aria-label="Show calendar filters"
+            aria-expanded={filtersOpen()}
+            aria-controls="calendar-filter-controls"
+            onClick={() => setFiltersOpen((value) => !value)}
           >
-            <ImpactBars impact={3} />
-            High impact
+            <Icon name="filter" />
+            Filters
           </button>
+          <div
+            id="calendar-filter-controls"
+            class="calendar-filter-controls"
+            classList={{ "is-open": filtersOpen() }}
+          >
+            <CalendarCountryFilter
+              countries={countries()}
+              onChange={setCountries}
+            />
+            <label>
+              <span class="sr-only">Category</span>
+              <select
+                aria-label="Category"
+                value={category()}
+                onChange={(event) => setCategory(event.currentTarget.value)}
+              >
+                <option value="all">All categories</option>
+                <For each={calendarCategories}>
+                  {(item) => <option>{item}</option>}
+                </For>
+              </select>
+            </label>
+            <label>
+              <span class="sr-only">Impact</span>
+              <select
+                aria-label="Impact"
+                value={impact()}
+                onChange={(event) =>
+                  setImpact(
+                    event.currentTarget.value as CalendarFilters["impact"],
+                  )
+                }
+              >
+                <option value="all">All impact levels</option>
+                <option value="important">Medium + high</option>
+                <option value="high">High impact only</option>
+              </select>
+            </label>
+          </div>
+          <button
+            type="button"
+            class="calendar-icon-button calendar-refresh"
+            aria-label="Refresh calendar"
+            title="Refresh calendar"
+            disabled={calendar.loading}
+            onClick={() => void refetch()}
+          >
+            <Icon name="refresh" />
+          </button>
+        </div>
 
-          <span class="inline-flex items-center rounded-md border border-brand-border bg-brand-surface px-3 py-2.5 font-mono text-xs text-brand-slate-500">
-            BST · UTC+1
+        <div class="calendar-results-meta" aria-live="polite">
+          <span>
+            {calendar.loading && !data()
+              ? "Loading this week…"
+              : eventCount(visibleEvents().length)}
+            <Show when={highImpactCount() > 0}>
+              <span class="calendar-meta-divider" />
+              <span class="calendar-high-count">
+                {highImpactCount()} high impact
+              </span>
+            </Show>
+            <Show when={hasFilters()}>
+              <button type="button" onClick={resetFilters}>
+                Reset filters
+              </button>
+            </Show>
           </span>
+          <Show when={week() === currentWeek() ? nextEvent() : undefined}>
+            {(event) => (
+              <span class="calendar-next-event">
+                Up next <strong>{event().title}</strong>
+                <span>
+                  {event().day === today()
+                    ? "Today"
+                    : days().find((item) => item.key === event().day)
+                        ?.weekday}{" "}
+                  {event().time}
+                </span>
+              </span>
+            )}
+          </Show>
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-auto" data-testid="calendar-events">
+      <div
+        class="calendar-event-scroll"
+        ref={eventsContainer}
+        data-testid="calendar-events"
+        aria-busy={calendar.loading}
+      >
+        <Show when={data()?.error}>
+          <div class="calendar-error" role="alert">
+            <div>
+              <strong>
+                {data()?.updatedAt
+                  ? "Updates temporarily unavailable"
+                  : "Unable to load this week"}
+              </strong>
+              <p>
+                {data()?.updatedAt
+                  ? "Showing the last available data. Try refreshing in a moment."
+                  : "The calendar provider did not respond. You can retry or choose another week."}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={calendar.loading}
+              onClick={() => void refetch()}
+            >
+              Try again
+            </button>
+          </div>
+        </Show>
         <Show
-          when={filteredEvents().length > 0}
+          when={calendar.loading && !data()}
           fallback={
-            <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-              <span class="flex h-10 w-10 items-center justify-center rounded border border-brand-border bg-brand-surface text-brand-slate-500">
-                <CalendarIcon />
-              </span>
-              <p class="mt-4 text-base font-semibold text-slate-200">
-                No events match these filters
-              </p>
-              <p class="mt-1 max-w-sm text-sm leading-5 text-brand-slate-500">
-                Reset the period, country, category and impact controls to see
-                the complete week.
-              </p>
-              <Show when={hasActiveFilters()}>
-                <button
-                  type="button"
-                  class="mt-4 rounded-md border border-brand-border px-3 py-2 text-sm text-slate-300 transition-colors hover:border-brand-slate-600 hover:text-slate-100"
-                  onClick={resetFilters}
-                >
-                  Reset filters
-                </button>
-              </Show>
-            </div>
-          }
-        >
-          <div class="hidden min-w-[820px] md:block">
-            <div class="sticky top-0 z-20 grid grid-cols-[84px_116px_minmax(300px,1fr)_92px_92px_92px] border-b border-brand-border bg-brand-surface px-4 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-slate-500 lg:px-8">
-              <span>Time</span>
-              <span>Country</span>
-              <span>Event</span>
-              <span class="text-right">Actual</span>
-              <span class="text-right">Forecast</span>
-              <span class="text-right">Prior</span>
-            </div>
-
-            <For each={groupedEvents()}>
-              {(group) => (
-                <section>
-                  <div class="sticky top-[35px] z-10 flex items-center justify-between border-b border-brand-border bg-brand-screen px-4 py-2 lg:px-8">
-                    <div class="flex items-center gap-2">
-                      <span class="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-300">
-                        {group.weekday} · {group.day} {group.month}
-                      </span>
-                      <span class="font-mono text-[10px] text-brand-slate-500">
-                        2026
-                      </span>
-                    </div>
-                    <span class="font-mono text-[10px] text-brand-slate-500">
-                      {group.events.length} {group.events.length === 1 ? "event" : "events"}
-                    </span>
+            <Show
+              when={visibleEvents().length > 0}
+              fallback={
+                <Show when={!data()?.error}>
+                  <div class="calendar-empty">
+                    <Icon name="calendar" size={28} />
+                    <h2>
+                      {countries().length === 0
+                        ? "Choose your countries"
+                        : events().length > 0 || hasFilters()
+                          ? "No matching events"
+                          : "No releases published"}
+                    </h2>
+                    <p>
+                      {countries().length === 0
+                        ? "Select one or more countries in the filter above, or reset filters to show them all."
+                        : events().length > 0 || hasFilters()
+                          ? "Try another day, country or impact level."
+                          : "The provider has not published events for this week yet. Browse another week or check back later."}
+                    </p>
+                    <Show when={hasFilters()}>
+                      <button type="button" onClick={resetFilters}>
+                        Reset filters
+                      </button>
+                    </Show>
+                    <Show when={impact() !== "all" && countries().length > 0}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImpact("all");
+                          setDay("week");
+                        }}
+                      >
+                        Show all impact levels
+                      </button>
+                    </Show>
                   </div>
-
-                  <For each={group.events}>
-                    {(event) => (
-                      <article class="border-b border-brand-border/70">
-                        <button
-                          type="button"
-                          data-testid={`calendar-event-${event.id}`}
-                          aria-expanded={selectedEventId() === event.id}
-                          class="group grid w-full grid-cols-[84px_116px_minmax(300px,1fr)_92px_92px_92px] items-center px-4 py-3.5 text-left transition-colors hover:bg-brand-surface/45 lg:px-8"
-                          onClick={() => toggleEvent(event.id)}
+                </Show>
+              }
+            >
+              <div class="calendar-table-heading" aria-hidden="true">
+                <span>Time · {calendarTimeZoneLabel(week())}</span>
+                <span>Currency</span>
+                <span>Event</span>
+                <span>Actual</span>
+                <span>Forecast</span>
+                <span>Previous</span>
+                <span />
+              </div>
+              <For each={grouped()}>
+                {(group) => (
+                  <section
+                    class="calendar-event-group"
+                    aria-label={group.label}
+                  >
+                    <h2 class="calendar-group-heading">
+                      <span>
+                        {group.label}
+                        <Show when={group.key === today()}>
+                          <small>Today</small>
+                        </Show>
+                      </span>
+                      <span>{eventCount(group.events.length)}</span>
+                    </h2>
+                    <For each={group.events}>
+                      {(event) => (
+                        <article
+                          class="calendar-event"
+                          classList={{
+                            "is-expanded": expandedId() === event.id,
+                          }}
                         >
-                          <span class="font-mono text-sm font-semibold text-slate-200">
-                            {event.time}
-                          </span>
-                          <CountryBadge event={event} />
-                          <span class="flex min-w-0 items-center gap-3 pr-5">
-                            <ImpactBars impact={event.impact} />
-                            <span class="min-w-0">
-                              <span class="flex min-w-0 items-center gap-2">
-                                <span class="truncate text-sm font-medium text-slate-100 group-hover:text-white">
-                                  {event.event}
-                                </span>
-                                <span class="shrink-0 rounded border border-brand-border px-1.5 py-0.5 font-mono text-[10px] text-brand-slate-500">
-                                  {event.period}
-                                </span>
+                          <button
+                            type="button"
+                            class="calendar-event-row"
+                            data-testid={`calendar-event-${event.id}`}
+                            aria-expanded={expandedId() === event.id}
+                            aria-controls={`calendar-details-${event.id}`}
+                            onClick={() =>
+                              setExpandedId((value) =>
+                                value === event.id ? undefined : event.id,
+                              )
+                            }
+                          >
+                            <time
+                              class="calendar-event-time"
+                              dateTime={event.date}
+                            >
+                              {event.time}
+                            </time>
+                            <span
+                              class="calendar-country"
+                              title={
+                                calendarCountries.find(
+                                  (item) => item.code === event.country,
+                                )?.name
+                              }
+                            >
+                              <span aria-hidden="true">
+                                {countryCodeToFlag(event.country)}
                               </span>
-                              <span class="mt-1 block font-mono text-[11px] text-brand-slate-500">
-                                {event.category} · {impactLabel(event.impact)}
+                              <span>{event.currency ?? event.country}</span>
+                            </span>
+                            <span class="calendar-event-name">
+                              <Impact importance={event.importance} />
+                              <span>
+                                <strong>{event.title}</strong>
+                                <span class="calendar-event-caption">
+                                  {event.category}
+                                  <Show when={event.period}>
+                                    <span>·</span>
+                                    {event.period}
+                                  </Show>
+                                </span>
                               </span>
                             </span>
-                          </span>
-                          <span class="text-right font-mono text-[13px] font-semibold text-brand-accent">
-                            {event.actual ?? "—"}
-                          </span>
-                          <span class="text-right font-mono text-[13px] text-slate-300">
-                            {event.forecast ?? "—"}
-                          </span>
-                          <span class="flex items-center justify-end gap-2 text-right font-mono text-[13px] text-brand-slate-400">
-                            {event.prior ?? "—"}
-                            <ChevronIcon open={selectedEventId() === event.id} />
-                          </span>
-                        </button>
-                        <Show when={selectedEventId() === event.id}>
-                          <EventDetails event={event} />
-                        </Show>
-                      </article>
-                    )}
-                  </For>
-                </section>
-              )}
-            </For>
-          </div>
-
-          <div class="md:hidden">
-            <For each={groupedEvents()}>
-              {(group) => (
-                <section>
-                  <div class="sticky top-0 z-10 flex items-center justify-between border-b border-brand-border bg-brand-screen px-4 py-2.5">
-                    <span class="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-300">
-                      {group.weekday} · {group.day} {group.month}
-                    </span>
-                    <span class="font-mono text-[10px] text-brand-slate-500">
-                      {group.events.length} {group.events.length === 1 ? "event" : "events"}
-                    </span>
-                  </div>
-                  <For each={group.events}>
-                    {(event) => (
-                      <article class="border-b border-brand-border/70">
-                        <button
-                          type="button"
-                          aria-expanded={selectedEventId() === event.id}
-                          class="w-full px-4 py-4 text-left transition-colors hover:bg-brand-surface/50"
-                          onClick={() => toggleEvent(event.id)}
-                        >
-                          <div class="flex items-start justify-between gap-3">
-                            <div class="flex items-center gap-3">
-                              <span class="font-mono text-sm font-semibold text-slate-100">
-                                {event.time}
-                              </span>
-                              <CountryBadge event={event} />
-                            </div>
-                            <div class="flex items-center gap-3">
-                              <ImpactBars impact={event.impact} />
-                              <ChevronIcon open={selectedEventId() === event.id} />
-                            </div>
-                          </div>
-                          <div class="mt-3">
-                            <div class="flex items-center gap-2">
-                              <span class="text-[15px] font-medium text-slate-100">
-                                {event.event}
-                              </span>
-                              <span class="rounded border border-brand-border px-1.5 py-0.5 font-mono text-[10px] text-brand-slate-500">
-                                {event.period}
-                              </span>
-                            </div>
-                            <p class="mt-1 font-mono text-[11px] text-brand-slate-500">
-                              {event.category} · {impactLabel(event.impact)}
-                            </p>
-                          </div>
-                          <div class="mt-3 grid grid-cols-3 border-y border-brand-border bg-brand-surface">
-                            <For
-                              each={[
-                                ["Actual", event.actual ?? "—"],
-                                ["Forecast", event.forecast ?? "—"],
-                                ["Prior", event.prior ?? "—"],
-                              ]}
+                            <span
+                              class="calendar-value calendar-actual"
+                              classList={{ "has-value": event.actual !== null }}
                             >
-                              {(value, index) => (
-                                <span
-                                  class={`px-3 py-2 ${index() > 0 ? "border-l border-brand-border" : ""}`}
-                                >
-                                  <span class="block font-mono text-[10px] uppercase tracking-[0.08em] text-brand-slate-500">
-                                    {value[0]}
-                                  </span>
-                                  <span
-                                    class={`mt-1 block font-mono text-[13px] ${index() === 0 ? "text-brand-accent" : "text-slate-300"}`}
-                                  >
-                                    {value[1]}
-                                  </span>
-                                </span>
-                              )}
-                            </For>
-                          </div>
-                        </button>
-                        <Show when={selectedEventId() === event.id}>
-                          <EventDetails event={event} />
-                        </Show>
-                      </article>
-                    )}
-                  </For>
-                </section>
+                              <small>Actual</small>
+                              {eventValue(event, "actual")}
+                            </span>
+                            <span class="calendar-value">
+                              <small>Forecast</small>
+                              {eventValue(event, "forecast")}
+                            </span>
+                            <span class="calendar-value calendar-previous">
+                              <small>Previous</small>
+                              {eventValue(event, "previous")}
+                            </span>
+                            <span class="calendar-event-chevron">
+                              <Icon name="down" size={13} />
+                            </span>
+                          </button>
+                          <Show when={expandedId() === event.id}>
+                            <EventDetails event={event} />
+                          </Show>
+                        </article>
+                      )}
+                    </For>
+                  </section>
+                )}
+              </For>
+            </Show>
+          }
+        >
+          <div
+            class="calendar-loading"
+            role="status"
+            aria-label="Loading calendar"
+          >
+            <For each={[1, 2, 3, 4, 5, 6]}>
+              {() => (
+                <div>
+                  <span />
+                  <span />
+                  <span />
+                </div>
               )}
             </For>
           </div>
         </Show>
       </div>
-
-      <footer class="shrink-0 border-t border-brand-border bg-brand-screen px-4 py-2.5 font-mono text-[11px] leading-5 text-brand-slate-500 sm:px-6 lg:px-8">
-        Scheduled times are converted to Europe/London from BLS, ISM and Bank
-        of Canada calendars. Consensus is shown only where explicitly sourced.
-        Data is not live.
+      <footer class="calendar-footer">
+        <span>
+          Calendar data via{" "}
+          <a
+            href="https://www.tradingview.com/economic-calendar/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            TradingView
+            <Icon name="external" size={11} />
+          </a>
+          <span class="calendar-footer-note"> · Schedules may change.</span>
+        </span>
+        <span>
+          {calendar.loading
+            ? "Updating…"
+            : data()?.updatedAt
+              ? `Updated ${new Date(data()!.updatedAt!).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London", timeZoneName: "short" })}`
+              : ""}
+        </span>
       </footer>
     </section>
   );

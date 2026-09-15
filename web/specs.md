@@ -8,12 +8,12 @@ The executable source of truth is `convex/lib/accounting.ts`, with versioned
 examples in `fixtures/accounting-v1.json` and invariant/property tests in
 `convex/lib/accounting.test.ts`. Monetary mutations persist canonical decimal
 strings alongside temporary numeric display projections and tag trades,
-positions, balances, vault records and ledger events with their accounting
+positions, balances and ledger events with their accounting
 version and precision.
 
 - Cash: 6 decimals (USDC smallest units).
 - Prices: 8 decimals.
-- Quantities and vault shares: 8 decimals.
+- Quantities: 8 decimals.
 - Funding rates: 12 decimals.
 - Domain-boundary rounding: round-half-to-even. Inputs with unsupported
   precision are rejected; performance fees round toward zero so they can never
@@ -199,38 +199,3 @@ indicator) and reduces risk via a market fill.
 - When triggered, reduce the position size by 25% (min `0.0001`) at the current
   mark price.
 - A per-symbol cooldown (4s) prevents repeated triggers on every tick.
-
-## Vaults (Pooled Share Accounts)
-
-### Overview
-Vaults are pooled accounts with NAV-based share pricing. Members deposit USDC,
-receive vault shares, and can withdraw by redeeming shares. Vaults are not
-copy-trading accounts; they track pooled equity and a single share price.
-
-### Core fields
-- `vaults`: vault metadata (`name`, `operatorUserId`, `totalShares`, `status`).
-- `vaultMembers`: per-user ownership (`shares`, `costBasisUSDC`).
-- `vaultMetrics`: vault equity + PnL snapshots (`equityUSDC`, `pnl`).
-- `vaultFees`: performance fee ledger entries (`amountUSDC`).
-
-### Share accounting
-- `sharePrice = equityUSDC / totalShares`.
-- If `totalShares == 0`, `sharePrice = 1`.
-- Equity is derived from vault-owned balances (perps + spot valuation).
-
-### Deposit (USDC only)
-- Minted shares: `shares = depositAmount / sharePrice`.
-- Member updates:
-  - `shares += mintedShares`
-  - `costBasisUSDC += depositAmount`
-- Vault updates:
-  - `totalShares += mintedShares`
-
-### Withdrawal (performance fee charged at exit)
-- `value = shares * sharePrice`
-- `costBasisPortion = member.costBasisUSDC * (shares / memberSharesBefore)`
-- `profit = max(0, value - costBasisPortion)`
-- `fee = profit * 0.10`
-- `payout = value - fee`
-- Burn shares and reduce member cost basis by `costBasisPortion`.
-- Record fee owed to the operator in `vaultFees`.

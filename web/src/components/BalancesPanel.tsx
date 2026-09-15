@@ -17,7 +17,6 @@ import {
   isSpotAsset,
   openTransferModal,
 } from "../stores/wallet";
-import { isVaultTradingAccount } from "../stores/tradingAccount";
 import {
   hyperliquidAccountMode,
   hyperliquidConnection,
@@ -107,9 +106,7 @@ const BalancesPanel: Component<{
     ...baseColumns.slice(2),
   ]);
   const visibleSpotAssets = createMemo(() =>
-    isVaultTradingAccount() && !isHyperliquidExecution()
-      ? []
-      : isHyperliquidExecution()
+    isHyperliquidExecution()
         ? Object.keys(getSpotBalances())
             .filter(
               (symbol): symbol is SpotAsset =>
@@ -215,7 +212,7 @@ const BalancesPanel: Component<{
                     </button>
                   </Show>
                   <Show
-                    when={!isVaultTradingAccount() && !isHyperliquidExecution()}
+                    when={!isHyperliquidExecution()}
                   >
                     <button
                       class="text-brand-accent hover:underline"
@@ -234,7 +231,6 @@ const BalancesPanel: Component<{
             {/* Spot USDC Row */}
             <Show
               when={
-                (!isVaultTradingAccount() || isHyperliquidExecution()) &&
                 (spotUsdcBalance() !== 0 || spotUsdcIsBorrowed())
               }
             >

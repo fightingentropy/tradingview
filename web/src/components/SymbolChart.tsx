@@ -151,12 +151,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
       resolution: string;
       symbol: string;
     }) => {
-      updateLastCandle(
-        provider,
-        `${symbol}-${marketType}`,
-        resolution,
-        candle,
-      );
+      updateLastCandle(provider, `${symbol}-${marketType}`, resolution, candle);
       upsertLocalCandle(candle);
       candleSeries?.update({
         time: (candle.time / 1000) as Time,
@@ -425,7 +420,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
 
     chart = createChart(containerRef, {
       layout: {
-        background: { type: ColorType.Solid, color: "#0e1013" },
+        background: { type: ColorType.Solid, color: "#101317" },
         textColor: "#6b7280",
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 11,
@@ -491,12 +486,12 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
     });
 
     candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#50e3ab",
-      downColor: "#ff5572",
-      borderUpColor: "#50e3ab",
-      borderDownColor: "#ff5572",
-      wickUpColor: "#50e3ab",
-      wickDownColor: "#ff5572",
+      upColor: "#43c6a1",
+      downColor: "#e87887",
+      borderUpColor: "#43c6a1",
+      borderDownColor: "#e87887",
+      wickUpColor: "#43c6a1",
+      wickDownColor: "#e87887",
     });
 
     volumeSeries = chart.addSeries(HistogramSeries, {
@@ -614,13 +609,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
           controller.signal,
           requestId,
         );
-        startStreaming(
-          symbol,
-          resolvedCoin,
-          marketType,
-          resolution,
-          provider,
-        );
+        startStreaming(symbol, resolvedCoin, marketType, resolution, provider);
       })();
     }, CANDLE_LOAD_DEBOUNCE_MS) as unknown as number;
   });

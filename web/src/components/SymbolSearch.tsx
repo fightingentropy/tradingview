@@ -461,267 +461,276 @@ const SymbolSearch: Component = () => {
           aria-modal="true"
           aria-label="Market search"
         >
-        {/* Search Header */}
-        <div class="search-header">
-          <div class="search-input-wrapper">
-            <SearchIcon class="search-icon" />
-            <input
-              ref={inputRef}
-              type="text"
-              aria-label="Search markets"
-              placeholder={`Search ${MARKETS().length} markets...`}
-              class="search-input"
-              value={query()}
-              onInput={(e) => {
-                setQuery(e.currentTarget.value);
-                setSelectedIdx(0);
-                if (listRef) {
-                  listRef.scrollTo({ top: 0 });
-                  setScrollTop(0);
-                }
-              }}
-              onKeyDown={handleKeyDown}
-            />
-            <div class="search-shortcut">
-              <kbd>esc</kbd>
+          {/* Search Header */}
+          <div class="search-header">
+            <div class="search-input-wrapper">
+              <SearchIcon class="search-icon" />
+              <input
+                ref={inputRef}
+                type="text"
+                aria-label="Search markets"
+                placeholder={`Search ${MARKETS().length} markets...`}
+                class="search-input"
+                value={query()}
+                onInput={(e) => {
+                  setQuery(e.currentTarget.value);
+                  setSelectedIdx(0);
+                  if (listRef) {
+                    listRef.scrollTo({ top: 0 });
+                    setScrollTop(0);
+                  }
+                }}
+                onKeyDown={handleKeyDown}
+              />
+              <button
+                class="search-shortcut"
+                aria-label="Close market search"
+                onClick={() => setSearchOpen(false)}
+              >
+                <kbd class="hidden md:block">esc</kbd>
+                <span class="md:hidden text-xl" aria-hidden="true">
+                  ×
+                </span>
+              </button>
             </div>
           </div>
-        </div>
 
-        {/* Filter Tabs */}
-        <div class="filter-section">
-          <div class="filter-tabs">
-            <For each={filterTabs}>
-              {(tab) => (
-                <button
-                  class={`filter-tab ${filter() === tab.id ? "active" : ""}`}
-                  onClick={() => setFilter(tab.id)}
-                >
-                  {tab.emoji && <span class="tab-emoji">{tab.emoji}</span>}
-                  <span>{tab.label}</span>
-                  {tab.badge && <span class="tab-badge">{tab.badge}</span>}
-                  {tab.icon && <img src={tab.icon} alt="" class="tab-icon" />}
-                </button>
-              )}
-            </For>
-          </div>
-        </div>
-
-        {/* Table Header */}
-        <div class="table-header">
-          <div class="th-cell th-market">Market</div>
-          <button
-            class={`th-cell th-sortable ${sortColumn() === "change" ? "active" : ""}`}
-            onClick={() => handleSort("change")}
-          >
-            <span>24h Change</span>
-            <Show when={sortColumn() === "change"}>
-              <ChevronDownIcon
-                class={`th-sort-icon ${sortDirection() === "asc" ? "asc" : ""}`}
-              />
-            </Show>
-          </button>
-          <button
-            class={`th-cell th-sortable ${sortColumn() === "volume" ? "active" : ""}`}
-            onClick={() => handleSort("volume")}
-          >
-            <span>Volume</span>
-            <Show when={sortColumn() === "volume"}>
-              <ChevronDownIcon
-                class={`th-sort-icon ${sortDirection() === "asc" ? "asc" : ""}`}
-              />
-            </Show>
-          </button>
-          <button
-            class={`th-cell th-sortable ${sortColumn() === "openInterest" ? "active" : ""}`}
-            onClick={() => handleSort("openInterest")}
-          >
-            <span>Open Interest</span>
-            <Show when={sortColumn() === "openInterest"}>
-              <ChevronDownIcon
-                class={`th-sort-icon ${sortDirection() === "asc" ? "asc" : ""}`}
-              />
-            </Show>
-          </button>
-          <button
-            class={`th-cell th-sortable ${sortColumn() === "funding" ? "active" : ""}`}
-            onClick={() => handleSort("funding")}
-          >
-            <span>Funding</span>
-            <Show when={sortColumn() === "funding"}>
-              <ChevronDownIcon
-                class={`th-sort-icon ${sortDirection() === "asc" ? "asc" : ""}`}
-              />
-            </Show>
-          </button>
-          <div class="th-cell th-action"></div>
-        </div>
-
-        {/* Market Rows */}
-        <div ref={setListRef} class="market-list" onScroll={handleScroll}>
-          <Show when={marketsLoading()}>
-            <div class="loading-state">
-              <div class="loading-spinner" />
-              <span>Loading markets...</span>
-            </div>
-          </Show>
-          <Show when={!marketsLoading()}>
-            <Show when={topSpacerHeight() > 0}>
-              <div style={{ height: `${topSpacerHeight()}px` }} />
-            </Show>
-            <For each={visibleMarkets()}>
-              {(market, idx) => {
-                const change = formatPriceChange(market);
-                const isPositive = market.change24h >= 0;
-                const displaySymbol = getDisplaySymbol(market.symbol);
-                const iconSrc =
-                  ICON_SOURCES[displaySymbol] ??
-                  `/${displaySymbol.toLowerCase()}.svg`;
-                const absoluteIdx = () => idx() + startIndex();
-
-                return (
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Open ${market.name}`}
-                    data-idx={absoluteIdx()}
-                    class={`market-row ${absoluteIdx() === selectedIdx() ? "selected" : ""}`}
-                    onClick={() => selectMarket(market)}
-                    onKeyDown={(event) => {
-                      if (event.target !== event.currentTarget) return;
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        selectMarket(market);
-                      }
-                    }}
+          {/* Filter Tabs */}
+          <div class="filter-section">
+            <div class="filter-tabs">
+              <For each={filterTabs}>
+                {(tab) => (
+                  <button
+                    class={`filter-tab ${filter() === tab.id ? "active" : ""}`}
+                    onClick={() => setFilter(tab.id)}
                   >
-                    <div class="market-info">
-                      <Show
-                        when={ICON_SYMBOLS.has(displaySymbol)}
-                        fallback={
-                          <div class="market-icon market-icon-fallback">
-                            <span>{getIconLabel(displaySymbol)}</span>
-                          </div>
+                    {tab.emoji && <span class="tab-emoji">{tab.emoji}</span>}
+                    <span>{tab.label}</span>
+                    {tab.badge && <span class="tab-badge">{tab.badge}</span>}
+                    {tab.icon && <img src={tab.icon} alt="" class="tab-icon" />}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+
+          {/* Table Header */}
+          <div class="table-header">
+            <div class="th-cell th-market">Market</div>
+            <button
+              class={`th-cell th-sortable ${sortColumn() === "change" ? "active" : ""}`}
+              onClick={() => handleSort("change")}
+            >
+              <span>24h Change</span>
+              <Show when={sortColumn() === "change"}>
+                <ChevronDownIcon
+                  class={`th-sort-icon ${sortDirection() === "asc" ? "asc" : ""}`}
+                />
+              </Show>
+            </button>
+            <button
+              class={`th-cell th-sortable th-volume ${sortColumn() === "volume" ? "active" : ""}`}
+              onClick={() => handleSort("volume")}
+            >
+              <span>Volume</span>
+              <Show when={sortColumn() === "volume"}>
+                <ChevronDownIcon
+                  class={`th-sort-icon ${sortDirection() === "asc" ? "asc" : ""}`}
+                />
+              </Show>
+            </button>
+            <button
+              class={`th-cell th-sortable th-openInterest ${sortColumn() === "openInterest" ? "active" : ""}`}
+              onClick={() => handleSort("openInterest")}
+            >
+              <span>Open Interest</span>
+              <Show when={sortColumn() === "openInterest"}>
+                <ChevronDownIcon
+                  class={`th-sort-icon ${sortDirection() === "asc" ? "asc" : ""}`}
+                />
+              </Show>
+            </button>
+            <button
+              class={`th-cell th-sortable th-funding ${sortColumn() === "funding" ? "active" : ""}`}
+              onClick={() => handleSort("funding")}
+            >
+              <span>Funding</span>
+              <Show when={sortColumn() === "funding"}>
+                <ChevronDownIcon
+                  class={`th-sort-icon ${sortDirection() === "asc" ? "asc" : ""}`}
+                />
+              </Show>
+            </button>
+            <div class="th-cell th-action"></div>
+          </div>
+
+          {/* Market Rows */}
+          <div ref={setListRef} class="market-list" onScroll={handleScroll}>
+            <Show when={marketsLoading()}>
+              <div class="loading-state">
+                <div class="loading-spinner" />
+                <span>Loading markets...</span>
+              </div>
+            </Show>
+            <Show when={!marketsLoading()}>
+              <Show when={topSpacerHeight() > 0}>
+                <div style={{ height: `${topSpacerHeight()}px` }} />
+              </Show>
+              <For each={visibleMarkets()}>
+                {(market, idx) => {
+                  const change = formatPriceChange(market);
+                  const isPositive = market.change24h >= 0;
+                  const displaySymbol = getDisplaySymbol(market.symbol);
+                  const iconSrc =
+                    ICON_SOURCES[displaySymbol] ??
+                    `/${displaySymbol.toLowerCase()}.svg`;
+                  const absoluteIdx = () => idx() + startIndex();
+
+                  return (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open ${market.name}`}
+                      data-idx={absoluteIdx()}
+                      class={`market-row ${absoluteIdx() === selectedIdx() ? "selected" : ""}`}
+                      onClick={() => selectMarket(market)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          selectMarket(market);
                         }
-                      >
-                        <div class="market-icon">
-                          <img
-                            src={iconSrc}
-                            alt={displaySymbol}
-                            class="coin-logo"
-                          />
-                        </div>
-                      </Show>
-                      <div class="market-details">
-                        <div class="market-name-row">
-                          <span class="market-name">
-                            {market.type === "equities"
-                              ? `[${market.name}]`
-                              : market.name}
-                          </span>
-                          <span class="leverage-badge">
-                            {market.type === "spot" ? "Spot" : market.leverage}
-                          </span>
-                          {market.type === "equities" && (
-                            <span class="xyz-badge">XYZ</span>
-                          )}
-                        </div>
-                        <span class="market-price">${market.price}</span>
-                      </div>
-                    </div>
-
-                    <div
-                      class={`change-cell ${isPositive ? "positive" : "negative"}`}
-                    >
-                      <div class="change-indicator">
-                        {isPositive ? (
-                          <TrendingUpIcon class="trend-icon" />
-                        ) : (
-                          <TrendingDownIcon class="trend-icon" />
-                        )}
-                      </div>
-                      <div class="change-values">
-                        <span class="change-absolute">
-                          {change.sign}${change.absFormatted}
-                        </span>
-                        <span class="change-percent">{change.percent}</span>
-                      </div>
-                    </div>
-
-                    <div class="volume-cell">
-                      <span class="volume-value">
-                        {formatVolume(market.volume24h)}
-                      </span>
-                    </div>
-
-                    <div class="oi-cell">
-                      <span class="oi-value">
-                        {market.type === "spot"
-                          ? "--"
-                          : formatVolume(market.openInterest)}
-                      </span>
-                    </div>
-
-                    <div
-                      class={`funding-cell ${market.type === "spot" ? "" : market.funding >= 0 ? "positive" : "negative"}`}
-                    >
-                      <span class="funding-value">
-                        {market.type === "spot"
-                          ? "--"
-                          : formatPercent(market.funding)}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      class="star-cell"
-                      aria-label={`${isMarketStarred(market) ? "Remove" : "Add"} ${market.name} ${isMarketStarred(market) ? "from" : "to"} watchlist`}
-                      aria-pressed={isMarketStarred(market)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleMarketStar(market);
                       }}
                     >
-                      <StarIcon active={isMarketStarred(market)} />
-                    </button>
-                  </div>
-                );
-              }}
-            </For>
-            <Show when={bottomSpacerHeight() > 0}>
-              <div style={{ height: `${bottomSpacerHeight()}px` }} />
-            </Show>
-          </Show>
-        </div>
+                      <div class="market-info">
+                        <Show
+                          when={ICON_SYMBOLS.has(displaySymbol)}
+                          fallback={
+                            <div class="market-icon market-icon-fallback">
+                              <span>{getIconLabel(displaySymbol)}</span>
+                            </div>
+                          }
+                        >
+                          <div class="market-icon">
+                            <img
+                              src={iconSrc}
+                              alt={displaySymbol}
+                              class="coin-logo"
+                            />
+                          </div>
+                        </Show>
+                        <div class="market-details">
+                          <div class="market-name-row">
+                            <span class="market-name">
+                              {market.type === "equities"
+                                ? `[${market.name}]`
+                                : market.name}
+                            </span>
+                            <span class="leverage-badge">
+                              {market.type === "spot"
+                                ? "Spot"
+                                : market.leverage}
+                            </span>
+                            {market.type === "equities" && (
+                              <span class="xyz-badge">XYZ</span>
+                            )}
+                          </div>
+                          <span class="market-price">${market.price}</span>
+                        </div>
+                      </div>
 
-        {/* Footer */}
-        <div class="search-footer">
-          <div class="shortcuts">
-            <div class="shortcut-group">
-              <kbd>↑</kbd>
-              <kbd>↓</kbd>
-              <span>Navigate</span>
+                      <div
+                        class={`change-cell ${isPositive ? "positive" : "negative"}`}
+                      >
+                        <div class="change-indicator">
+                          {isPositive ? (
+                            <TrendingUpIcon class="trend-icon" />
+                          ) : (
+                            <TrendingDownIcon class="trend-icon" />
+                          )}
+                        </div>
+                        <div class="change-values">
+                          <span class="change-absolute">
+                            {change.sign}${change.absFormatted}
+                          </span>
+                          <span class="change-percent">{change.percent}</span>
+                        </div>
+                      </div>
+
+                      <div class="volume-cell">
+                        <span class="volume-value">
+                          {formatVolume(market.volume24h)}
+                        </span>
+                      </div>
+
+                      <div class="oi-cell">
+                        <span class="oi-value">
+                          {market.type === "spot"
+                            ? "--"
+                            : formatVolume(market.openInterest)}
+                        </span>
+                      </div>
+
+                      <div
+                        class={`funding-cell ${market.type === "spot" ? "" : market.funding >= 0 ? "positive" : "negative"}`}
+                      >
+                        <span class="funding-value">
+                          {market.type === "spot"
+                            ? "--"
+                            : formatPercent(market.funding)}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        class="star-cell"
+                        aria-label={`${isMarketStarred(market) ? "Remove" : "Add"} ${market.name} ${isMarketStarred(market) ? "from" : "to"} watchlist`}
+                        aria-pressed={isMarketStarred(market)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleMarketStar(market);
+                        }}
+                      >
+                        <StarIcon active={isMarketStarred(market)} />
+                      </button>
+                    </div>
+                  );
+                }}
+              </For>
+              <Show when={bottomSpacerHeight() > 0}>
+                <div style={{ height: `${bottomSpacerHeight()}px` }} />
+              </Show>
+            </Show>
+          </div>
+
+          {/* Footer */}
+          <div class="search-footer">
+            <div class="shortcuts">
+              <div class="shortcut-group">
+                <kbd>↑</kbd>
+                <kbd>↓</kbd>
+                <span>Navigate</span>
+              </div>
+              <div class="shortcut-group">
+                <kbd>↵</kbd>
+                <span>Select</span>
+              </div>
+              <div class="shortcut-group">
+                <kbd>⌘</kbd>
+                <kbd>F</kbd>
+                <span>Search</span>
+              </div>
+              <div class="shortcut-group">
+                <kbd>⌘</kbd>
+                <kbd>S</kbd>
+                <span>Watchlist</span>
+              </div>
             </div>
-            <div class="shortcut-group">
-              <kbd>↵</kbd>
-              <span>Select</span>
-            </div>
-            <div class="shortcut-group">
-              <kbd>⌘</kbd>
-              <kbd>F</kbd>
-              <span>Search</span>
-            </div>
-            <div class="shortcut-group">
-              <kbd>⌘</kbd>
-              <kbd>S</kbd>
-              <span>Watchlist</span>
+            <div class="market-count">
+              <span class="count-number">{totalMarkets()}</span>
+              <span class="count-label">markets</span>
             </div>
           </div>
-          <div class="market-count">
-            <span class="count-number">{totalMarkets()}</span>
-            <span class="count-label">markets</span>
-          </div>
-        </div>
         </div>
       </div>
     </Show>

@@ -4,10 +4,6 @@ const TABLES = [
   "orders",
   "positions",
   "trades",
-  "vaults",
-  "vaultMembers",
-  "vaultMetrics",
-  "vaultFees",
   "portfolioMetrics",
   "marketPrices",
 ] as const;

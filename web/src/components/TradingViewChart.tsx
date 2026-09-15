@@ -99,7 +99,7 @@ const DEFAULT_MA_ENABLED: Record<MaPeriod, boolean> = {
 const MA_COLORS: Record<MaPeriod, string> = {
   20: "#f59e0b",
   50: "#38bdf8",
-  200: "#a3e635",
+  200: "#b0a079",
 };
 
 const TICKER_ORDER_TYPES = new Set(["perps", "spot", "equities"]);
@@ -704,7 +704,7 @@ const TradingViewChart: Component = () => {
 
     const chartInstance = createChart(containerRef, {
       layout: {
-        background: { type: ColorType.Solid, color: "#0e1013" },
+        background: { type: ColorType.Solid, color: "#101317" },
         textColor: "#6b7280",
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 11,
@@ -771,12 +771,12 @@ const TradingViewChart: Component = () => {
 
     // Add candlestick series
     candleSeries = chartInstance.addSeries(CandlestickSeries, {
-      upColor: "#50e3ab",
-      downColor: "#ff5572",
-      borderUpColor: "#50e3ab",
-      borderDownColor: "#ff5572",
-      wickUpColor: "#50e3ab",
-      wickDownColor: "#ff5572",
+      upColor: "#43c6a1",
+      downColor: "#e87887",
+      borderUpColor: "#43c6a1",
+      borderDownColor: "#e87887",
+      wickUpColor: "#43c6a1",
+      wickDownColor: "#e87887",
     });
 
     // Add volume series
@@ -973,7 +973,7 @@ const TradingViewChart: Component = () => {
     const isLong = position.size > 0;
     entryPriceLine = candleSeries.createPriceLine({
       price: position.entryPrice,
-      color: isLong ? "#50e3ab" : "#ff5572",
+      color: isLong ? "#43c6a1" : "#e87887",
       lineWidth: 1,
       lineStyle: 2, // Dashed
       axisLabelVisible: true,
@@ -984,7 +984,7 @@ const TradingViewChart: Component = () => {
     if (Number.isFinite(takeProfit ?? NaN) && (takeProfit as number) > 0) {
       takeProfitLine = candleSeries.createPriceLine({
         price: takeProfit as number,
-        color: "#50e3ab",
+        color: "#43c6a1",
         lineWidth: 1,
         lineStyle: 0,
         axisLabelVisible: true,
@@ -996,7 +996,7 @@ const TradingViewChart: Component = () => {
     if (Number.isFinite(stopLoss ?? NaN) && (stopLoss as number) > 0) {
       stopLossLine = candleSeries.createPriceLine({
         price: stopLoss as number,
-        color: "#ff5572",
+        color: "#e87887",
         lineWidth: 1,
         lineStyle: 0,
         axisLabelVisible: true,
@@ -1008,7 +1008,7 @@ const TradingViewChart: Component = () => {
   return (
     <div class="chart-container trade-chart bg-brand-screen relative flex flex-col flex-1 min-h-0">
       {/* Watchlist toolbar */}
-      <div class="flex items-center px-3 border-b border-brand-border bg-brand-surface/50">
+      <div class="market-ticker flex items-center border-b border-brand-border">
         <div class="flex-1 overflow-x-auto">
           <div class="flex items-center whitespace-nowrap divide-x divide-brand-border/70">
             <Show
@@ -1022,7 +1022,8 @@ const TradingViewChart: Component = () => {
               <For each={watchlistMarkets()}>
                 {(market) => (
                   <button
-                    class="flex items-center gap-2 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-slate-100 transition-colors hover:bg-brand-border/40"
+                    class="ticker-item flex items-center gap-2 px-4 py-2 text-xs text-slate-200 hover:bg-brand-border/40"
+                    aria-pressed={currentSymbol() === market.symbol}
                     onClick={() => selectMarket(market)}
                   >
                     <span>{market.name}</span>
@@ -1047,7 +1048,7 @@ const TradingViewChart: Component = () => {
         <div class="absolute left-3 top-3 z-20 flex items-center gap-1 rounded-lg border border-brand-border/70 bg-brand-surface/80 px-2 py-1.5 shadow-sm backdrop-blur">
           <div class="group flex items-center gap-1">
             <button
-              class="px-2.5 py-1 text-xs font-medium rounded transition-colors bg-brand-accent text-brand-screen"
+              class="px-2.5 py-1 text-xs font-medium rounded transition-colors bg-brand-border text-slate-100"
               onClick={() => setResolution(resolution())}
             >
               {RESOLUTION_LABELS[resolution()]}

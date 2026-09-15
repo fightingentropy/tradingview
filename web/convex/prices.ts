@@ -29,7 +29,7 @@ import {
 // IMPORTANT (cost): Hyperliquid exposes ~230 perps + ~100 spot pairs. Writing
 // every one of them on every tick read+wrote hundreds of rows per poll and blew
 // past the Convex free-tier Database I/O limit. marketPrices is only ever read
-// on demand, one symbol at a time, at settlement (orders/vaults/spot) — nothing
+// on demand, one symbol at a time, at settlement (orders/spot) — nothing
 // bulk-reads it and the client never reads it. So the poller writes ONLY the
 // symbols that are actually held or have open orders (see getActiveSymbols), and
 // ensureSymbolFresh covers the one-off case of trading a brand-new symbol.
@@ -150,10 +150,7 @@ type PriceRow = {
   updatedAt: number;
 };
 
-async function fetchPerpsRows(
-  now: number,
-  dex?: "xyz",
-): Promise<PriceRow[]> {
+async function fetchPerpsRows(now: number, dex?: "xyz"): Promise<PriceRow[]> {
   const res = await fetch(HL_INFO_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -258,7 +255,7 @@ export const pollHyperliquidPrices = internalAction({
 /**
  * Distinct base symbols that need a fresh server price right now: every symbol
  * with a non-zero position, an open order, or a non-stablecoin spot balance
- * (across both user- and vault-owned rows). The poller refreshes only these so
+ * (personal accounts only). The poller refreshes only these so
  * its Database I/O scales with real activity instead of Hyperliquid's full
  * ~330-symbol universe. Stablecoins are intentionally excluded — the oracle
  * values them at 1 via getDemoPrice without any marketPrices row.
@@ -270,7 +267,7 @@ export const getActiveSymbols = internalQuery({
 
     const positions = await ctx.db.query("positions").collect();
     for (const p of positions) {
-      if (p.size === 0) continue;
+      if (p.ownerType !== "user" || p.size === 0) continue;
       const s = normalizeAssetSymbol(p.symbol);
       if (s) symbols.add(s);
     }
@@ -280,13 +277,14 @@ export const getActiveSymbols = internalQuery({
       .withIndex("by_status", (q) => q.eq("status", "open"))
       .collect();
     for (const o of openOrders) {
+      if (o.ownerType !== "user") continue;
       const s = normalizeAssetSymbol(o.symbol);
       if (s) symbols.add(s);
     }
 
     const spotBalances = await ctx.db.query("spotBalances").collect();
     for (const b of spotBalances) {
-      if (!(b.balance > 0)) continue;
+      if (b.ownerType !== "user" || !(b.balance > 0)) continue;
       const s = normalizeAssetSymbol(b.asset);
       if (!s || s === "USDC" || s === "USDT" || s === "DAI" || s === "USD") {
         continue;

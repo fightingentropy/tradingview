@@ -12,7 +12,6 @@ export const ROUNDING_RULE = "half-even" as const;
 export const CASH_PRECISION = 6;
 export const PRICE_PRECISION = 8;
 export const QUANTITY_PRECISION = 8;
-export const SHARE_PRECISION = 8;
 export const FUNDING_RATE_PRECISION = 12;
 
 const MAX_ABS_ATOMS = 10n ** 30n;
@@ -35,7 +34,9 @@ export class AccountingInputError extends Error {
 
 const pow10 = (precision: number): bigint => {
   if (!Number.isInteger(precision) || precision < 0 || precision > 18) {
-    throw new AccountingInputError("Precision must be an integer from 0 to 18.");
+    throw new AccountingInputError(
+      "Precision must be an integer from 0 to 18.",
+    );
   }
   return 10n ** BigInt(precision);
 };
@@ -45,9 +46,7 @@ const decimalParts = (value: string | number) => {
     throw new AccountingInputError("Value must be finite.");
   }
   const source = String(value).trim();
-  const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(
-    source,
-  );
+  const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(source);
   if (!match) {
     throw new AccountingInputError("Value must be a base-10 decimal.");
   }
@@ -83,10 +82,7 @@ const decimalParts = (value: string | number) => {
   };
 };
 
-const shouldRoundHalfEven = (
-  kept: bigint,
-  discarded: string,
-): boolean => {
+const shouldRoundHalfEven = (kept: bigint, discarded: string): boolean => {
   if (!discarded) return false;
   const first = discarded.charCodeAt(0) - 48;
   if (first > 5) return true;
@@ -111,7 +107,9 @@ export const decimalToAtoms = (
   }
 
   const scale = pow10(precision);
-  const keptFraction = fractionDigits.slice(0, precision).padEnd(precision, "0");
+  const keptFraction = fractionDigits
+    .slice(0, precision)
+    .padEnd(precision, "0");
   const discarded = fractionDigits.slice(precision);
   if (rounding === "reject" && /[1-9]/.test(discarded)) {
     throw new AccountingInputError(
@@ -227,19 +225,10 @@ export const quantityAtoms = (value: string | number, allowZero = false) =>
 export const signedQuantityAtoms = (value: string | number) =>
   decimalToAtoms(value, QUANTITY_PRECISION, { allowNegative: true });
 
-export const shareAtoms = (value: string | number, allowZero = false) =>
-  decimalToAtoms(value, SHARE_PRECISION, {
-    allowNegative: false,
-    allowZero,
-  });
-
 export const fundingRateAtoms = (value: string | number) =>
   decimalToAtoms(value, FUNDING_RATE_PRECISION, { allowNegative: true });
 
-export const notionalCashAtoms = (
-  size: bigint,
-  price: bigint,
-): bigint =>
+export const notionalCashAtoms = (size: bigint, price: bigint): bigint =>
   mulDiv(
     size,
     price,
@@ -268,11 +257,7 @@ export const weightedAveragePriceAtoms = (
   }
   const total = currentSize + addedSize;
   if (total === 0n) return addedPrice;
-  return mulDiv(
-    currentPrice * currentSize + addedPrice * addedSize,
-    1n,
-    total,
-  );
+  return mulDiv(currentPrice * currentSize + addedPrice * addedSize, 1n, total);
 };
 
 export const applySpotFill = ({
@@ -309,75 +294,6 @@ export const applySpotFill = ({
     quoteBalance: quoteBalance + notional,
     baseBalance: baseBalance - size,
     notional,
-  };
-};
-
-export const issueVaultShares = ({
-  deposit,
-  equity,
-  totalShares,
-}: {
-  deposit: bigint;
-  equity: bigint;
-  totalShares: bigint;
-}): bigint => {
-  if (deposit <= 0n || equity < 0n || totalShares < 0n) {
-    throw new AccountingInputError("Vault deposit inputs are out of range.");
-  }
-  if (totalShares === 0n) {
-    return rescale(deposit, CASH_PRECISION, SHARE_PRECISION);
-  }
-  if (equity <= 0n) {
-    throw new AccountingInputError("Vault equity must be positive.");
-  }
-  const minted = mulDiv(deposit, totalShares, equity);
-  if (minted <= 0n) {
-    throw new AccountingInputError("Deposit is too small to mint one share atom.");
-  }
-  return minted;
-};
-
-export const redeemVaultShares = ({
-  shares,
-  memberShares,
-  totalShares,
-  equity,
-  memberCostBasis,
-  performanceFeeBps = 1000n,
-}: {
-  shares: bigint;
-  memberShares: bigint;
-  totalShares: bigint;
-  equity: bigint;
-  memberCostBasis: bigint;
-  performanceFeeBps?: bigint;
-}) => {
-  if (
-    shares <= 0n ||
-    memberShares <= 0n ||
-    totalShares <= 0n ||
-    equity < 0n ||
-    memberCostBasis < 0n ||
-    shares > memberShares ||
-    shares > totalShares ||
-    performanceFeeBps < 0n ||
-    performanceFeeBps > 10_000n
-  ) {
-    throw new AccountingInputError("Vault redemption inputs are out of range.");
-  }
-  const value = mulDiv(equity, shares, totalShares);
-  const costBasisPortion = mulDiv(memberCostBasis, shares, memberShares);
-  const profit = value > costBasisPortion ? value - costBasisPortion : 0n;
-  // Fees round toward zero so rounding can never make the fee exceed profit.
-  const fee = mulDiv(profit, performanceFeeBps, 10_000n, "toward-zero");
-  return {
-    value,
-    costBasisPortion,
-    profit,
-    fee,
-    payout: value - fee,
-    remainingShares: memberShares - shares,
-    remainingCostBasis: memberCostBasis - costBasisPortion,
   };
 };
 
@@ -472,9 +388,7 @@ export const canonicalSymbol = (value: string): string => {
   if (hasVenue && !isXyz) {
     throw new AccountingInputError("Asset venue is invalid.");
   }
-  const asset = isXyz
-    ? trimmed.slice(trimmed.indexOf(":") + 1)
-    : trimmed;
+  const asset = isXyz ? trimmed.slice(trimmed.indexOf(":") + 1) : trimmed;
   const symbol = asset.toUpperCase();
   if (!/^[A-Z0-9][A-Z0-9._-]{0,31}$/.test(symbol)) {
     throw new AccountingInputError("Asset symbol is invalid.");

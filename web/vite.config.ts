@@ -14,6 +14,12 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    proxy: {
+      '/api/economic-calendar': {
+        target: 'https://trade.erlin.org',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     target: 'esnext',
