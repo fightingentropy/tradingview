@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { NewsExecutiveSummaryView } from '@/components/NewsExecutiveSummary';
+import { DailyBriefReader } from '@/components/DailyBriefReader';
 import { NewsItemRow } from '@/components/NewsItemRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
@@ -16,10 +17,11 @@ import { isNewsFeedConfigured, usesLocalNewsFeed } from '@/providers/news/client
 import { useWatchlists } from '@/store/watchlists';
 
 const FILTERS: {
-  key: NewsSourceFilter;
+  key: NewsSourceFilter | 'brief';
   label: string;
   icon?: 'pulse' | 'logo-twitter' | 'paper-plane' | 'newspaper' | 'clipboard-outline';
 }[] = [
+  { key: 'brief', label: 'Daily brief', icon: 'newspaper' },
   { key: 'all', label: 'Pulse', icon: 'pulse' },
   { key: 'x', label: 'X', icon: 'logo-twitter' },
   { key: 'telegram', label: 'Telegram', icon: 'paper-plane' },
@@ -55,8 +57,9 @@ export default function NewsScreen() {
   const activeWatchlistId = useWatchlists((state) => state.activeId);
   const { itemId } = useLocalSearchParams<{ itemId?: string | string[] }>();
   const notificationTarget = useMemo(() => parseNewsNotificationItemId(itemId), [itemId]);
-  const [selectedSource, setSelectedSource] = useState<NewsSourceFilter>('all');
-  const source = notificationTarget?.source ?? selectedSource;
+  const [selectedSource, setSelectedSource] = useState<NewsSourceFilter | 'brief'>('brief');
+  const showBrief = selectedSource === 'brief' && !notificationTarget;
+  const source = notificationTarget?.source ?? (selectedSource === 'brief' ? 'all' : selectedSource);
   const listRef = useRef<FlashListRef<NewsItem>>(null);
   const focusedItemRef = useRef<string | undefined>(undefined);
   const paginationAttemptsRef = useRef(0);
@@ -73,7 +76,7 @@ export default function NewsScreen() {
     isFetchingNextPage,
     isFetchNextPageError,
     executiveSummary,
-  } = useNewsFeed(source);
+  } = useNewsFeed(source, undefined, !showBrief);
 
   const targetIndex = useMemo(() => {
     if (!notificationTarget || source !== notificationTarget.source) return -1;
@@ -178,7 +181,7 @@ export default function NewsScreen() {
         style={styles.filterScroller}
         contentContainerStyle={styles.filters}>
           {FILTERS.map((filter) => {
-            const active = source === filter.key;
+            const active = (showBrief ? 'brief' : source) === filter.key;
             return (
               <Pressable
                 key={filter.key}
@@ -204,7 +207,9 @@ export default function NewsScreen() {
           })}
       </ScrollView>
 
-      {!isNewsFeedConfigured ? (
+      {showBrief ? (
+        <DailyBriefReader />
+      ) : !isNewsFeedConfigured ? (
         <SetupState />
       ) : isLoading ? (
         <View style={styles.center}>

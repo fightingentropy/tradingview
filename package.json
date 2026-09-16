@@ -28,6 +28,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.2",
     "expo-task-manager": "~57.0.8",
+    "marked": "18.0.13",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
@@ -87,14 +88,15 @@
     "lint": "expo lint",
     "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit && npm run typecheck:worker",
     "typecheck:worker": "wrangler types worker/worker-configuration.d.ts && node node_modules/@typescript/native/bin/tsc -p worker/tsconfig.json",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs && npm run test:news-relay && npm run test:price-alert-relay",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/*.test.mjs && npm run test:news-relay && npm run test:price-alert-relay && npm run test:daily-brief",
     "check": "npm run lint && npm run typecheck && npm test && npm run verify:signing && npm run verify:identity",
     "verify:signing": "npx tsx scripts/verify-hl-signing.mts",
     "verify:identity": "npx tsx scripts/verify-trading-identity.mts",
     "price-alerts:monitor": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/price-alert-monitor.mjs",
     "price-alerts:install": "node scripts/price-alert-service.mjs install",
     "price-alerts:status": "node scripts/price-alert-service.mjs status",
-    "test:price-alert-relay": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test worker/price-alert-relay.test.mjs"
+    "test:price-alert-relay": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test worker/price-alert-relay.test.mjs",
+    "test:daily-brief": "tsx --test scripts/native-daily-brief.test.mts"
   },
   "private": true
 }

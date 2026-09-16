@@ -5,13 +5,13 @@ import { DEFAULT_NEWS_FEED_LIMIT, type NewsFeedNotice, type NewsItem, type NewsS
 import { queryKeys } from '@/lib/queryKeys';
 import { isNewsFeedConfigured, loadNewsFeed } from '@/providers/news/client';
 
-export function useNewsFeed(source: NewsSourceFilter, limit = DEFAULT_NEWS_FEED_LIMIT) {
+export function useNewsFeed(source: NewsSourceFilter, limit = DEFAULT_NEWS_FEED_LIMIT, enabled = true) {
   const query = useInfiniteQuery({
     queryKey: queryKeys.newsFeed(source, limit),
     queryFn: ({ pageParam }) => loadNewsFeed(source, pageParam, limit),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: isNewsFeedConfigured,
+    enabled: enabled && isNewsFeedConfigured,
     staleTime: 20_000,
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,

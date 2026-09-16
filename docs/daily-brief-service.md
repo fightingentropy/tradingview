@@ -75,3 +75,21 @@ Check the exact public index and dated content at
 
 If credentials expire or a provider is unavailable, renew the affected tool's
 sign-in on the Mac mini. Never copy secrets into the repository or plist.
+
+## Native iPhone reader
+
+The iPhone app opens **News → Daily brief** by default. It reads the same public
+index and dated editions as the website, so new publications need no app update.
+The native renderer uses the web reader's publication validation and safe
+Markdown parser; the content, timestamps, sources and archive dates stay identical.
+
+The reader refreshes the index on focus, app foreground and every five minutes
+while open. Pull to refresh checks the index and the selected edition. A newer
+edition is offered without interrupting the current read. Previously loaded public
+editions use the app's existing 24-hour cache, with their original dates and a
+refresh warning when the network fails. Private News feeds retain their separate
+cache policy.
+
+Native feed checks run with `npm run test:daily-brief` and are included in
+`npm run check`. Build simulator and physical targets sequentially: ExpoModulesJSI
+uses a shared native build directory even when app DerivedData paths differ.
