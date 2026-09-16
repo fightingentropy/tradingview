@@ -7,9 +7,12 @@ When available, read the latest original at
 
 ## Daily workflow
 
-The Codex task heartbeat starts research at **08:00 Europe/London every day**.
-It runs locally, so the Mac and Codex must be available. Publication follows
+The Mac mini service starts research at **08:00 Europe/London every day**.
+It runs at boot as the `hermes` service user and uses the authenticated Codex CLI;
+neither the laptop nor a desktop app needs to stay open. Publication follows
 research and verification; 08:00 is the start time, not a promised completion time.
+See [Mac mini operation](../../../../docs/daily-brief-service.md) for installation,
+retry behavior, status and logs. The original laptop heartbeat is paused.
 
 1. Read the latest published edition from
    `https://trade.erlin.org/api/daily-briefs` and its dated endpoint.

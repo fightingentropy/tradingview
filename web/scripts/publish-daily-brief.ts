@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,13 +18,13 @@ const current = validateFreshBrief(values.title, readFileSync(resolve(values.fil
 if (values['dry-run']) {
   console.log(JSON.stringify({ validated: current.id, title: current.title, sources: current.sources.length, sections: current.sections.length }));
 } else {
-  // The local scheduler and manual publisher share one lock; index writes are serialized.
-  const lock = resolve(tmpdir(), 'tradingview-daily-brief-publish.lock');
-  mkdirSync(lock);
+  // Serialize local writers without leaving a stale lock after a reboot or crash.
+  const lock = createServer();
+  await new Promise<void>((accept, reject) => { lock.once('error', reject); lock.listen(3403, '127.0.0.1', accept); });
   const staging = mkdtempSync(resolve(tmpdir(), 'tradingview-brief-'));
   try {
     const wrangler = (args: string[], allowMissing = false) => {
-      const result = spawnSync(resolve(root, 'node_modules/.bin/wrangler'), ['kv', 'key', ...args, '--binding', 'DAILY_BRIEFS', '--remote', '--config', resolve(root, 'wrangler.web.jsonc')], { cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 5_000_000, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
+      const result = spawnSync(process.env.DAILY_BRIEF_WRANGLER ?? resolve(root, 'node_modules/.bin/wrangler'), ['kv', 'key', ...args, '--binding', 'DAILY_BRIEFS', '--remote', '--config', resolve(root, 'wrangler.web.jsonc')], { cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 5_000_000, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
       if (!result.error && allowMissing && result.status !== 0 && result.stderr.includes(`/values/${encodeURIComponent(args[1]!)} - 404: Not Found`)) return null;
       if (result.error || result.status !== 0) throw new Error(`Cloudflare operation failed; publication stopped. ${result.error?.message ?? result.stderr}`);
       return result.stdout.trim();
@@ -71,6 +72,6 @@ if (values['dry-run']) {
     console.log(JSON.stringify({ published: current.id, title: current.title, archiveCount: verified.editions.length, url: 'https://trade.erlin.org/brief' }));
   } finally {
     rmSync(staging, { recursive: true, force: true });
-    rmSync(lock, { recursive: true, force: true });
+    await new Promise<void>((accept) => lock.close(() => accept()));
   }
 }
