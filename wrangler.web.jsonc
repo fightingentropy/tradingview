@@ -6,6 +6,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
+  "kv_namespaces": [
+    { "binding": "DAILY_BRIEFS", "id": "a61b65da42314097857d47cc813a6d82" }
+  ],
   "routes": [
     { "pattern": "trade.erlin.org", "custom_domain": true }
   ],

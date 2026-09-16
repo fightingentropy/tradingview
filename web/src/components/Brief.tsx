@@ -1,642 +1,211 @@
-import {
-  Component,
-  For,
-  Show,
-  createSignal,
-  onCleanup,
-  onMount,
-} from "solid-js";
-import { fetchMetaAndAssetCtxs } from "../lib/hyperliquid";
-import {
-  briefSources,
-  catalysts,
-  crossAssetRead,
-  dataCaveats,
-  downsideRadar,
-  marketSnapshots,
-  regime,
-  scenarios,
-  sourceTrail,
-  traderViews,
-  upsideRadar,
-  whatChanged,
-} from "../data/marketBrief";
-import type { BriefSource, BriefTone } from "../data/marketBrief";
+import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from 'solid-js';
+import { dailyBriefs } from '../data/marketBrief';
+import { editionStatus, formatBriefDate, type DailyBrief } from '../lib/dailyBrief';
+import { briefEntry, parseBriefIndex, parseBriefPayload } from '../lib/dailyBriefFeed';
+import BriefContent from './BriefContent';
+import './Brief.css';
 
-type CryptoQuote = {
-  symbol: "BTC" | "ETH" | "HYPE";
-  mark: number;
-  prior: number;
-};
-
-const FALLBACK_CRYPTO: CryptoQuote[] = [
-  { symbol: "BTC", mark: 78_576, prior: 77_564 },
-  { symbol: "ETH", mark: 2_467.7, prior: 2_435.7 },
-  { symbol: "HYPE", mark: 83.531, prior: 81.184 },
-];
-
-const toneTextClass = (tone: BriefTone) => {
-  if (tone === "positive") return "text-brand-accent";
-  if (tone === "negative") return "text-brand-red-400";
-  if (tone === "warning") return "text-amber-300";
-  return "text-slate-300";
-};
-
-const toneDotClass = (tone: BriefTone) => {
-  if (tone === "positive") return "bg-brand-accent";
-  if (tone === "negative") return "bg-brand-red-400";
-  if (tone === "warning") return "bg-amber-300";
-  return "bg-slate-500";
-};
-
-const formatLondonTime = (date: Date) =>
-  new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/London",
-    timeZoneName: "short",
-  }).format(date);
-
-const formatPrice = (quote: CryptoQuote) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: quote.symbol === "BTC" ? 0 : 2,
-    maximumFractionDigits: quote.symbol === "BTC" ? 0 : 2,
-  }).format(quote.mark);
-
-const quoteChange = (quote: CryptoQuote) =>
-  ((quote.mark - quote.prior) / quote.prior) * 100;
-
-const ExternalLinkIcon: Component = () => (
-  <svg
-    aria-hidden="true"
-    width="12"
-    height="12"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  >
-    <path d="M15 3h6v6" />
-    <path d="M10 14 21 3" />
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+const Arrow: Component<{ direction: 'left' | 'right' | 'down' }> = (props) => (
+  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d={props.direction === 'left' ? 'm14 6-6 6 6 6' : props.direction === 'right' ? 'm10 6 6 6-6 6' : 'm6 9 6 6 6-6'} />
   </svg>
 );
 
-const SourceLink: Component<{ source: BriefSource; compact?: boolean }> = (
-  props,
-) => (
-  <a
-    href={props.source.href}
-    target="_blank"
-    rel="noreferrer"
-    class={`inline-flex items-center gap-1 text-brand-slate-400 transition-colors hover:text-brand-accent ${
-      props.compact ? "text-[10px]" : "text-xs"
-    }`}
-  >
-    <span>{props.source.label}</span>
-    <ExternalLinkIcon />
-  </a>
-);
-
-const SectionHeading: Component<{
-  index: string;
-  title: string;
-  subtitle?: string;
-}> = (props) => (
-  <div class="mb-4 flex items-start gap-3">
-    <span class="mt-0.5 font-mono text-[10px] font-semibold tracking-[0.2em] text-brand-slate-500">
-      {props.index}
-    </span>
-    <div>
-      <h2 class="text-base font-semibold tracking-tight text-slate-100">
-        {props.title}
-      </h2>
-      <Show when={props.subtitle}>
-        <p class="mt-1 text-xs leading-5 text-brand-slate-400">
-          {props.subtitle}
-        </p>
-      </Show>
-    </div>
-  </div>
-);
-
 const Brief: Component = () => {
-  const [cryptoQuotes, setCryptoQuotes] =
-    createSignal<CryptoQuote[]>(FALLBACK_CRYPTO);
-  const [cryptoUpdatedAt, setCryptoUpdatedAt] = createSignal("13:16 BST");
-  const [isRefreshing, setIsRefreshing] = createSignal(false);
-  const [usingLiveCrypto, setUsingLiveCrypto] = createSignal(false);
+  let scroller!: HTMLElement;
+  const headings = new Map<string, HTMLHeadingElement>();
+  const [editions, setEditions] = createSignal(dailyBriefs.map(briefEntry));
+  const [edition, setEdition] = createSignal(dailyBriefs[0]!);
+  const selected = createMemo(() => editions().findIndex((item) => item.id === edition().id));
+  const cache = new Map<string, DailyBrief>(dailyBriefs.map((item) => [item.id, item]));
+  const [feedError, setFeedError] = createSignal('');
+  const [loading, setLoading] = createSignal(false);
+  let userSelected = false;
+  let initialRefresh = true;
+  let failedEdition: string | undefined;
+  let selectionRequest = 0;
+  let feedBusy = false;
+  const requests = new Set<AbortController>();
+  let disposed = false;
+  const [activeSection, setActiveSection] = createSignal('brief-section-1');
+  const [progress, setProgress] = createSignal(0);
+  const [now, setNow] = createSignal(new Date());
+  const [sourcesOpen, setSourcesOpen] = createSignal(false);
+  const status = createMemo(() => editionStatus(edition(), editions()[0]!.id, now()));
 
-  const refreshCrypto = async (signal?: AbortSignal) => {
-    setIsRefreshing(true);
+  const fetchJson = async (path: string): Promise<unknown> => {
+    const controller = new AbortController();
+    requests.add(controller);
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
     try {
-      const response = await fetchMetaAndAssetCtxs(signal);
-      if (!response) return;
-
-      const wanted = new Set(["BTC", "ETH", "HYPE"]);
-      const next = response.universe.flatMap((asset, index) => {
-        if (!wanted.has(asset.name)) return [];
-        const context = response.ctx[index];
-        const mark = Number(context?.markPx);
-        const prior = Number(context?.prevDayPx);
-        if (!Number.isFinite(mark) || !Number.isFinite(prior) || prior <= 0) {
-          return [];
-        }
-        return [
-          {
-            symbol: asset.name as CryptoQuote["symbol"],
-            mark,
-            prior,
-          },
-        ];
-      });
-
-      if (next.length === 3) {
-        const order = { BTC: 0, ETH: 1, HYPE: 2 } as const;
-        next.sort((a, b) => order[a.symbol] - order[b.symbol]);
-        setCryptoQuotes(next);
-        setCryptoUpdatedAt(formatLondonTime(new Date()));
-        setUsingLiveCrypto(true);
-      }
+      const response = await fetch(path, { signal: controller.signal, headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error(`Brief request failed: ${response.status}`);
+      return await response.json();
     } finally {
-      setIsRefreshing(false);
+      requests.delete(controller);
+      window.clearTimeout(timeout);
     }
   };
 
+  const refreshEditions = async () => {
+    if (feedBusy || disposed) return;
+    feedBusy = true;
+    try {
+      const index = parseBriefIndex(await fetchJson('/api/daily-briefs'));
+      if (disposed) return;
+      // Keep bundled archives available even if the service has a temporary partial index.
+      const merged = new Map([...dailyBriefs.map(briefEntry), ...index.editions].map((item) => [item.id, item]));
+      setEditions([...merged.values()].sort((a, b) => b.generated.localeCompare(a.generated)));
+      setFeedError('');
+      if (initialRefresh && !userSelected && edition().id !== editions()[0]!.id) await chooseEdition(0, false);
+      initialRefresh = false;
+    } catch {
+      if (!disposed) setFeedError('Unable to check for a newer edition. The last available brief is shown.');
+    } finally { feedBusy = false; }
+  };
+
   onMount(() => {
-    const controller = new AbortController();
-    void refreshCrypto(controller.signal);
-    const refreshInterval = window.setInterval(
-      () => void refreshCrypto(controller.signal),
-      60_000,
-    );
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    const refresh = () => { if (document.visibilityState === 'visible') void refreshEditions(); };
+    const feedTimer = window.setInterval(refresh, 5 * 60_000);
+    document.addEventListener('visibilitychange', refresh);
+    void refreshEditions();
     onCleanup(() => {
-      controller.abort();
-      clearInterval(refreshInterval);
+      disposed = true;
+      window.clearInterval(timer);
+      window.clearInterval(feedTimer);
+      document.removeEventListener('visibilitychange', refresh);
+      for (const request of requests) request.abort();
     });
   });
 
+  const chooseEdition = async (index: number, manual = true) => {
+    if (manual) userSelected = true;
+    const entry = editions()[index];
+    if (!entry || entry.id === edition().id) return;
+    const request = ++selectionRequest;
+    setLoading(true);
+    try {
+      const cached = cache.get(entry.id);
+      const next = cached && cached.title === entry.title && cached.generated === entry.generated ? cached : parseBriefPayload(await fetchJson(`/api/daily-briefs/${entry.id}`), entry);
+      if (disposed || request !== selectionRequest) return;
+      cache.set(next.id, next);
+      failedEdition = undefined;
+      headings.clear();
+      setEdition(next);
+      setActiveSection('brief-section-1');
+      setProgress(0);
+      setSourcesOpen(false);
+      setFeedError('');
+      scroller.scrollTo({ top: 0, behavior: 'instant' });
+    } catch {
+      if (!disposed && request === selectionRequest) {
+        failedEdition = entry.id;
+        setFeedError('This edition could not be loaded. Please try again.');
+      }
+    } finally {
+      if (!disposed && request === selectionRequest) setLoading(false);
+    }
+  };
+
+  const updateReadingPosition = () => {
+    const maximum = scroller.scrollHeight - scroller.clientHeight;
+    setProgress(maximum > 0 ? Math.min(100, scroller.scrollTop / maximum * 100) : 100);
+    let current = edition().sections[0]?.id ?? '';
+    const top = scroller.getBoundingClientRect().top;
+    for (const section of edition().sections) {
+      const heading = headings.get(section.id);
+      if (heading && heading.getBoundingClientRect().top - top <= 150) current = section.id;
+    }
+    setActiveSection(current);
+  };
+
+  const jumpTo = (id: string) => {
+    const heading = headings.get(id);
+    if (!heading) return;
+    heading.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    heading.focus({ preventScroll: true });
+    setActiveSection(id);
+  };
+
   return (
-    <main class="h-full overflow-y-auto bg-brand-screen text-slate-200 select-text">
-      <div class="mx-auto w-full max-w-[1440px] px-4 pb-14 pt-5 sm:px-6 lg:px-8 lg:pt-7">
-        <section class="border-b border-brand-border pb-7">
-          <div class="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div class="max-w-4xl">
-              <div class="mb-5 flex flex-wrap items-center gap-3 text-xs">
-                <span class="font-medium text-slate-200">
-                  Global macro PM brief
-                </span>
-                <span class="border-l border-brand-border pl-3 text-brand-slate-400">
-                  Weekend · next-session setup
-                </span>
-                <span class="text-brand-slate-500">Medium confidence</span>
-              </div>
-
-              <p class="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-brand-slate-400">
-                Market verdict
-              </p>
-              <h1 class="max-w-5xl text-xl font-medium leading-snug tracking-tight text-white sm:text-2xl lg:text-[28px] lg:leading-[1.3]">
-                Hawkish rate repricing is the dominant impulse, but equities,
-                credit and volatility have not confirmed a full risk-off break.
-              </h1>
-              <p class="mt-4 max-w-4xl text-sm leading-6 text-slate-300 sm:text-[15px]">
-                The tape is rotational and unstable: front-end yields and the
-                dollar tightened, small caps and precious metals sold off, while
-                mega-cap AI strength kept the weekly index complex positive. The
-                next move belongs to labor data, services inflation and
-                Hormuz—not another speech.
-              </p>
-            </div>
-
-            <div class="shrink-0 border-l border-brand-border pl-4 font-mono text-[10px] leading-5 text-brand-slate-400 lg:w-72">
-              <p>
-                <span class="text-slate-200">Generated:</span> 30 Aug 2026 ·
-                13:20 BST
-              </p>
-              <p>
-                <span class="text-slate-200">Cash cutoff:</span> 28 Aug close
-              </p>
-              <p>
-                <span class="text-slate-200">News cutoff:</span> 30 Aug · 13:20
-                BST
-              </p>
-              <p>
-                <span class="text-slate-200">Crypto:</span> live marks ·
-                Hyperliquid
-              </p>
-            </div>
+    <main ref={scroller} class="daily-brief-page" aria-label="Daily market brief" onScroll={updateReadingPosition}>
+      <div class="brief-reading-progress" aria-hidden="true"><span style={{ width: `${progress()}%` }} /></div>
+      <div class="brief-frame">
+        <header class="brief-masthead">
+          <div>
+            <div class="brief-eyebrow">Markets & perspective</div>
+            <h1>Daily brief<span aria-hidden="true">.</span></h1>
+            <p>What changed. Why it matters. What comes next.</p>
           </div>
-        </section>
+          <a class="brief-download" download={`market-overview-${edition().id}.md`} href={`data:text/markdown;charset=utf-8,${encodeURIComponent(edition().raw)}`}>
+            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg>
+            Save brief
+          </a>
+        </header>
 
-        <section class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-          <For each={marketSnapshots}>
-            {(snapshot) => (
-              <a
-                href={snapshot.source.href}
-                target="_blank"
-                rel="noreferrer"
-                class="group rounded-md border border-brand-border bg-brand-surface/55 px-3.5 py-3 transition-colors hover:border-brand-slate-600"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <p class="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-brand-slate-500">
-                    {snapshot.label}
-                  </p>
-                  <ExternalLinkIcon />
-                </div>
-                <p class="mt-2 font-mono text-sm font-semibold text-slate-100">
-                  {snapshot.value}
-                </p>
-                <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px]">
-                  <span class={toneTextClass(snapshot.tone)}>
-                    {snapshot.change}
-                  </span>
-                  <span class="text-brand-slate-500">{snapshot.note}</span>
-                </div>
-              </a>
-            )}
-          </For>
-        </section>
-
-        <div class="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
-          <div class="space-y-3">
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
-              <SectionHeading
-                index="01"
-                title="What changed"
-                subtitle="Only material deltas from the latest session and weekend evidence."
-              />
-
-              <div class="divide-y divide-brand-border/80">
-                <For each={whatChanged}>
-                  {(item, index) => (
-                    <article class="grid gap-3 py-4 first:pt-1 sm:grid-cols-[70px_minmax(0,1fr)]">
-                      <div>
-                        <span class="font-mono text-[10px] font-semibold tracking-[0.14em] text-brand-accent">
-                          {item.tag}
-                        </span>
-                        <p class="mt-1 font-mono text-[10px] text-brand-slate-600">
-                          0{index() + 1}
-                        </p>
-                      </div>
-                      <div>
-                        <h3 class="text-sm font-semibold leading-5 text-slate-100">
-                          {item.headline}
-                        </h3>
-                        <p class="mt-1.5 text-xs leading-5 text-brand-slate-400">
-                          {item.detail}
-                        </p>
-                        <p class="mt-2 border-l border-brand-border pl-3 text-xs leading-5 text-slate-300">
-                          <span class="font-medium text-slate-100">
-                            PM read:{" "}
-                          </span>
-                          {item.implication}
-                        </p>
-                        <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                          <For each={item.sources}>
-                            {(source) => <SourceLink source={source} compact />}
-                          </For>
-                        </div>
-                      </div>
-                    </article>
-                  )}
-                </For>
-              </div>
-            </section>
-
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
-              <SectionHeading
-                index="02"
-                title="Cross-asset read"
-                subtitle="One policy shock, different levels of confirmation."
-              />
-              <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                <For each={crossAssetRead}>
-                  {(item) => (
-                    <div class="rounded-md border border-brand-border bg-brand-screen/45 p-4">
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-xs font-semibold uppercase tracking-[0.12em] text-brand-slate-400">
-                          {item.asset}
-                        </span>
-                        <span
-                          class={`h-1.5 w-1.5 rounded-full ${toneDotClass(item.tone)}`}
-                        />
-                      </div>
-                      <p
-                        class={`mt-3 text-sm font-semibold ${toneTextClass(item.tone)}`}
-                      >
-                        {item.read}
-                      </p>
-                      <p class="mt-1.5 text-xs leading-5 text-brand-slate-400">
-                        {item.signal}
-                      </p>
-                      <div class="mt-2.5 flex flex-wrap gap-x-2 gap-y-1">
-                        <For each={item.sources}>
-                          {(source) => <SourceLink source={source} compact />}
-                        </For>
-                      </div>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </section>
-
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
-              <SectionHeading
-                index="03"
-                title="Risk & opportunity radar"
-                subtitle="Observable paths that can change the current read."
-              />
-              <div class="grid gap-3 md:grid-cols-2">
-                <div class="rounded-md border border-brand-accent/15 bg-brand-accent/[0.035] p-4">
-                  <p class="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-brand-accent">
-                    Upside developments
-                  </p>
-                  <div class="space-y-3">
-                    <For each={upsideRadar}>
-                      {(item) => (
-                        <div class="flex gap-3 text-xs leading-5 text-slate-300">
-                          <span class="mt-2 h-1 w-1 shrink-0 rounded-full bg-brand-accent" />
-                          <p>{item}</p>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </div>
-                <div class="rounded-md border border-brand-red-400/15 bg-brand-red-400/[0.035] p-4">
-                  <p class="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-brand-red-400">
-                    Downside risks
-                  </p>
-                  <div class="space-y-3">
-                    <For each={downsideRadar}>
-                      {(item) => (
-                        <div class="flex gap-3 text-xs leading-5 text-slate-300">
-                          <span class="mt-2 h-1 w-1 shrink-0 rounded-full bg-brand-red-400" />
-                          <p>{item}</p>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5 sm:p-6">
-              <SectionHeading
-                index="04"
-                title="PM bottom line"
-                subtitle="Probabilities sum to 100%; implications are relative, not position-size advice."
-              />
-              <div class="space-y-2">
-                <For each={scenarios}>
-                  {(scenario) => (
-                    <article class="rounded-md border border-brand-border bg-brand-screen/45 p-4 sm:p-5">
-                      <div class="flex items-center gap-4">
-                        <div
-                          class={`font-mono text-2xl font-semibold ${toneTextClass(scenario.tone)}`}
-                        >
-                          {scenario.probability}%
-                        </div>
-                        <div class="min-w-0 flex-1">
-                          <div class="mb-2 flex items-center justify-between gap-3">
-                            <h3 class="text-sm font-semibold text-slate-100">
-                              {scenario.name}
-                            </h3>
-                            <div class="h-1 w-24 overflow-hidden rounded-full bg-brand-border sm:w-40">
-                              <div
-                                class={toneDotClass(scenario.tone)}
-                                style={{
-                                  width: `${scenario.probability}%`,
-                                  height: "100%",
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <p class="text-xs leading-5 text-slate-300">
-                            {scenario.path}
-                          </p>
-                        </div>
-                      </div>
-                      <div class="mt-3 grid gap-2 border-t border-brand-border/80 pt-3 text-[11px] leading-5 text-brand-slate-400 md:grid-cols-2">
-                        <p>
-                          <span class="text-slate-200">Expression: </span>
-                          {scenario.implication}
-                        </p>
-                        <p>
-                          <span class="text-slate-200">Confirm: </span>
-                          {scenario.confirmation}
-                        </p>
-                      </div>
-                    </article>
-                  )}
-                </For>
-              </div>
-            </section>
+        <div class="brief-edition-bar">
+          <div class="brief-edition-picker">
+            <button type="button" class="brief-icon-button" aria-label="Previous edition" disabled={loading() || selected() === editions().length - 1} onClick={() => void chooseEdition(selected() + 1)}><Arrow direction="left" /></button>
+            <div class="brief-date-select">
+              <select aria-label="Brief edition" value={edition().id} disabled={loading()} onChange={(event) => { const index = editions().findIndex((entry) => entry.id === event.currentTarget.value); event.currentTarget.value = edition().id; void chooseEdition(index); }}>
+                <For each={editions()}>{(brief, index) => <option value={brief.id}>{formatBriefDate(brief.id, 'short')}{index() === 0 ? ' · Latest' : ''}</option>}</For>
+              </select>
+              <Arrow direction="down" />
+            </div>
+            <button type="button" class="brief-icon-button" aria-label="Next edition" disabled={loading() || selected() === 0} onClick={() => void chooseEdition(selected() - 1)}><Arrow direction="right" /></button>
+            <Show when={selected() !== 0}><button type="button" class="brief-latest-button" disabled={loading()} onClick={() => void chooseEdition(0)}>Latest</button></Show>
           </div>
+          <div class="brief-edition-details"><span>{edition().readingMinutes} min read</span><span aria-hidden="true">·</span><span>{edition().sources.length} sources</span></div>
+        </div>
 
-          <aside class="space-y-3">
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
-              <SectionHeading index="A" title="Regime assessment" />
-              <div class="space-y-4">
-                <For each={regime}>
-                  {(item) => (
-                    <div class="border-b border-brand-border/80 pb-4 last:border-0 last:pb-0">
-                      <div class="flex items-center justify-between gap-3">
-                        <p class="text-xs font-medium text-brand-slate-400">
-                          {item.label}
-                        </p>
-                        <p
-                          class={`text-xs font-semibold ${toneTextClass(item.tone)}`}
-                        >
-                          {item.value}
-                        </p>
-                      </div>
-                      <p class="mt-1.5 text-[11px] leading-5 text-brand-slate-500">
-                        {item.detail}
-                      </p>
-                    </div>
-                  )}
-                </For>
-              </div>
-              <div class="mt-5 rounded-md border border-amber-300/15 bg-amber-300/[0.035] p-4">
-                <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200">
-                  Overall regime · medium confidence
-                </p>
-                <p class="mt-2 text-xs leading-5 text-slate-300">
-                  Inflation-constrained nominal resilience: strong AI investment
-                  sits beside soft labor and consumption. Invalidated if
-                  activity data roll over while Friday's front-end yield move
-                  fully reverses.
-                </p>
-              </div>
-            </section>
+        <Show when={feedError() || loading()}><div class="brief-feed-status" role="status">{loading() ? 'Loading edition…' : feedError()}<Show when={feedError() && !loading()}><button type="button" onClick={() => { if (failedEdition) void chooseEdition(editions().findIndex((entry) => entry.id === failedEdition)); else void refreshEditions(); }}>Retry</button></Show></div></Show>
 
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
-              <div class="flex items-start justify-between gap-3">
-                <SectionHeading
-                  index="B"
-                  title="Live crypto marks"
-                  subtitle="Direct Hyperliquid perps marks; 24-hour comparison."
-                />
-                <button
-                  type="button"
-                  aria-label="Refresh crypto prices"
-                  class="mt-0.5 rounded-lg border border-brand-border p-2 text-brand-slate-400 transition-colors hover:border-brand-accent/40 hover:text-brand-accent disabled:opacity-50"
-                  disabled={isRefreshing()}
-                  onClick={() => void refreshCrypto()}
-                >
-                  <svg
-                    aria-hidden="true"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    class={isRefreshing() ? "animate-spin" : ""}
-                  >
-                    <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5" />
-                    <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" />
-                  </svg>
-                </button>
-              </div>
-              <div class="grid grid-cols-3 gap-2">
-                <For each={cryptoQuotes()}>
-                  {(quote) => {
-                    const change = () => quoteChange(quote);
-                    return (
-                      <div class="rounded-md border border-brand-border bg-brand-screen/45 p-3">
-                        <p class="font-mono text-[10px] font-semibold text-brand-slate-400">
-                          {quote.symbol}
-                        </p>
-                        <p class="mt-2 truncate font-mono text-sm font-semibold text-slate-100">
-                          {formatPrice(quote)}
-                        </p>
-                        <p
-                          class={`mt-1 font-mono text-[10px] ${
-                            change() >= 0
-                              ? "text-brand-accent"
-                              : "text-brand-red-400"
-                          }`}
-                        >
-                          {change() >= 0 ? "+" : ""}
-                          {change().toFixed(2)}%
-                        </p>
-                      </div>
-                    );
-                  }}
-                </For>
-              </div>
-              <div class="mt-3 flex items-center justify-between gap-3 font-mono text-[9px] text-brand-slate-500">
-                <span>
-                  {usingLiveCrypto() ? "LIVE" : "SNAPSHOT"} ·{" "}
-                  {cryptoUpdatedAt()}
-                </span>
-                <SourceLink source={briefSources.hyperliquid} compact />
-              </div>
-            </section>
-
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
-              <SectionHeading
-                index="C"
-                title="What matters next"
-                subtitle="Highest-sensitivity events in Europe/London time."
-              />
-              <div class="space-y-4">
-                <For each={catalysts}>
-                  {(item) => (
-                    <article class="relative border-l border-brand-border pl-4">
-                      <span class="absolute -left-[3px] top-1 h-[5px] w-[5px] rounded-full bg-brand-accent" />
-                      <div class="flex flex-wrap items-center gap-x-2 font-mono text-[9px] uppercase tracking-[0.12em]">
-                        <span class="text-brand-accent">{item.date}</span>
-                        <span class="text-brand-slate-500">{item.time}</span>
-                      </div>
-                      <h3 class="mt-1.5 text-xs font-semibold text-slate-100">
-                        {item.event}
-                      </h3>
-                      <p class="mt-1 text-[11px] leading-5 text-brand-slate-400">
-                        {item.setup}
-                      </p>
-                      <p class="mt-1 text-[11px] leading-5 text-slate-300">
-                        {item.reaction}
-                      </p>
-                      <div class="mt-1.5">
-                        <SourceLink source={item.source} compact />
-                      </div>
-                    </article>
-                  )}
-                </For>
-              </div>
-            </section>
-
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
-              <SectionHeading
-                index="D"
-                title="Trader pulse"
-                subtitle="Named views, not verified facts or consensus positioning."
-              />
-              <div class="space-y-3">
-                <For each={traderViews}>
-                  {(view) => (
-                    <a
-                      href={view.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      class="block rounded-md border border-brand-border bg-brand-screen/45 p-3.5 transition-colors hover:border-brand-slate-600"
-                    >
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="font-mono text-[10px] font-semibold text-brand-accent">
-                          {view.handle}
-                        </span>
-                        <ExternalLinkIcon />
-                      </div>
-                      <p class="mt-1.5 text-[10px] uppercase tracking-[0.1em] text-brand-slate-500">
-                        {view.stance}
-                      </p>
-                      <p class="mt-2 text-[11px] leading-5 text-slate-300">
-                        {view.view}
-                      </p>
-                    </a>
-                  )}
-                </For>
-              </div>
-              <p class="mt-4 border-t border-brand-border pt-4 text-[11px] leading-5 text-brand-slate-400">
-                <span class="font-semibold text-slate-200">My read: </span>
-                the feed confirms disagreement—macro caution beside secular AI
-                and crypto optimism—not a durable directional consensus. For You
-                skewed toward unrelated tech and crypto attention, so it adds no
-                independent macro confirmation.
-              </p>
-            </section>
-
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
-              <SectionHeading index="E" title="Data caveats" />
-              <div class="space-y-2.5">
-                <For each={dataCaveats}>
-                  {(item) => (
-                    <div class="flex gap-2.5 text-[11px] leading-5 text-brand-slate-400">
-                      <span class="mt-2 h-1 w-1 shrink-0 rounded-full bg-brand-slate-600" />
-                      <p>{item}</p>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </section>
-
-            <section class="rounded-lg border border-brand-border bg-brand-surface/50 p-5">
-              <SectionHeading index="F" title="Source trail" />
-              <div class="flex flex-col items-start gap-2.5">
-                <For each={sourceTrail}>
-                  {(source) => <SourceLink source={source} />}
-                </For>
-              </div>
-            </section>
+        <div class="brief-layout">
+          <aside class="brief-sidebar">
+            <div class="brief-sidebar-label">In this brief</div>
+            <nav aria-label="Brief sections">
+              <For each={edition().sections}>{(section, index) => (
+                <a href={`#${section.id}`} aria-current={activeSection() === section.id ? 'location' : undefined} onClick={(event) => { event.preventDefault(); jumpTo(section.id); }}>
+                  <span class="brief-section-number">{String(index() + 1).padStart(2, '0')}</span><span>{section.title}</span>
+                </a>
+              )}</For>
+            </nav>
+            <div class="brief-sidebar-note"><span>Global macro</span><p>Facts, interpretation, and conditional market views.</p></div>
           </aside>
+
+          <article class="brief-article" aria-labelledby="brief-title" aria-busy={loading()}>
+            <div class="brief-article-header">
+              <div class="brief-publication-line"><span classList={{ 'brief-status': true, 'brief-status-today': status() === 'today' }}>{status() === 'today' ? "Today's edition" : status() === 'latest' ? 'Latest available edition' : 'Archive edition'}</span><time dateTime={edition().id}>{formatBriefDate(edition().id)}</time></div>
+              <h2 id="brief-title">{edition().title}</h2>
+              <Show when={status() !== 'today'}><p class="brief-archive-note">{status() === 'latest' ? 'A newer brief has not been published yet. ' : ''}Analysis and market figures reflect this edition’s original cutoff.</p></Show>
+              <dl class="brief-metadata">
+                <div><dt>Generated</dt><dd>{edition().generated.slice(11)} <span>Europe/London</span></dd></div>
+                <div><dt>Market state</dt><dd>{edition().marketState}</dd></div>
+                <div class="brief-cutoff"><dt>Data cutoff</dt><dd>{edition().cutoff}</dd></div>
+              </dl>
+            </div>
+
+            <div class="brief-mobile-contents">
+              <label for="brief-jump">In this brief</label>
+              <select id="brief-jump" value={activeSection()} onChange={(event) => jumpTo(event.currentTarget.value)}><For each={edition().sections}>{(section) => <option value={section.id}>{section.title}</option>}</For></select>
+            </div>
+
+            <For each={edition().sections}>{(section, index) => (
+              <section classList={{ 'brief-section': true, 'brief-verdict': index() === 0, 'brief-caveats': section.title.toLowerCase() === 'data caveats' }} aria-labelledby={section.id}>
+                <h3 ref={(element) => headings.set(section.id, element)} id={section.id} tabIndex={-1}><span aria-hidden="true">{String(index() + 1).padStart(2, '0')}</span>{section.title}</h3>
+                <div class="brief-prose"><BriefContent blocks={section.blocks} /></div>
+              </section>
+            )}</For>
+
+            <details class="brief-source-notes" open={sourcesOpen()} onToggle={(event) => setSourcesOpen(event.currentTarget.open)}>
+              <summary><span>Sources for this edition</span><span>{edition().sources.length}<Arrow direction="down" /></span></summary>
+              <p>Claims link directly to their sources in the brief. This index collects those references.</p>
+              <ul><For each={edition().sources}>{(source) => <li><a href={source.href} target="_blank" rel="noopener noreferrer"><span>{source.label}</span><span>{new URL(source.href).hostname.replace(/^www\./, '')}</span></a></li>}</For></ul>
+            </details>
+
+            <footer class="brief-footer"><span>End of brief <span aria-hidden="true">—</span> {formatBriefDate(edition().id, 'short')}</span><Show when={selected() < editions().length - 1}><button type="button" disabled={loading()} onClick={() => void chooseEdition(selected() + 1)}>Read previous edition <Arrow direction="right" /></button></Show></footer>
+          </article>
         </div>
       </div>
     </main>

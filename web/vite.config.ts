@@ -20,6 +20,10 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      '/api/daily-briefs': {
+        target: 'https://trade.erlin.org',
+        changeOrigin: true,
+      },
       '/api/economic-calendar': {
         target: 'https://trade.erlin.org',
         changeOrigin: true,

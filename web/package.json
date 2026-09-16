@@ -21,6 +21,7 @@
     "@nktkas/hyperliquid": "0.33.3",
     "convex": "1.43.0",
     "lightweight-charts": "^5.1.0",
+    "marked": "18.0.13",
     "solid-js": "1.9.15",
     "viem": "2.56.0"
   },

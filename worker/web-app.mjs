@@ -150,11 +150,42 @@ export async function handleEconomicCalendarRequest(request, fetcher = fetch) {
   }
 }
 
+export async function handleDailyBriefRequest(request, storage) {
+  const path = new URL(request.url).pathname;
+  const id = path.match(/^\/api\/daily-briefs\/(\d{4}-\d{2}-\d{2})$/)?.[1];
+  if (path !== '/api/daily-briefs' && !id) {
+    return Response.json({ error: 'not_found' }, { status: 404 });
+  }
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return Response.json({ error: 'method_not_allowed' }, { status: 405, headers: { Allow: 'GET, HEAD' } });
+  }
+  try {
+    if (!storage) throw new Error('Missing daily brief binding');
+    const body = await storage.get(id ? `edition:v1:${id}` : 'index:v1', { type: 'stream', cacheTtl: 60 });
+    if (!body) {
+      return Response.json({ error: id ? 'edition_not_found' : 'brief_unavailable' }, { status: id ? 404 : 503, headers: { 'Cache-Control': 'no-store' } });
+    }
+    if (request.method === 'HEAD') await body.cancel();
+    return new Response(request.method === 'HEAD' ? null : body, { headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'public, max-age=60, stale-while-revalidate=60',
+      'X-Content-Type-Options': 'nosniff',
+    } });
+  } catch (error) {
+    console.error(JSON.stringify({ message: 'daily brief storage unavailable', error: error instanceof Error ? error.message : String(error) }));
+    return Response.json({ error: 'brief_unavailable' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === ECONOMIC_CALENDAR_PATH) {
       return handleEconomicCalendarRequest(request);
+    }
+
+    if (url.pathname === '/api/daily-briefs' || url.pathname.startsWith('/api/daily-briefs/')) {
+      return handleDailyBriefRequest(request, env.DAILY_BRIEFS);
     }
 
     if (url.pathname.startsWith('/api/')) {
