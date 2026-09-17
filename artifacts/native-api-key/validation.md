@@ -18,11 +18,18 @@
 - The signed update was installed on the paired iPhone 17 Pro, bundle `com.erlinhoxha.tradingview`.
 - No real API key or trade was used during automated testing.
 
+The headless simulator displayed the running app and its accessibility tree, but
+pointer input did not activate Settings through the available UI tools. This
+Xcode installation has no standalone Simulator.app. No successful simulator
+form walkthrough or recording is claimed.
+
 ## Physical-device verification boundary
 
 iPhone Mirroring repeatedly timed out, including after the phone was confirmed
 nearby and locked and Mirroring was restarted. The alternate Device Hub link was
 blocked by the browser URL policy. A remote launch attempt failed because the
 device's remote process service was unavailable. Installation is confirmed;
-remote visual verification is not. The user was asked to open the updated
-Settings screen on the phone directly.
+remote visual verification is not. The user opened Settings on the updated
+physical iPhone and confirmed that the new replacement form is visible. This is
+user-confirmed screen verification, not an automated authenticated connection
+test; the user enters their new key directly on the phone.
