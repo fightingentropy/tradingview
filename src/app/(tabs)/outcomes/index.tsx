@@ -262,8 +262,7 @@ export default function OutcomesScreen() {
 
         {loading ? (
           <View style={styles.state}>
-            <ActivityIndicator color={Colors.accent} />
-            <AppText variant="caption" muted>Loading live outcomes…</AppText>
+            <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading outcomes" />
           </View>
         ) : isError || outcomeError ? (
           <View style={styles.state}>

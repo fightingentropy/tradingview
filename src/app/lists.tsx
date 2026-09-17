@@ -49,11 +49,8 @@ export default function ListsScreen() {
   return (
     <Screen>
       <View style={styles.header}>
-        <Pressable hitSlop={10} onPress={() => router.back()} style={styles.back}>
-          <Ionicons name="chevron-back" size={26} color={Colors.text} />
-          <AppText style={styles.backLabel} numberOfLines={1}>
-            Back
-          </AppText>
+        <Pressable onPress={() => router.back()} style={styles.back} accessibilityRole="button" accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={24} color={Colors.text} />
         </Pressable>
         <View pointerEvents="none" style={styles.titleWrap}>
           <AppText style={styles.title}>Watchlists</AppText>
@@ -131,8 +128,7 @@ const styles = StyleSheet.create({
     height: 56,
     paddingHorizontal: Spacing.md,
   },
-  back: { flexDirection: 'row', alignItems: 'center', maxWidth: 160, zIndex: 1 },
-  backLabel: { fontSize: 17, color: Colors.text, marginLeft: 2 },
+  back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
   titleWrap: {
     position: 'absolute',
     top: 0,

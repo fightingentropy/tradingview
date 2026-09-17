@@ -29,9 +29,8 @@ export function DailyBriefReader() {
   };
 
   if (!brief) return <View style={styles.empty}>
-    {loading ? <ActivityIndicator color={Colors.accent} /> : <Ionicons name="newspaper-outline" color={Colors.textMuted} size={32} />}
-    <AppText style={styles.emptyTitle}>{loading ? 'Loading daily brief' : 'Brief unavailable'}</AppText>
-    <AppText style={styles.emptyCopy}>{loading ? 'Getting the latest published edition.' : 'This edition could not be loaded. Check your connection and try again.'}</AppText>
+    {loading ? <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading daily brief" /> : <Ionicons name="newspaper-outline" color={Colors.textMuted} size={32} />}
+    {!loading && <AppText style={styles.emptyTitle}>Brief unavailable</AppText>}
     {!loading && <Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Try again</AppText></Pressable>}
     {!loading && selectedId !== latestId && latestId && <Pressable accessibilityRole="button" onPress={() => chooseEdition(latestId)} style={styles.retry}><AppText style={styles.linkText}>Back to latest edition</AppText></Pressable>}
   </View>;
@@ -46,9 +45,7 @@ export function DailyBriefReader() {
     <ScrollView ref={scroller} testID="daily-brief-reader" contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} tintColor={Colors.accent} />}>
       <View style={styles.masthead}>
         <View style={styles.mastheadCopy}>
-          <AppText style={styles.eyebrow}>MARKETS & PERSPECTIVE</AppText>
           <AppText accessibilityRole="header" style={styles.title}>Daily brief<AppText style={styles.titleDot}>.</AppText></AppText>
-          <AppText style={styles.subtitle}>What changed. Why it matters. What comes next.</AppText>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel="Share this brief" onPress={() => void share()} style={styles.iconButton}>
           <Ionicons name="share-outline" size={21} color={Colors.textMuted} />
@@ -69,7 +66,7 @@ export function DailyBriefReader() {
         <AppText style={styles.readingTime}>{brief.readingMinutes} min read</AppText>
       </View>
 
-      {error && <View style={styles.notice}><AppText style={styles.noticeText}>Unable to refresh. Showing the last saved version of this edition.</AppText><Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Retry</AppText></Pressable></View>}
+      {error && <View style={styles.notice}><AppText style={styles.noticeText}>Couldn’t refresh · Showing saved edition</AppText><Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Retry</AppText></Pressable></View>}
       {latestId && latestId !== brief.id && <Pressable accessibilityRole="button" onPress={() => chooseEdition(latestId)} style={styles.latest}><AppText style={styles.linkText}>Read latest edition · {formatBriefDate(latestId, 'short')}</AppText><Ionicons name="arrow-forward" size={16} color={Colors.accent} /></Pressable>}
 
       <View style={styles.articleHeader}>
@@ -125,10 +122,8 @@ const styles = StyleSheet.create({
   content: { padding: 24, maxWidth: 760, width: '100%', alignSelf: 'center' },
   masthead: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingBottom: 24 },
   mastheadCopy: { flex: 1 },
-  eyebrow: { fontSize: 9, lineHeight: 14, color: Colors.textFaint, letterSpacing: 1.3, marginBottom: 8 },
   title: { fontSize: 30, lineHeight: 36, letterSpacing: -1, fontWeight: '600' },
   titleDot: { fontSize: 30, lineHeight: 36, color: '#9BCABC' },
-  subtitle: { color: Colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 6 },
   iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.25 },
   editionBar: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, marginBottom: 28, paddingVertical: 4 },
@@ -168,7 +163,6 @@ const styles = StyleSheet.create({
   latest: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 24, gap: 12 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 36, gap: 14 },
   emptyTitle: { fontSize: 21, lineHeight: 28, fontWeight: '500', textAlign: 'center' },
-  emptyCopy: { color: Colors.textMuted, fontSize: 14, lineHeight: 21, textAlign: 'center' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
   sheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%', paddingHorizontal: 24 },
   sheetHandle: { height: 4, width: 32, borderRadius: 2, backgroundColor: Colors.textFaint, opacity: 0.5, alignSelf: 'center', marginTop: 10 },

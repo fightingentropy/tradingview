@@ -10,12 +10,10 @@ import ReorderableList, {
   type ReorderableListReorderEvent,
 } from 'react-native-reorderable-list';
 
-import { SortControl, type SortMode } from '@/components/SortControl';
-import { SymbolRow } from '@/components/SymbolRow';
+import { SymbolRow, SYMBOL_ROW_HEIGHT, SYMBOL_PRICE_WIDTH, SYMBOL_CHANGE_WIDTH } from '@/components/SymbolRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { WatchlistMenu, type SortDir, type SortKey } from '@/components/WatchlistMenu';
-import { WatchlistTabs } from '@/components/WatchlistTabs';
 import { Colors, Spacing } from '@/constants/theme';
 import type { Instrument, Quote } from '@/domain/types';
 import { useInstrumentsByIds, useMarkets } from '@/data/useMarkets';
@@ -25,21 +23,21 @@ import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
 // Keep the fixed list estimate aligned with SymbolRow's compact data rows.
-const ROW_HEIGHT = 68 + StyleSheet.hairlineWidth;
+const ROW_HEIGHT = SYMBOL_ROW_HEIGHT;
 
-function WatchlistHeader({ onMore, onAdd, onNews }: { onMore: () => void; onAdd: () => void; onNews: () => void }) {
+function WatchlistHeader({ name, onLists, onMore, onAdd }: { name: string; onLists: () => void; onMore: () => void; onAdd: () => void }) {
   return (
     <View style={styles.header}>
-      <AppText style={styles.headerTitle}>Watchlist</AppText>
+      <Pressable onPress={onLists} style={styles.listSelector} accessibilityRole="button" accessibilityLabel={`${name}, choose watchlist`}>
+        <AppText style={styles.headerTitle} numberOfLines={1}>{name}</AppText>
+        <Ionicons name="chevron-down" size={17} color={Colors.textMuted} />
+      </Pressable>
       <View style={styles.headerActions}>
-        <Pressable hitSlop={4} style={styles.headerSide} onPress={onNews} accessibilityLabel="Watchlist news">
-          <Ionicons name="newspaper-outline" size={20} color={Colors.textMuted} />
+        <Pressable style={styles.headerSide} onPress={onAdd} accessibilityRole="button" accessibilityLabel="Add symbols">
+          <Ionicons name="add" size={26} color={Colors.text} />
         </Pressable>
-        <Pressable hitSlop={4} style={styles.headerSide} onPress={onMore} accessibilityLabel="Watchlist options">
-          <Ionicons name="ellipsis-horizontal" size={21} color={Colors.textMuted} />
-        </Pressable>
-        <Pressable hitSlop={4} style={[styles.headerSide, styles.addButton]} onPress={onAdd} accessibilityLabel="Add symbols">
-          <Ionicons name="add" size={23} color={Colors.accent} />
+        <Pressable style={styles.headerSide} onPress={onMore} accessibilityRole="button" accessibilityLabel="Watchlist options">
+          <Ionicons name="ellipsis-horizontal" size={23} color={Colors.text} />
         </Pressable>
       </View>
     </View>
@@ -113,6 +111,7 @@ function WatchlistRow({
       editing={editing}
       selected={selected}
       onToggleSelect={onToggleSelect}
+      columns
     />
   );
 }
@@ -150,11 +149,6 @@ export default function WatchlistScreen() {
   const displayed = useMemo(() => {
     return sortWatchlistView(instruments, data?.quotes ?? {}, editing ? 'manual' : effectiveSortKey, effectiveSortDir);
   }, [instruments, editing, effectiveSortKey, effectiveSortDir, data?.quotes]);
-
-  const onQuickSort = useCallback((next: SortMode) => {
-    setSortKey('manual');
-    setWatchlistSort(next);
-  }, [setWatchlistSort]);
 
   // Pull-to-refresh is tracked separately from react-query's background fetching so
   // the cold-launch refetch doesn't pop the RefreshControl spinner at the top —
@@ -323,24 +317,22 @@ export default function WatchlistScreen() {
           onDone={exitEdit}
         />
       ) : (
-        <WatchlistHeader onMore={() => setMenuOpen(true)} onAdd={onAdd} onNews={onNews} />
+        <WatchlistHeader name={headerName} onLists={onAllWatchlists} onMore={() => setMenuOpen(true)} onAdd={onAdd} />
       )}
 
       {!editing ? (
-        <View style={styles.tabsRow}>
-          <View style={styles.tabsFlex}>
-            <WatchlistTabs />
-          </View>
-          <View style={styles.sortSlot}>
-            <SortControl value={watchlistSort} onChange={onQuickSort} />
-          </View>
-        </View>
-      ) : null}
-
-      {!editing ? (
         <View style={styles.columns}>
-          <AppText style={styles.columnLabel}>MARKET</AppText>
-          <AppText style={styles.columnLabel}>LAST / 24H CHANGE</AppText>
+          {(['symbol', 'price', 'change'] as const).map((key) => (
+            <Pressable
+              key={key}
+              onPress={() => onSort(key)}
+              accessibilityRole="button"
+              accessibilityLabel={`Sort by ${key === 'symbol' ? 'symbol' : key === 'price' ? 'last price' : '24 hour change'}${effectiveSortKey === key ? `, ${effectiveSortDir === 'asc' ? 'ascending' : 'descending'}` : ''}`}
+              style={[styles.column, key === 'symbol' ? styles.symbolColumn : key === 'price' ? styles.priceColumn : styles.changeColumn]}>
+              <AppText style={[styles.columnLabel, effectiveSortKey === key && styles.sortedColumn]}>{key === 'symbol' ? 'Symbol' : key === 'price' ? 'Last' : '24h %'}</AppText>
+              {effectiveSortKey === key ? <Ionicons name={effectiveSortDir === 'asc' ? 'arrow-up' : 'arrow-down'} size={11} color={Colors.text} /> : null}
+            </Pressable>
+          ))}
         </View>
       ) : null}
 
@@ -354,9 +346,9 @@ export default function WatchlistScreen() {
 
       {isLoading || isRestoring ? (
         <View style={styles.center}>
-          <ActivityIndicator color={Colors.accent} />
+          <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading watchlist" />
         </View>
-      ) : isError ? (
+      ) : isError && instruments.length === 0 ? (
         <View style={styles.center}>
           <AppText muted>Couldn’t load markets.</AppText>
           <Pressable onPress={() => refetch()} style={styles.retry}>
@@ -365,8 +357,10 @@ export default function WatchlistScreen() {
         </View>
       ) : instruments.length === 0 ? (
         <View style={styles.center}>
-          <AppText variant="label">“{active?.name}” is empty</AppText>
-          <AppText muted>Add symbols from the Markets tab.</AppText>
+          <Ionicons name="add-circle-outline" size={32} color={Colors.textMuted} />
+          <Pressable onPress={onAdd} style={styles.retry} accessibilityRole="button">
+            <AppText color={Colors.accent}>Add symbols</AppText>
+          </Pressable>
         </View>
       ) : (
         <Animated.View style={[styles.listWrap, { opacity: dim }]}>
@@ -409,13 +403,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 62,
+    height: 60,
     paddingHorizontal: Spacing.lg,
   },
-  headerTitle: { flex: 1, fontSize: 26, lineHeight: 32, fontWeight: '600', letterSpacing: -0.6 },
+  listSelector: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 12 },
+  headerTitle: { flexShrink: 1, fontSize: 25, lineHeight: 32, fontWeight: '600', letterSpacing: -0.6 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  headerSide: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
-  addButton: { backgroundColor: Colors.accentSoft, marginLeft: 4 },
+  headerSide: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   editSide: { height: 48, justifyContent: 'center', paddingHorizontal: Spacing.sm, zIndex: 1 },
   editSideRight: { marginLeft: 'auto' },
   editAction: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
@@ -433,12 +427,13 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   listWrap: { flex: 1 },
   retry: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg },
-  // Watchlist selection and percentage sort remain separate from saved order.
-  tabsRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
-  columns: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingTop: 15, paddingBottom: 7 },
-  columnLabel: { fontSize: 10, lineHeight: 14, fontWeight: '500', color: Colors.textFaint, letterSpacing: 0.7 },
-  tabsFlex: { flex: 1, minWidth: 0 },
-  sortSlot: { paddingLeft: Spacing.xs, paddingRight: Spacing.md },
+  columns: { flexDirection: 'row', paddingHorizontal: Spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
+  column: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 3, minHeight: 36 },
+  symbolColumn: { flex: 1, justifyContent: 'flex-start' },
+  priceColumn: { width: SYMBOL_PRICE_WIDTH },
+  changeColumn: { width: SYMBOL_CHANGE_WIDTH, marginLeft: 12, justifyContent: 'center' },
+  columnLabel: { fontSize: 11, lineHeight: 16, color: Colors.textMuted },
+  sortedColumn: { color: Colors.text },
   undoBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingLeft: Spacing.lg, paddingRight: Spacing.sm, backgroundColor: Colors.surfaceAlt },
   undoText: { flex: 1 },
   undoAction: { minHeight: 44, minWidth: 36, justifyContent: 'center', alignItems: 'center' },

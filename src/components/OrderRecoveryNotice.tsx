@@ -24,7 +24,7 @@ export function OrderRecoveryNotice({ network, address }: { network: HlNetwork; 
   if (!recovery.blocked) return null;
   return (
     <View style={styles.container}>
-      <AppText variant="label">{recovery.storageError ? 'Order recovery unavailable' : recovery.attempts.every(recoveryComplete) ? 'Order status recovered' : 'Checking order status'}</AppText>
+      <AppText variant="label">{recovery.storageError ? 'Order status unavailable' : recovery.attempts.every(recoveryComplete) ? 'Review your orders' : 'Order confirmation pending'}</AppText>
       {recovery.storageError ? <AppText variant="caption" muted>{recovery.storageError}</AppText> : recovery.attempts.map((attempt) => {
         const complete = recoveryComplete(attempt);
         return (
@@ -34,7 +34,7 @@ export function OrderRecoveryNotice({ network, address }: { network: HlNetwork; 
               <AppText key={leg.clientId} variant="caption" muted>{leg.label}: {statusLabel(leg.status)}</AppText>
             ))}
             <AppText variant="caption" muted>
-              {complete ? 'The exchange confirmed these statuses. Review your position and protection before continuing.' : 'New orders are paused for this account. A missing response does not mean the order failed. This check survives closing the app.'}
+              {complete ? 'Check your position and stop loss before continuing.' : 'New orders are paused until these are confirmed. They may have gone through.'}
             </AppText>
             {complete ? (
               <Pressable accessibilityRole="button" onPress={async () => {
@@ -44,15 +44,14 @@ export function OrderRecoveryNotice({ network, address }: { network: HlNetwork; 
                 <AppText variant="label" color={Colors.accent}>Reviewed — allow new orders</AppText>
               </Pressable>
             ) : (
-              <Pressable accessibilityRole="button" disabled={recovery.isFetching} onPress={() => { void recovery.refetch(); }} style={styles.retry}>
-                {recovery.isFetching ? <ActivityIndicator size="small" color={Colors.accent} /> : null}
-                <AppText variant="label" color={Colors.accent}>{recovery.isFetching ? 'Checking…' : 'Check again'}</AppText>
+              <Pressable accessibilityRole="button" accessibilityLabel="Check order status" accessibilityState={{ busy: recovery.isFetching }} disabled={recovery.isFetching} onPress={() => { void recovery.refetch(); }} style={styles.retry}>
+                {recovery.isFetching ? <ActivityIndicator size="small" color={Colors.accent} /> : <AppText variant="label" color={Colors.accent}>Check again</AppText>}
               </Pressable>
             )}
           </View>
         );
       })}
-      {recovery.isError ? <AppText variant="caption" color={Colors.textMuted}>The status check could not reach the exchange. New orders remain paused; we’ll keep checking.</AppText> : null}
+      {recovery.isError ? <AppText variant="caption" color={Colors.textMuted}>Can’t reach the exchange. New orders remain paused.</AppText> : null}
     </View>
   );
 }

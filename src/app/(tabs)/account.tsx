@@ -1146,15 +1146,15 @@ export default function AccountScreen() {
             Connect your account
           </AppText>
           <AppText variant="body" muted style={styles.emptyBody}>
-            Link your Hyperliquid account to see balances and positions, and to trade from the app.
+            Your positions, orders, and balances in one place.
           </AppText>
           <Pressable style={styles.primaryBtn} onPress={() => router.navigate('/settings')}>
             <Ionicons name="link" size={16} color={Colors.background} />
-            <AppText variant="label" color={Colors.background}>Connect in Settings</AppText>
+            <AppText variant="label" color={Colors.background}>Connect account</AppText>
           </Pressable>
           <Pressable hitSlop={8} onPress={() => connectDemo(DEMO_ADDRESS)} style={styles.demoLink}>
             <AppText variant="label" color={Colors.accent}>
-              Preview a demo account
+              Preview account
             </AppText>
           </Pressable>
         </View>
@@ -1223,7 +1223,7 @@ export default function AccountScreen() {
             <AppText style={styles.portfolioTitle}>Portfolio</AppText>
             <View style={styles.overviewActions}>
               <Pressable hitSlop={12} onPress={() => setPrivacyMode(!privacyMode)} accessibilityLabel={privacyMode ? 'Show balances' : 'Hide balances'}><Ionicons name={privacyMode ? 'eye-off-outline' : 'eye-outline'} size={18} color={Colors.textMuted} /></Pressable>
-              <Pressable hitSlop={12} onPress={() => { void refetch(); void feesQuery.refetch(); void earnQuery.refetch(); }} accessibilityLabel="Refresh portfolio" disabled={isFetching}><Ionicons name="refresh-outline" size={18} color={Colors.textMuted} /></Pressable>
+              <Pressable hitSlop={12} onPress={() => { void refetch(); void feesQuery.refetch(); void earnQuery.refetch(); }} accessibilityLabel="Refresh portfolio" accessibilityState={{ busy: isFetching }} disabled={isFetching}>{isFetching ? <ActivityIndicator size="small" color={Colors.textMuted} /> : <Ionicons name="refresh-outline" size={18} color={Colors.textMuted} />}</Pressable>
               <Pressable hitSlop={12} onPress={() => router.push('/settings')} accessibilityLabel="Account settings"><Ionicons name="settings-outline" size={18} color={Colors.textMuted} /></Pressable>
             </View>
           </View>
@@ -1233,14 +1233,14 @@ export default function AccountScreen() {
           {account.totalEquityLoaded !== true ? <AppText variant="caption" color={Colors.warning}>Some balances or valuations are unavailable.</AppText> : null}
           <View style={styles.overviewMetrics}>
             <OverviewMetric label="Unrealized PNL" value={mask(signedUsd(account.unrealizedPnl))} color={pnlColor} />
-            <OverviewMetric label="Available collateral" value={money(account.totalEquityLoaded !== true ? null : account.freeCollateral)} />
+            <OverviewMetric label="Available to trade" value={money(account.totalEquityLoaded !== true ? null : account.freeCollateral)} />
           </View>
           {equityLabel === 'Tracked equity' ? <AppText variant="caption" color={Colors.textFaint} style={styles.coverageNote}>Equity tracks default and XYZ perps, spot balances and vaults.</AppText> : null}
         </View>
         <View style={styles.portfolioWrap}><PortfolioCard hidden={privacyMode} /></View>
         <View style={styles.accountDetails}>
-          <DetailRow label="USDC Earn · supplied" value={money(earnQuery.data?.suppliedUsdc)} />
-          <DetailRow label="14D reported volume" value={money(feesQuery.data?.volume14d)} />
+          <DetailRow label="USDC Earn" value={money(earnQuery.data?.suppliedUsdc)} />
+          <DetailRow label="Volume · 14 days" value={money(feesQuery.data?.volume14d)} />
           <DetailRow label="Perp fees · maker / taker" value={`${rate(feesQuery.data?.makerRate)} / ${rate(feesQuery.data?.takerRate)}`} />
           {earnQuery.isError || feesQuery.isError ? <AppText variant="caption" color={Colors.warning}>Some account details could not refresh.</AppText> : null}
         </View>
@@ -2340,19 +2340,17 @@ function AccountReadStatus({ label, query, freshForMs }: {
 }) {
   const state = accountReadState(query, freshForMs);
   const updated = query.dataUpdatedAt > 0 ? new Date(query.dataUpdatedAt).toLocaleTimeString() : null;
+  if (state === 'ready' || state === 'refreshing') return null;
+  if (state === 'loading') return <View style={styles.readStatus}><ActivityIndicator size="small" color={Colors.textMuted} accessibilityLabel={`Loading ${label}`} /></View>;
   return (
     <View style={styles.readStatus}>
-      {query.isFetching ? <ActivityIndicator size="small" color={Colors.accent} /> : null}
-      <AppText variant="caption" muted>
-        {state === 'loading' ? `Loading ${label}…` : state === 'error' ? `Couldn’t load ${label}` : state === 'stale'
-          ? `${label[0].toUpperCase() + label.slice(1)} may be out of date${updated ? ` · last updated ${updated}` : ''}${query.isError ? ' · refresh failed' : ''}`
-          : state === 'refreshing' ? `Refreshing ${label}…` : `Updated ${updated ?? 'just now'}`}
+      <Ionicons name="alert-circle-outline" size={15} color={Colors.warning} />
+      <AppText variant="caption" color={Colors.warning} style={{ flex: 1 }}>
+        {state === 'error' ? `Couldn’t load ${label}` : `${label[0].toUpperCase() + label.slice(1)} may be out of date${updated ? ` · ${updated}` : ''}`}
       </AppText>
-      {state === 'error' || state === 'stale' ? (
-        <Pressable accessibilityRole="button" disabled={query.isFetching} onPress={() => { void query.refetch(); }}>
-          <AppText variant="label" color={Colors.accent}>{query.isFetching ? 'Retrying…' : 'Retry'}</AppText>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Refresh ${label}`} accessibilityState={{ busy: query.isFetching }} hitSlop={10} disabled={query.isFetching} onPress={() => { void query.refetch(); }}>
+          {query.isFetching ? <ActivityIndicator size="small" color={Colors.textMuted} /> : <Ionicons name="refresh-outline" size={18} color={Colors.accent} />}
         </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -2360,8 +2358,7 @@ function AccountReadStatus({ label, query, freshForMs }: {
 function HistoryLoading() {
   return (
     <View style={styles.historyState}>
-      <ActivityIndicator color={Colors.accent} />
-      <AppText variant="caption" muted>Loading recent account history…</AppText>
+      <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading account history" />
     </View>
   );
 }

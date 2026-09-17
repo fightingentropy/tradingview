@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { Fragment, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { HlAccountCard } from '@/components/HlAccountCard';
 import { GlassToggle } from '@/components/ui/GlassToggle';
@@ -162,7 +162,7 @@ export default function SettingsScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
         <AppText variant="caption" muted style={styles.sectionLabel}>
-          HYPERLIQUID ACCOUNT
+          ACCOUNT
         </AppText>
         <HlAccountCard />
 
@@ -174,7 +174,7 @@ export default function SettingsScreen() {
             <View style={styles.rowText}>
               <AppText variant="body">Outcome markets</AppText>
               <AppText variant="caption" muted>
-                Add a view-only Outcomes tab to the bottom navigation.
+                Browse predictions. View only.
               </AppText>
             </View>
             <GlassToggle
@@ -188,7 +188,7 @@ export default function SettingsScreen() {
             <View style={styles.rowText}>
               <AppText variant="body">Hide small balances</AppText>
               <AppText variant="caption" muted>
-                Hide spot balances worth under ${SMALL_BALANCE_USD}.
+                Under ${SMALL_BALANCE_USD}
               </AppText>
             </View>
             <GlassToggle
@@ -200,10 +200,7 @@ export default function SettingsScreen() {
           <View style={styles.divider} />
           <View style={styles.row}>
             <View style={styles.rowText}>
-              <AppText variant="body">Position &amp; PnL on charts</AppText>
-              <AppText variant="caption" muted>
-                Mark your entry, liquidation, and unrealized PnL on a symbol&apos;s chart.
-              </AppText>
+              <AppText variant="body">Positions on charts</AppText>
             </View>
             <GlassToggle
               value={showPosition}
@@ -219,9 +216,9 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowText}>
-              <AppText variant="body">Monitor on Mac mini</AppText>
+              <AppText variant="body">Price notifications</AppText>
               <AppText variant="caption" muted>
-                Watch prices and send notifications while this app is closed. Cboe quotes are delayed.
+                Runs on your Mac mini, even when this app is closed.
               </AppText>
             </View>
             <GlassToggle
@@ -238,14 +235,14 @@ export default function SettingsScreen() {
               <View style={styles.row}>
                 <View style={styles.rowText}>
                   <AppText variant="caption" muted>
-                    {disablePriceAlertsPending ? 'Turning monitoring off · waiting for sync' : monitor.error ?? (alertChangesPending
-                      ? 'Changes pending sync · previous rules may still be active'
+                    {disablePriceAlertsPending ? 'Alerts may stay active until your Mac mini confirms.' : monitor.error ?? (alertChangesPending
+                      ? 'Previous alerts stay active until changes are saved.'
                       : priceMonitorLabel(monitor.result, monitor.sources))}
                   </AppText>
                 </View>
                 <Pressable disabled={monitor.syncing} accessibilityRole="button" accessibilityLabel="Retry price alert sync"
                   onPress={() => void syncRemotePriceAlerts().catch(() => undefined)}>
-                  <AppText variant="caption">{monitor.syncing ? 'Syncing…' : 'Retry'}</AppText>
+                  {monitor.syncing ? <ActivityIndicator size="small" color={Colors.textMuted} /> : <Ionicons name="refresh-outline" size={18} color={Colors.textMuted} />}
                 </Pressable>
               </View>
             </>
@@ -263,7 +260,7 @@ export default function SettingsScreen() {
                   <Ionicons name="notifications-outline" size={16} color={Colors.textMuted} />
                 </View>
                 <AppText variant="caption" muted style={styles.emptyText}>
-                  Long-press (or right-click) any symbol to set one.
+                  Hold a symbol to add an alert.
                 </AppText>
               </View>
             </View>
@@ -288,7 +285,7 @@ export default function SettingsScreen() {
                     <AppText variant="caption" muted>
                       {a.triggeredAt
                         ? `Triggered @ ${formatAlertPrice(a.instrumentId, a.triggeredPrice)}`
-                        : `Armed from ${formatAlertPrice(a.instrumentId, a.anchorPrice)}`}
+                        : `From ${formatAlertPrice(a.instrumentId, a.anchorPrice)}`}
                     </AppText>
                   </View>
                   <Pressable
@@ -325,7 +322,7 @@ export default function SettingsScreen() {
             <View style={styles.rowText}>
               <AppText variant="body">Push notifications</AppText>
               <AppText variant="caption" muted>
-                Notify me only when a selected feed source publishes.
+                From the sources below
               </AppText>
             </View>
             <GlassToggle
@@ -362,11 +359,11 @@ export default function SettingsScreen() {
           DATA SOURCES
         </AppText>
         <View style={styles.card}>
-          <StatusRow label="Hyperliquid" detail="Live · keyless" />
+          <StatusRow label="Hyperliquid" detail="Live" />
           <View style={styles.divider} />
-          <StatusRow label="trade.xyz perps" detail="Live · keyless" />
+          <StatusRow label="trade.xyz" detail="Live" />
           <View style={styles.divider} />
-          <StatusRow label="VIX · Cboe" detail="Delayed · keyless" />
+          <StatusRow label="VIX · Cboe" detail="Delayed" />
         </View>
 
         <AppText variant="caption" muted style={styles.sectionLabel}>
@@ -384,10 +381,7 @@ export default function SettingsScreen() {
 
         <View style={styles.footer}>
           <AppText variant="caption" muted>
-            TradingView Clone · v{Constants.expoConfig?.version ?? '1.0.0'}
-          </AppText>
-          <AppText variant="caption" muted>
-            Data: Hyperliquid + trade.xyz + Cboe
+            Version {Constants.expoConfig?.version ?? '1.0.0'}
           </AppText>
         </View>
       </ScrollView>

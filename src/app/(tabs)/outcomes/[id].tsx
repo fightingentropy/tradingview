@@ -219,8 +219,7 @@ export default function OutcomeDetailScreen() {
     return (
       <Screen>
         <View style={styles.loadingState}>
-          <ActivityIndicator color={Colors.accent} />
-          <AppText variant="caption" muted>Loading event…</AppText>
+          <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading event" />
         </View>
       </Screen>
     );

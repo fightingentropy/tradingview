@@ -121,7 +121,7 @@ export function InstrumentNews({ instruments, title }: { instruments: Instrument
       ListEmptyComponent={
         <View style={styles.empty}>
           {isLoading || scanning || isFetchingNextPage ? (
-            <><ActivityIndicator color={Colors.accent} /><AppText muted>Checking recent posts…</AppText></>
+            <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading news" />
           ) : isError ? (
             <><AppText variant="heading">News unavailable</AppText><AppText muted>Couldn’t load the feed. Try again when your connection returns.</AppText><Pressable style={styles.button} onPress={() => void refetch()} accessibilityRole="button"><AppText color={Colors.accent}>Try again</AppText></Pressable></>
           ) : (

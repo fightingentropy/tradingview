@@ -15,6 +15,7 @@ import {
 import { IndicatorMenu } from '@/components/IndicatorMenu';
 import { FundingChart } from '@/components/FundingChart';
 import { PriceChart, type ChartOrderLevel, type ChartType } from '@/components/PriceChart';
+import { PriceStatus } from '@/components/PriceStatus';
 import { RangeBar } from '@/components/RangeBar';
 import { InstrumentNewsLink } from '@/components/InstrumentNews';
 import { useSymbolMenu } from '@/components/SymbolMenu';
@@ -855,9 +856,7 @@ export default function SymbolScreen() {
           <AppText variant="caption" muted numberOfLines={1} style={styles.name}>
             {instrument.name}
           </AppText>
-          <AppText variant="caption" numberOfLines={1} color={priceState.stale ? Colors.warning : Colors.textMuted}>
-            {priceState.label}
-          </AppText>
+          <PriceStatus state={priceState} />
         </View>
         <View style={styles.priceRow}>
           <AppText variant="display" numeric numberOfLines={1} adjustsFontSizeToFit style={styles.lastPrice}>
@@ -917,8 +916,8 @@ export default function SymbolScreen() {
         ) : candles.length === 0 ? (
           <View style={styles.center}>
             <AppText variant="body" muted>Chart unavailable</AppText>
-            <Pressable onPress={() => { void refreshCandles(); }} disabled={candlesRefreshing} accessibilityRole="button" style={{ padding: Spacing.md }}>
-              <AppText variant="label" color={Colors.accent}>{candlesRefreshing ? 'Refreshing…' : 'Retry'}</AppText>
+            <Pressable onPress={() => { void refreshCandles(); }} disabled={candlesRefreshing} accessibilityRole="button" accessibilityLabel="Refresh chart" accessibilityState={{ busy: candlesRefreshing }} style={{ padding: Spacing.md }}>
+              {candlesRefreshing ? <ActivityIndicator color={Colors.accent} /> : <Ionicons name="refresh-outline" size={22} color={Colors.accent} />}
             </Pressable>
           </View>
         ) : (
@@ -957,9 +956,10 @@ export default function SymbolScreen() {
       </View>
 
       {!showFunding && (historyError || marketDataError(instrument, data?.marketErrors)) ? (
-        <Pressable onPress={() => { void refreshCandles(); void refreshMarkets(); }} disabled={candlesRefreshing} accessibilityRole="button" style={{ paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs }}>
+        <Pressable onPress={() => { void refreshCandles(); void refreshMarkets(); }} disabled={candlesRefreshing} accessibilityRole="button" accessibilityLabel="Refresh chart data" accessibilityState={{ busy: candlesRefreshing }} style={{ paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {candlesRefreshing ? <ActivityIndicator size="small" color={Colors.textMuted} /> : <Ionicons name="refresh-outline" size={15} color={Colors.warning} />}
           <AppText variant="caption" color={Colors.warning} numberOfLines={1}>
-            {candlesRefreshing ? 'Refreshing chart…' : historyError ? 'Chart history may be incomplete · Retry' : 'Market details unavailable · Showing saved data'}
+            {historyError ? 'Chart history may be incomplete' : 'Showing saved market data'}
           </AppText>
         </Pressable>
       ) : null}

@@ -1375,15 +1375,11 @@ export function TradeTicket({
                           <>
                             {!active ? (
                               <View style={styles.safeFallback}>
-                                <Ionicons name="shield-checkmark-outline" size={16} color={Colors.warning} />
+                                {activeLoading && !activeError ? <ActivityIndicator size="small" color={Colors.warning} /> : <Ionicons name="shield-checkmark-outline" size={16} color={Colors.warning} />}
                                 <AppText variant="caption" color={Colors.warning} style={styles.safetyCopy}>
-                                  {activeLoading && !activeError
-                                    ? cannotSafelyFallback
-                                      ? 'Live position settings are loading. Adding is blocked until they resolve.'
-                                      : 'Live settings are loading. Because this market is flat, submitting will set 1× isolated.'
-                                    : cannotSafelyFallback
-                                      ? 'Live settings are unavailable for a possible open position. Adding is blocked.'
-                                      : 'Live settings are unavailable. Because this market is flat, the app will set 1× isolated.'}
+                                  {cannotSafelyFallback
+                                    ? 'Adding is paused until your position settings are available.'
+                                    : 'This new position will use 1× isolated margin.'}
                                 </AppText>
                               </View>
                             ) : null}
@@ -1855,6 +1851,8 @@ export function TradeTicket({
                     },
                   ]}
                   onPress={confirm}
+                  accessibilityRole="button"
+                  accessibilityLabel={mutation.isPending ? 'Submitting order' : closing || actionLabel ? `${submitVerb} ${label}` : 'Review order'}
                   disabled={!canSubmit || mutation.isPending}
                   accessibilityState={{
                     disabled: !canSubmit || mutation.isPending,
@@ -1863,9 +1861,6 @@ export function TradeTicket({
                   {mutation.isPending ? (
                     <View style={styles.submitBusy}>
                       <ActivityIndicator size="small" color={Colors.text} />
-                      <AppText variant="label" color={Colors.text}>
-                        Submitting order…
-                      </AppText>
                     </View>
                   ) : (
                     <AppText variant="label" color={canSubmit ? sideColor : Colors.textFaint}>
@@ -1875,7 +1870,7 @@ export function TradeTicket({
                 </Pressable>
                 {maxLoss && !closing && !reduceOnly ? (
                   <AppText variant="caption" muted style={styles.stopDisclaimer}>
-                    *Sizes from the adverse IOC bounds plus fee allowances; partial or unfilled stops can lose more.
+                    Estimated using the price limit and fees. Losses can be larger if a stop fills partly or not at all.
                   </AppText>
                 ) : null}
               </View>

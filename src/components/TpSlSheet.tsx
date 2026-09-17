@@ -204,7 +204,7 @@ export function TpSlSheet({
         <SheetSurface style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.headerRow}>
-            <AppText variant="heading">TP/SL for Position</AppText>
+            <AppText variant="heading">Take profit & stop loss</AppText>
             <Pressable
               onPress={close}
               disabled={actionBusy}
@@ -230,7 +230,7 @@ export function TpSlSheet({
               <InfoRow label="Entry Price" value={formatPrice(entryPx, priceDecimals)} />
               <InfoRow
                 label="Mark Price"
-                value={markReady ? formatPrice(markPx, priceDecimals) : 'Loading…'}
+                value={markReady ? formatPrice(markPx, priceDecimals) : null}
               />
             </View>
 
@@ -376,7 +376,7 @@ export function TpSlSheet({
 
             {!tradable ? (
               <AppText variant="caption" color={Colors.warning}>
-                Add an API wallet key in Settings to change protection.
+                Connect your API key in Settings to change these orders.
               </AppText>
             ) : null}
           </ScrollView>
@@ -522,7 +522,7 @@ function InfoRow({
   valueColor,
 }: {
   label: string;
-  value: string;
+  value: string | null;
   valueColor?: string;
 }) {
   return (
@@ -530,9 +530,9 @@ function InfoRow({
       <AppText variant="body" muted>
         {label}
       </AppText>
-      <AppText variant="body" numeric color={valueColor ?? Colors.text}>
+      {value === null ? <ActivityIndicator size="small" color={Colors.textMuted} accessibilityLabel={`Loading ${label}`} /> : <AppText variant="body" numeric color={valueColor ?? Colors.text}>
         {value}
-      </AppText>
+      </AppText>}
     </View>
   );
 }

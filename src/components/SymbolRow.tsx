@@ -4,18 +4,25 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useSymbolMenu } from '@/components/SymbolMenu';
 import { SymbolLogo } from '@/components/SymbolLogo';
+import { PriceStatus } from '@/components/PriceStatus';
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Spacing } from '@/constants/theme';
+import { instrumentDisplayName } from '@/domain/instrumentDisplay';
 import type { Instrument, Quote } from '@/domain/types';
 import { useContextMenuTrigger } from '@/hooks/useContextMenuTrigger';
 import {
   formatPercent,
   formatPrice,
+  formatSignedPrice,
   formatProbability,
   formatProbabilityPointChange,
   priceDecimalsFor,
 } from '@/lib/format';
 import { useMarketPrice } from '@/store/livePrices';
+
+export const SYMBOL_ROW_HEIGHT = 64;
+export const SYMBOL_PRICE_WIDTH = 92;
+export const SYMBOL_CHANGE_WIDTH = 78;
 
 interface Props {
   instrument: Instrument;
@@ -32,6 +39,8 @@ interface Props {
   editing?: boolean;
   selected?: boolean;
   onToggleSelect?: (instrument: Instrument) => void;
+  /** Separate price and percentage columns in the watchlist. */
+  columns?: boolean;
 }
 
 function SymbolRowImpl({
@@ -45,6 +54,7 @@ function SymbolRowImpl({
   editing,
   selected,
   onToggleSelect,
+  columns = false,
 }: Props) {
   const { open } = useSymbolMenu();
   const onOpenMenu = useCallback(() => open(instrument), [open, instrument]);
@@ -65,7 +75,7 @@ function SymbolRowImpl({
   const changeColor = changePct === null ? Colors.textMuted : up ? Colors.up : Colors.down;
   const changeText =
     isOutcome && absChange !== null
-      ? `${formatProbabilityPointChange(absChange)}  24h`
+      ? formatProbabilityPointChange(absChange)
       : formatPercent(changePct);
 
   const onRowPress = useCallback(() => {
@@ -83,6 +93,8 @@ function SymbolRowImpl({
     <Pressable
       onPress={onRowPress}
       {...longPressProps}
+      accessibilityRole={editing ? 'checkbox' : 'button'}
+      accessibilityState={editing ? { checked: !!selected } : undefined}
       style={({ pressed }) => [styles.row, pressed && styles.pressed, dragging && styles.dragging]}>
       {editing ? (
         <Pressable
@@ -100,37 +112,41 @@ function SymbolRowImpl({
         </Pressable>
       ) : null}
 
-      <SymbolLogo instrument={instrument} size={36} />
+      <SymbolLogo instrument={instrument} size={32} />
 
       <View style={styles.mid}>
         <AppText style={styles.symbol} numberOfLines={1}>
           {instrument.symbol}
         </AppText>
-        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-          <AppText style={[styles.name, { flexShrink: 1 }]} numberOfLines={1}>
-            {instrument.name}
+        <View style={styles.description}>
+          <AppText style={styles.name} numberOfLines={1}>
+            {instrumentDisplayName(instrument)}
           </AppText>
-          {priceState.status !== 'live' ? (
-            <AppText style={[styles.name, { color: priceState.stale ? Colors.warning : Colors.textMuted }]} numberOfLines={1}>
-              {priceState.label}
-            </AppText>
-          ) : null}
+          <PriceStatus state={priceState} />
         </View>
       </View>
 
       {editing ? null : (
-        <View style={styles.right}>
-          <AppText style={[styles.price, priceState.stale && { color: Colors.textMuted }]} numeric numberOfLines={1}>
+        <View style={[styles.right, columns && styles.priceColumn]}>
+          <AppText style={[styles.price, priceState.stale && { color: Colors.textMuted }]} numeric numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
             {isOutcome ? formatProbability(last) : formatPrice(last, decimals)}
           </AppText>
           <AppText style={[styles.change, { color: changeColor }]} numeric numberOfLines={1}>
-            {changeText}
+            {columns ? (isOutcome ? '' : formatSignedPrice(absChange, decimals)) : changeText}
           </AppText>
         </View>
       )}
 
+      {!editing && columns ? (
+        <View style={[styles.changeBadge, { backgroundColor: changePct === null ? Colors.surfaceAlt : changeColor + '1C' }]}>
+          <AppText style={[styles.badgeText, { color: changeColor }]} numeric numberOfLines={1}>
+            {changeText}
+          </AppText>
+        </View>
+      ) : null}
+
       {!editing && onToggleWatch ? (
-        <Pressable hitSlop={10} onPress={() => onToggleWatch(instrument)} style={styles.star}>
+        <Pressable hitSlop={10} onPress={() => onToggleWatch(instrument)} style={styles.star} accessibilityRole="button" accessibilityLabel={`${watched ? 'Remove' : 'Add'} ${instrument.symbol} ${watched ? 'from' : 'to'} watchlist`}>
           <Ionicons
             name={watched ? 'star' : 'star-outline'}
             size={20}
@@ -148,8 +164,7 @@ function SymbolRowImpl({
   );
 }
 
-// Compare the quote by the three fields the row actually renders (last / prevClose /
-// change24hPct) rather than by object identity, and compare the rest of the props
+// Compare visible quote fields and freshness instead of object identity, and compare the rest of the props
 // explicitly. Live price ticks bypass this entirely (the row subscribes to the price
 // store via useLivePrice), so a parent re-render or a background quote refetch only
 // re-renders the rows whose displayed data truly changed.
@@ -160,6 +175,8 @@ export const SymbolRow = memo(
     a.quote?.last === b.quote?.last &&
     a.quote?.prevClose === b.quote?.prevClose &&
     a.quote?.change24hPct === b.quote?.change24hPct &&
+    a.quote?.ts === b.quote?.ts &&
+    a.columns === b.columns &&
     a.watched === b.watched &&
     a.dragging === b.dragging &&
     a.editing === b.editing &&
@@ -175,20 +192,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    minHeight: 68,
-    paddingVertical: 14,
+    height: SYMBOL_ROW_HEIGHT,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },
   pressed: { backgroundColor: Colors.surface },
   dragging: { backgroundColor: Colors.surfaceAlt },
   checkbox: { marginRight: Spacing.md, alignItems: 'center', justifyContent: 'center' },
-  mid: { flex: 1, marginLeft: Spacing.md, paddingRight: Spacing.sm },
-  symbol: { fontSize: 15, lineHeight: 20, fontWeight: '600', color: Colors.text },
-  name: { fontSize: 12, lineHeight: 16, color: Colors.textMuted, marginTop: 2 },
+  mid: { flex: 1, minWidth: 0, marginLeft: 10, paddingRight: Spacing.sm },
+  symbol: { fontSize: 15, lineHeight: 20, fontWeight: '600', letterSpacing: 0.1, color: Colors.text },
+  description: { flexDirection: 'row', alignItems: 'center', height: 20 },
+  name: { flexShrink: 1, fontSize: 11, lineHeight: 16, color: Colors.textMuted },
   right: { alignItems: 'flex-end', marginLeft: Spacing.sm },
-  price: { fontSize: 16, lineHeight: 21, fontWeight: '500', color: Colors.text },
-  change: { fontSize: 12, lineHeight: 16, fontWeight: '500', marginTop: 2 },
+  priceColumn: { width: SYMBOL_PRICE_WIDTH, marginLeft: 0 },
+  price: { fontSize: 16, lineHeight: 21, fontWeight: '500', letterSpacing: -0.3, color: Colors.text },
+  change: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  changeBadge: { width: SYMBOL_CHANGE_WIDTH, minHeight: 30, marginLeft: 12, paddingHorizontal: 4, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
+  badgeText: { width: '100%', textAlign: 'center', fontSize: 12, lineHeight: 17, fontWeight: '600' },
   star: { paddingLeft: Spacing.md },
   dragHandle: { paddingLeft: Spacing.md, paddingVertical: 4 },
 });

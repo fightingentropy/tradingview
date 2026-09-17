@@ -194,14 +194,16 @@ function fillableWithinCap(
   return fillable;
 }
 
+const PENDING_CHECK = { loading: true } as const;
+
 function legalReason(
   network: HlNetwork,
   legal: ReturnType<typeof useHlLegalCheck>,
-): string | null {
+): string | typeof PENDING_CHECK | null {
   if (network !== 'mainnet') {
-    return 'This Outcomes catalog is mainnet-only. Switch the connected account to Mainnet.';
+    return 'Connect your live Hyperliquid account to trade.';
   }
-  if (legal.isLoading || legal.isFetching) return 'Checking Hyperliquid trading eligibility…';
+  if (legal.isLoading || legal.isFetching) return PENDING_CHECK;
   if (legal.isError || !legal.data) {
     return 'Outcome trading stays disabled until Hyperliquid eligibility can be verified.';
   }
@@ -358,13 +360,13 @@ export function OutcomeOrderTicket({
     (reconciliationLock === currentLockKey || uncertainOutcomeOrders.has(currentLockKey));
 
   const unavailableReason = (() => {
-    if (demo) return 'Connect your own account and verified API wallet to trade.';
+    if (demo) return 'Connect your account to trade.';
     if (!connectionAddress) return 'Connect a Hyperliquid account to trade.';
-    if (!hasKey) return 'Add a verified Hyperliquid API wallet key to trade.';
-    if (identityLoading) return 'Verifying the API wallet and master account…';
-    if (identityError || !identity) return 'The API wallet identity could not be verified.';
+    if (!hasKey) return 'Add your API key in Settings to trade.';
+    if (identityLoading) return PENDING_CHECK;
+    if (identityError || !identity) return 'Couldn’t verify your API key.';
     if (regionReason) return regionReason;
-    if (accountLoading) return 'Loading live spot balances…';
+    if (accountLoading) return PENDING_CHECK;
     if (!accountReady) return 'Spot balances could not be verified. Trading remains disabled.';
     if (!contract) return 'This Outcome contract is no longer active.';
     if (contract.quoteToken !== 'USDC') {
@@ -383,7 +385,7 @@ export function OutcomeOrderTicket({
     if (isBuy && account && !account.spendableUsdcLoaded) {
       return 'Outcome buys stay disabled until margin across every USDC-backed Hyperliquid venue can be verified.';
     }
-    if (orderType === 'market' && bookLoading) return 'Loading the live order book…';
+    if (orderType === 'market' && bookLoading) return PENDING_CHECK;
     if (!priceValid) return orderType === 'limit'
       ? 'Enter a price between 0.00001 and 0.99999.'
       : 'The live spread is outside the reviewed 8% midpoint bound.';
@@ -867,8 +869,10 @@ export function OutcomeOrderTicket({
 
       {unavailableReason ? (
         <View style={styles.notice}>
-          <Ionicons name="information-circle-outline" size={18} color={Colors.textMuted} />
-          <AppText variant="caption" muted style={styles.noticeText}>{unavailableReason}</AppText>
+          {typeof unavailableReason === 'string' ? <>
+            <Ionicons name="information-circle-outline" size={18} color={Colors.textMuted} />
+            <AppText variant="caption" muted style={styles.noticeText}>{unavailableReason}</AppText>
+          </> : <ActivityIndicator size="small" color={Colors.textMuted} accessibilityLabel="Checking account and market" />}
         </View>
       ) : null}
 

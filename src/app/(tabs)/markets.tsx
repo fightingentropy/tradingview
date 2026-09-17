@@ -10,6 +10,7 @@ import { SymbolRow } from '@/components/SymbolRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { instrumentDisplayName } from '@/domain/instrumentDisplay';
 import type { AssetClass, Instrument } from '@/domain/types';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useMarkets } from '@/data/useMarkets';
@@ -76,7 +77,7 @@ export default function MarketsScreen() {
     () =>
       data?.instruments.map((instrument) => ({
         instrument,
-        haystack: `${instrument.symbol} ${instrument.name}`.toLowerCase(),
+        haystack: `${instrument.symbol} ${instrument.name} ${instrumentDisplayName(instrument)}`.toLowerCase(),
       })) ?? [],
     [data],
   );
@@ -185,7 +186,7 @@ export default function MarketsScreen() {
 
       <View style={styles.tableHeader}>
         <AppText style={styles.columnLabel}>
-          {debouncedSearch.trim() ? `${results.length} matches` : 'Instrument'}
+          {debouncedSearch.trim() ? `${results.length} matches` : 'Symbol'}
         </AppText>
         <AppText style={[styles.columnLabel, styles.priceColumn]}>Last / 24h</AppText>
       </View>
@@ -256,7 +257,7 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 14, lineHeight: 18, fontWeight: '600', color: Colors.textMuted },
   chipLabelActive: { color: Colors.accent },
   tableHeader: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border },
-  columnLabel: { fontSize: 10, lineHeight: 14, letterSpacing: 0.8, textTransform: 'uppercase', color: Colors.textFaint, fontWeight: '600' },
+  columnLabel: { fontSize: 11, lineHeight: 16, color: Colors.textMuted },
   priceColumn: { marginRight: 32 },
   empty: { padding: Spacing.xxl, gap: Spacing.sm },
   emptyTitle: { fontSize: 16, fontWeight: '600' },

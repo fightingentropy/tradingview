@@ -254,7 +254,7 @@ export function MarginSheet({
 
           {!tradable ? (
             <AppText variant="caption" color={Colors.warning} style={styles.hint}>
-              Add an API wallet key in Settings to adjust margin.
+              Connect your API key in Settings to adjust margin.
             </AppText>
           ) : null}
 

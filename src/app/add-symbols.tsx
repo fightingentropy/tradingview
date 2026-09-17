@@ -9,6 +9,7 @@ import { SymbolLogo } from '@/components/SymbolLogo';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { instrumentDisplayName } from '@/domain/instrumentDisplay';
 import type { AssetClass, Instrument } from '@/domain/types';
 import { useMarkets } from '@/data/useMarkets';
 import { useWatchlists } from '@/store/watchlists';
@@ -37,7 +38,7 @@ function matchesFilter(i: Instrument, f: Filter): boolean {
 const TYPE_LABEL: Record<AssetClass, string> = {
   'crypto-perp': 'perpetual',
   'crypto-spot': 'spot',
-  'equity-perp': 'equity perp',
+  'equity-perp': 'perpetual',
   fx: 'forex',
   commodity: 'commodity',
   index: 'index',
@@ -68,7 +69,7 @@ function AddRowImpl({
           {instrument.symbol}
         </AppText>
         <AppText style={styles.name} numberOfLines={1}>
-          {instrument.name}
+          {instrumentDisplayName(instrument)}
         </AppText>
       </View>
       <View style={styles.meta}>
@@ -123,7 +124,7 @@ export default function AddSymbolsScreen() {
     () =>
       data?.instruments.map((instrument) => ({
         instrument,
-        haystack: `${instrument.symbol} ${instrument.name}`.toLowerCase(),
+        haystack: `${instrument.symbol} ${instrument.name} ${instrumentDisplayName(instrument)}`.toLowerCase(),
       })) ?? [],
     [data],
   );

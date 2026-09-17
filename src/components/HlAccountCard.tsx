@@ -41,7 +41,6 @@ function ConnectedCard() {
   const showForm = editing || needsKey;
   const status = demo ? 'Practice account'
     : !live ? 'Reconnect account'
-    : isFetching ? 'Checking connection…'
     : verified ? 'Connected'
     : hasKey ? 'Connection needs attention' : 'View only';
 
@@ -52,7 +51,7 @@ function ConnectedCard() {
           <View style={styles.rowLeft}>
             {isFetching ? <ActivityIndicator size="small" color={Colors.textMuted} />
               : <View style={[styles.dot, { backgroundColor: verified ? Colors.up : Colors.textMuted }]} />}
-            <AppText variant="body">{status}</AppText>
+            {!isFetching && <AppText variant="body">{status}</AppText>}
           </View>
         </View>
         <View style={styles.divider} />
@@ -65,13 +64,13 @@ function ConnectedCard() {
         {verified ? (
           <View style={styles.savedNote}>
             <Ionicons name="lock-closed-outline" size={14} color={Colors.textMuted} />
-            <AppText variant="caption" muted>API key saved securely on this phone.</AppText>
+            <AppText variant="caption" muted>Key saved on this iPhone</AppText>
           </View>
         ) : null}
         {!demo && !isFetching && hasKey && !verified ? (
           <AppText variant="caption" muted style={styles.connectionNote}>
             {live
-              ? 'We couldn’t verify your saved key. If you deleted or replaced it in Hyperliquid, paste your new key below.'
+              ? 'Couldn’t verify this key. Paste a new one if you replaced it.'
               : 'Paste a key from your live Hyperliquid account to reconnect.'}
           </AppText>
         ) : null}
@@ -169,12 +168,6 @@ function ApiKeyForm({ replacing = false, onCancel }: { replacing?: boolean; onCa
           </Pressable>
         ) : null}
       </View>
-      <AppText variant="caption" muted style={styles.description}>
-        {replacing
-          ? 'Paste your new key. We’ll check it before replacing the saved one.'
-          : 'Paste your API key. We’ll find your account automatically.'}
-      </AppText>
-
       <View style={styles.field}>
         <AppText variant="caption" muted>API key</AppText>
         <View style={styles.inputFrame}>
@@ -205,7 +198,7 @@ function ApiKeyForm({ replacing = false, onCancel }: { replacing?: boolean; onCa
         </View>
       </View>
       <AppText variant="caption" muted style={styles.description}>
-        Use a trading API key, never your wallet’s private key or recovery phrase.
+        Trading API key only. Never use your wallet’s private key or recovery phrase.
       </AppText>
       <Pressable
         accessibilityRole="link"
@@ -217,19 +210,19 @@ function ApiKeyForm({ replacing = false, onCancel }: { replacing?: boolean; onCa
 
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={busy ? 'Connecting account' : replacing ? 'Save and reconnect' : 'Connect account'}
         accessibilityState={{ disabled: busy || !key.trim(), busy }}
         disabled={busy || !key.trim()}
         style={[styles.primaryButton, (busy || !key.trim()) && styles.disabledButton]}
         onPress={() => { void connect(); }}>
-        {busy ? <ActivityIndicator size="small" color={Colors.textMuted} /> : null}
-        <AppText variant="label" color={busy || !key.trim() ? Colors.textFaint : Colors.background}>
-          {busy ? 'Connecting…' : replacing ? 'Save and reconnect' : 'Connect account'}
-        </AppText>
+        {busy ? <ActivityIndicator size="small" color={Colors.textMuted} /> : <AppText variant="label" color={!key.trim() ? Colors.textFaint : Colors.background}>
+          {replacing ? 'Save and reconnect' : 'Connect account'}
+        </AppText>}
       </Pressable>
       <View style={styles.storageNote}>
         <Ionicons name="lock-closed-outline" size={13} color={Colors.textMuted} />
         <AppText variant="caption" muted style={styles.storageText}>
-          Saved securely on this phone. Connects to your real account.
+          Saved securely on this iPhone · Live account
         </AppText>
       </View>
     </View>

@@ -105,12 +105,12 @@ export function WatchlistMenu({
             </View>
           }
         />
-        <MenuRow icon="newspaper-outline" label="News by watchlist" onPress={onNews} />
+        <MenuRow icon="newspaper-outline" label="Related news" onPress={onNews} />
 
         <View style={styles.divider} />
         <AppText style={styles.sectionLabel}>Watchlists</AppText>
         <MenuRow icon="list-outline" label="All watchlists" onPress={onAllWatchlists} />
-        <MenuRow icon="add" label="Create new list" onPress={onCreate} />
+        <MenuRow icon="add" label="New watchlist" onPress={onCreate} />
       </>
     ) : (
       <>
