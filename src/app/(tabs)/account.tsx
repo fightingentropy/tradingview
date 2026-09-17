@@ -356,9 +356,8 @@ export default function AccountScreen() {
   }, [markets?.outcomeEvents]);
 
   const tradable = hasKey && !demo && !!executionIdentity;
-  const [tab, setTab] = useState<
-    'positions' | 'orders' | 'balances' | 'history' | 'funding' | 'interest' | 'orderHistory' | 'transfers'
-  >('balances');
+  const tab = usePreferences((s) => s.accountTab);
+  const setTab = usePreferences((s) => s.setAccountTab);
   const historicalOrdersQuery = useHlHistoricalOrders(tab === 'orderHistory');
   const activityQuery = useHlAccountActivity(tab === 'transfers');
   const {

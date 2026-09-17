@@ -8,10 +8,17 @@ import { mmkvStorage } from '@/lib/mmkv';
 /** USD threshold below which a balance counts as "dust". */
 export const SMALL_BALANCE_USD = 1;
 
+export type AccountTab =
+  | 'positions' | 'orders' | 'balances' | 'history'
+  | 'funding' | 'interest' | 'orderHistory' | 'transfers';
+
 /**
  * Global display preferences, persisted across sessions.
  */
 interface PreferencesState {
+  /** Last Account section, restored immediately when returning or relaunching. */
+  accountTab: AccountTab;
+  setAccountTab: (value: AccountTab) => void;
   /** Show the optional CLOB depth panel in the web trading workspace. Off by default. */
   showClobOrderBook: boolean;
   setShowClobOrderBook: (value: boolean) => void;
@@ -49,6 +56,8 @@ interface PreferencesState {
 export const usePreferences = create<PreferencesState>()(
   persist(
     (set) => ({
+      accountTab: 'positions',
+      setAccountTab: (value) => set({ accountTab: value }),
       showClobOrderBook: false,
       setShowClobOrderBook: (value) => set({ showClobOrderBook: value }),
       showOutcomeMarkets: false,
