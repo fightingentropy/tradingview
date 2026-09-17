@@ -45,7 +45,7 @@ export function isValidPrivateKey(raw: string): boolean {
   return /^0x[0-9a-f]{64}$/.test(normalizeKey(raw));
 }
 
-export function setAgentKey(privateKey: string) {
+export function setAgentKey(privateKey: string, requirePersistence = false) {
   const k = normalizeKey(privateKey);
   if (SecureStore) {
     try {
@@ -53,8 +53,14 @@ export function setAgentKey(privateKey: string) {
       memoryFallback = null;
       return;
     } catch {
+      if (requirePersistence) {
+        throw new Error('Could not save your API key securely. Unlock your phone and try again.');
+      }
       /* fall through to memory */
     }
+  }
+  if (requirePersistence) {
+    throw new Error('Secure storage is unavailable. Please update the app and try again.');
   }
   memoryFallback = k;
 }

@@ -1,453 +1,277 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, Keyboard, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
-import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { useTradingIdentity } from '@/data/useHlAccount';
-import type { HlNetwork } from '@/lib/hyperliquid/info';
-import { isValidPrivateKey, setAgentKey } from '@/lib/hyperliquid/keyStore';
-import { addressFromPrivateKey, toChecksumAddress } from '@/lib/hyperliquid/sign';
-import { isHexAddress, useHlConnection } from '@/store/hlConnection';
+import { accountForApiKey } from '@/lib/hyperliquid/apiKeyConnection';
+import { toChecksumAddress } from '@/lib/hyperliquid/sign';
+import { useHlConnection } from '@/store/hlConnection';
 
-/** EIP-55 checksum, then truncate for display: `0xAbC1…9FdE`. */
-const short = (a: string) => {
-  const c = toChecksumAddress(a);
-  return `${c.slice(0, 6)}…${c.slice(-4)}`;
+const short = (address: string) => {
+  const value = toChecksumAddress(address);
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
 };
 
-/**
- * Connect / manage the Hyperliquid account from Settings. The public address
- * powers the read-only Account screen; the optional API-wallet ("agent") key
- * unlocks trading and is stored encrypted on-device, never synced.
- */
 export function HlAccountCard() {
   const address = useHlConnection((s) => s.address);
+  const keyRevision = useHlConnection((s) => s.keyRevision);
+  return address
+    ? <ConnectedCard key={`${address}:${keyRevision}`} />
+    : <ApiKeyForm />;
+}
+
+function ConnectedCard() {
+  const address = useHlConnection((s) => s.address)!;
   const network = useHlConnection((s) => s.network);
   const hasKey = useHlConnection((s) => s.hasKey);
   const demo = useHlConnection((s) => s.demo);
-  const setAddress = useHlConnection((s) => s.setAddress);
-  const setNetwork = useHlConnection((s) => s.setNetwork);
-  const refreshKey = useHlConnection((s) => s.refreshKey);
   const disconnect = useHlConnection((s) => s.disconnect);
+  const [editing, setEditing] = useState(false);
+  const { data: identity, isError, isFetching, refetch } = useTradingIdentity();
 
-  if (address) {
-    return (
-      <ConnectedCard
-        address={address}
-        network={network}
-        hasKey={hasKey}
-        demo={demo}
-        onAddKey={refreshKey}
-        onDisconnect={disconnect}
-      />
-    );
-  }
+  // Recheck on entry so a key deleted on Hyperliquid does not look connected.
+  useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
 
-  return (
-    <ConnectForm
-      onConnect={(addr, net, key) => {
-        if (key) setAgentKey(key);
-        setNetwork(net);
-        setAddress(addr);
-        refreshKey();
-      }}
-    />
-  );
-}
+  const live = network === 'mainnet';
+  const verified = live && hasKey && !isError && identity?.status === 'verified-signer';
+  const needsKey = !demo && (!hasKey || !live || (isError && !isFetching));
+  const showForm = editing || needsKey;
+  const status = demo ? 'Practice account'
+    : !live ? 'Reconnect account'
+    : isFetching ? 'Checking connection…'
+    : verified ? 'Connected'
+    : hasKey ? 'Connection needs attention' : 'View only';
 
-// ─── Connected ───────────────────────────────────────────────────────────────
-
-function ConnectedCard({
-  address,
-  network,
-  hasKey,
-  demo,
-  onAddKey,
-  onDisconnect,
-}: {
-  address: string;
-  network: HlNetwork;
-  hasKey: boolean;
-  demo: boolean;
-  onAddKey: () => void;
-  onDisconnect: () => void;
-}) {
-  // The account we actually read (master behind the agent key), which may differ
-  // from what was typed. While resolving we show the entered address; if resolution
-  // fails we say so rather than silently presenting a possibly-wrong account.
-  const { data: identity, error: identityError, isError, isFetching } = useTradingIdentity();
-  const resolved = identity?.accountAddress;
-  const resolveFailed = isError && !resolved;
-  const signerVerified = identity?.status === 'verified-signer';
-  const shownAddress = resolved ?? address;
   return (
     <>
       <View style={styles.card}>
         <View style={styles.row}>
           <View style={styles.rowLeft}>
-            <View style={[styles.dot, { backgroundColor: demo ? Colors.textMuted : Colors.text }]} />
-            <AppText variant="body">{demo ? 'Demo account' : 'Connected'}</AppText>
+            {isFetching ? <ActivityIndicator size="small" color={Colors.textMuted} />
+              : <View style={[styles.dot, { backgroundColor: verified ? Colors.up : Colors.textMuted }]} />}
+            <AppText variant="body">{status}</AppText>
           </View>
-          {resolveFailed ? (
-            <AppText variant="caption" color={Colors.down} style={styles.addr}>
-              Couldn’t resolve account
-            </AppText>
-          ) : (
-            <View style={styles.rowLeft}>
-              {isFetching && !resolved ? <ActivityIndicator size="small" color={Colors.textMuted} /> : null}
-              <AppText variant="caption" muted style={styles.addr}>
-                {short(shownAddress)}
-              </AppText>
-            </View>
-          )}
         </View>
         <View style={styles.divider} />
         <View style={styles.row}>
-          <AppText variant="body">Network</AppText>
-          <NetworkBadge network={network} />
+          <AppText variant="body">Account</AppText>
+          <AppText variant="caption" muted style={styles.address}>
+            {short(identity?.accountAddress ?? address)}
+          </AppText>
         </View>
-        <View style={styles.divider} />
-        <View style={styles.row}>
-          <AppText variant="body">Trading</AppText>
-          {demo ? (
-            <AppText variant="caption" muted>
-              Read-only
-            </AppText>
-          ) : hasKey && isFetching && !identity ? (
-            <View style={styles.rowLeft}>
-              <ActivityIndicator size="small" color={Colors.textMuted} />
-              <AppText variant="caption" muted>
-                Verifying API wallet…
-              </AppText>
-            </View>
-          ) : hasKey && signerVerified ? (
-            <View style={styles.rowLeft}>
-              <Ionicons name="checkmark-circle" size={15} color={Colors.up} />
-              <AppText variant="caption" color={Colors.up}>
-                Verified · {short(identity.signerAddress)}
-              </AppText>
-            </View>
-          ) : hasKey ? (
-            <View style={styles.rowLeft}>
-              <Ionicons name="close-circle" size={15} color={Colors.down} />
-              <AppText variant="caption" color={Colors.down}>
-                Blocked · identity mismatch
-              </AppText>
-            </View>
-          ) : (
-            <AppText variant="caption" muted>
-              Add API key to trade
-            </AppText>
-          )}
-        </View>
-        {!demo && hasKey && !signerVerified && !isFetching ? (
+        {verified ? (
+          <View style={styles.savedNote}>
+            <Ionicons name="lock-closed-outline" size={14} color={Colors.textMuted} />
+            <AppText variant="caption" muted>API key saved securely on this phone.</AppText>
+          </View>
+        ) : null}
+        {!demo && !isFetching && hasKey && !verified ? (
+          <AppText variant="caption" muted style={styles.connectionNote}>
+            {live
+              ? 'We couldn’t verify your saved key. If you deleted or replaced it in Hyperliquid, paste your new key below.'
+              : 'Paste a key from your live Hyperliquid account to reconnect.'}
+          </AppText>
+        ) : null}
+        {!showForm ? (
           <>
             <View style={styles.divider} />
-            <AppText variant="caption" color={Colors.down} style={styles.identityError}>
-              {identityError instanceof Error
-                ? identityError.message
-                : 'Hyperliquid could not verify this API wallet against the connected master account.'}
-            </AppText>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={hasKey && !demo ? 'Replace API key' : 'Connect Hyperliquid'}
+              style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]}
+              onPress={() => setEditing(true)}>
+              <View style={styles.rowLeft}>
+                <Ionicons name="key-outline" size={18} color={Colors.accent} />
+                <AppText variant="body" color={Colors.accent}>
+                  {hasKey && !demo ? 'Replace API key' : 'Connect Hyperliquid'}
+                </AppText>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
+            </Pressable>
           </>
         ) : null}
       </View>
 
-      {/* Connected by address only — let them paste an agent key to enable trading. */}
-      {!demo && !hasKey ? <AddKeyCard onSaved={onAddKey} /> : null}
+      {showForm ? (
+        <ApiKeyForm
+          replacing={hasKey && !demo}
+          onCancel={needsKey ? undefined : () => setEditing(false)}
+        />
+      ) : null}
 
-      <View style={styles.card}>
-        <Pressable
-          style={({ pressed }) => [styles.actionRow, pressed && styles.rowPressed]}
-          onPress={onDisconnect}>
-          <View style={styles.rowLeft}>
-            <Ionicons name="log-out-outline" size={18} color={Colors.text} />
-            <AppText variant="body">{demo ? 'Exit demo' : 'Disconnect'}</AppText>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
-        </Pressable>
-      </View>
+      <Pressable accessibilityRole="button" style={styles.disconnect} onPress={disconnect}>
+        <AppText variant="caption" muted>{demo ? 'Exit practice account' : 'Disconnect account'}</AppText>
+      </Pressable>
     </>
   );
 }
 
-function AddKeyCard({ onSaved }: { onSaved: () => void }) {
+function ApiKeyForm({ replacing = false, onCancel }: { replacing?: boolean; onCancel?: () => void }) {
   const [key, setKey] = useState('');
+  const [shown, setShown] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const attempt = useRef(0);
+  const pending = useRef(false);
 
-  const save = () => {
-    if (!isValidPrivateKey(key)) {
-      setError('Enter a 64-character hex key (0x…).');
-      return;
-    }
-    setAgentKey(key);
+  // Leaving Settings cancels an in-flight attempt and drops the unsaved key.
+  useFocusEffect(useCallback(() => () => {
+    attempt.current += 1;
+    pending.current = false;
     setKey('');
+    setShown(false);
+    setBusy(false);
     setError(null);
-    onSaved();
-  };
+  }, []));
 
-  return (
-    <View style={styles.card}>
-      <View style={styles.fieldRow}>
-        <SecretInput value={key} onChangeText={setKey} placeholder="API wallet key (0x…)" />
-        <Pressable
-          style={[styles.inlineBtn, !key && styles.inlineBtnDisabled]}
-          onPress={save}
-          disabled={!key}>
-          <AppText variant="label" color={key ? Colors.text : Colors.textFaint}>
-            Save
-          </AppText>
-        </Pressable>
-      </View>
-      {error ? (
-        <AppText variant="caption" color={Colors.down} style={styles.fieldError}>
-          {error}
-        </AppText>
-      ) : null}
-    </View>
-  );
-}
-
-// ─── Connect form ────────────────────────────────────────────────────────────
-
-function ConnectForm({
-  onConnect,
-}: {
-  onConnect: (address: string, network: HlNetwork, key: string | null) => void;
-}) {
-  const [addr, setAddr] = useState('');
-  const [key, setKey] = useState('');
-  const [net, setNet] = useState<HlNetwork>('mainnet');
-  const [error, setError] = useState<string | null>(null);
-
-  const canConnect = !!(addr.trim() || key.trim());
-
-  const connect = () => {
-    const trimmedKey = key.trim();
-    const hasAddr = isHexAddress(addr);
-    const keyValid = trimmedKey ? isValidPrivateKey(trimmedKey) : false;
-
-    if (trimmedKey && !keyValid) {
-      setError('API wallet key must be a 64-character hex key.');
-      return;
-    }
-    if (!hasAddr && !keyValid) {
-      setError('Enter your account address or a valid API wallet key.');
-      return;
-    }
-    // Address is optional when a key is given: derive the agent address and let the
-    // account resolver map it to the master account that actually holds positions.
-    let stored = hasAddr ? addr.trim() : '';
-    if (!stored && keyValid) {
-      try {
-        stored = addressFromPrivateKey(trimmedKey);
-      } catch {
-        setError('Could not read that API wallet key.');
-        return;
+  const connect = async () => {
+    if (pending.current || !key.trim()) return;
+    pending.current = true;
+    const request = ++attempt.current;
+    const previous = useHlConnection.getState();
+    setBusy(true);
+    setError(null);
+    Keyboard.dismiss();
+    try {
+      const accountAddress = await accountForApiKey(key);
+      if (request !== attempt.current) return;
+      const current = useHlConnection.getState();
+      if (current.address !== previous.address || current.network !== previous.network
+        || current.keyRevision !== previous.keyRevision || current.demo !== previous.demo) {
+        throw new Error('Your account changed while connecting. Please try again.');
+      }
+      current.connectVerifiedAccount(accountAddress, key);
+      // The committed account remounts this card; no secret enters persisted app state.
+    } catch (failure) {
+      if (request === attempt.current) {
+        setError(failure instanceof Error ? failure.message : 'Could not connect. Please try again.');
+      }
+    } finally {
+      if (request === attempt.current) {
+        pending.current = false;
+        setBusy(false);
       }
     }
-    setError(null);
-    onConnect(stored, net, trimmedKey ? trimmedKey : null);
   };
 
   return (
-    <>
-      <View style={styles.card}>
-        <View style={styles.segment}>
-          {(['mainnet', 'testnet'] as HlNetwork[]).map((n) => (
-            <Pressable
-              key={n}
-              style={[styles.segmentItem, net === n && styles.segmentItemActive]}
-              onPress={() => setNet(n)}>
-              <AppText variant="label" color={net === n ? Colors.text : Colors.textMuted}>
-                {n === 'mainnet' ? 'Mainnet' : 'Testnet'}
-              </AppText>
-            </Pressable>
-          ))}
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.field}>
-          <AppText variant="caption" muted>
-            Main account address
-          </AppText>
+    <View style={[styles.card, styles.form]}>
+      <View style={styles.formHeading}>
+        <AppText variant="body" style={styles.heading}>
+          {replacing ? 'Replace API key' : 'Connect Hyperliquid'}
+        </AppText>
+        {onCancel ? (
+          <Pressable accessibilityRole="button" onPress={onCancel} hitSlop={8}>
+            <AppText variant="caption" muted>Cancel</AppText>
+          </Pressable>
+        ) : null}
+      </View>
+      <AppText variant="caption" muted style={styles.description}>
+        {replacing
+          ? 'Paste your new key. We’ll check it before replacing the saved one.'
+          : 'Paste your API key. We’ll find your account automatically.'}
+      </AppText>
+
+      <View style={styles.field}>
+        <AppText variant="caption" muted>API key</AppText>
+        <View style={styles.inputFrame}>
           <TextInput
-            value={addr}
-            onChangeText={setAddr}
-            placeholder="0x… · optional if key set"
+            accessibilityLabel="API key"
+            value={key}
+            onChangeText={(value) => { setKey(value); setError(null); }}
+            placeholder="Paste your Hyperliquid API key"
             placeholderTextColor={Colors.textFaint}
             autoCapitalize="none"
             autoCorrect={false}
+            autoComplete="off"
+            textContentType="none"
             spellCheck={false}
+            secureTextEntry={!shown}
+            editable={!busy}
+            returnKeyType="done"
+            onSubmitEditing={() => { void connect(); }}
             style={styles.input}
           />
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.field}>
-          <AppText variant="caption" muted>
-            API wallet key · optional
-          </AppText>
-          <SecretInput value={key} onChangeText={setKey} placeholder="0x… (enables trading)" />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={shown ? 'Hide API key' : 'Show API key'}
+            hitSlop={8}
+            onPress={() => setShown((value) => !value)}>
+            <Ionicons name={shown ? 'eye-off-outline' : 'eye-outline'} size={19} color={Colors.textMuted} />
+          </Pressable>
         </View>
       </View>
-
-      <AppText variant="caption" muted style={styles.note}>
-        {net === 'mainnet' ? 'Mainnet uses real funds. ' : 'Testnet uses test funds. '}
-        Paste your API wallet key and we’ll detect your account automatically — the address field is only
-        needed for read-only viewing. The agent key trades but can’t withdraw, and is stored in the device keychain.
+      <AppText variant="caption" muted style={styles.description}>
+        Use a trading API key, never your wallet’s private key or recovery phrase.
       </AppText>
+      <Pressable
+        accessibilityRole="link"
+        onPress={() => { void Linking.openURL('https://app.hyperliquid.xyz/API').catch(() => setError('Could not open Hyperliquid. Try opening its API settings in your browser.')); }}>
+        <AppText variant="caption" color={Colors.accent}>Get an API key ↗</AppText>
+      </Pressable>
 
-      {error ? (
-        <AppText variant="caption" color={Colors.down} style={styles.note}>
-          {error}
-        </AppText>
-      ) : null}
+      {error ? <AppText accessibilityRole="alert" variant="caption" color={Colors.down} style={styles.description}>{error}</AppText> : null}
 
       <Pressable
-        style={[styles.primaryBtn, !canConnect && styles.primaryBtnDisabled]}
-        onPress={connect}
-        disabled={!canConnect}>
-        <Ionicons name="link" size={16} color={canConnect ? Colors.background : Colors.textFaint} />
-        <AppText variant="label" color={canConnect ? Colors.background : Colors.textFaint}>
-          Connect
+        accessibilityRole="button"
+        accessibilityState={{ disabled: busy || !key.trim(), busy }}
+        disabled={busy || !key.trim()}
+        style={[styles.primaryButton, (busy || !key.trim()) && styles.disabledButton]}
+        onPress={() => { void connect(); }}>
+        {busy ? <ActivityIndicator size="small" color={Colors.textMuted} /> : null}
+        <AppText variant="label" color={busy || !key.trim() ? Colors.textFaint : Colors.background}>
+          {busy ? 'Connecting…' : replacing ? 'Save and reconnect' : 'Connect account'}
         </AppText>
       </Pressable>
-    </>
-  );
-}
-
-// ─── Shared bits ─────────────────────────────────────────────────────────────
-
-function SecretInput({
-  value,
-  onChangeText,
-  placeholder,
-}: {
-  value: string;
-  onChangeText: (t: string) => void;
-  placeholder: string;
-}) {
-  const [shown, setShown] = useState(false);
-  return (
-    <View style={styles.secretRow}>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={Colors.textFaint}
-        autoCapitalize="none"
-        autoCorrect={false}
-        spellCheck={false}
-        secureTextEntry={!shown}
-        style={[styles.input, styles.secretInput]}
-      />
-      <Pressable hitSlop={8} onPress={() => setShown((s) => !s)}>
-        <Ionicons name={shown ? 'eye-off' : 'eye'} size={18} color={Colors.textMuted} />
-      </Pressable>
-    </View>
-  );
-}
-
-function NetworkBadge({ network }: { network: HlNetwork }) {
-  const main = network === 'mainnet';
-  return (
-    <View style={styles.badge}>
-      <AppText variant="caption" color={Colors.text}>
-        {main ? 'Mainnet' : 'Testnet'}
-      </AppText>
+      <View style={styles.storageNote}>
+        <Ionicons name="lock-closed-outline" size={13} color={Colors.textMuted} />
+        <AppText variant="caption" muted style={styles.storageText}>
+          Saved securely on this phone. Connects to your real account.
+        </AppText>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 8, backgroundColor: Colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, overflow: 'hidden' },
+  card: {
+    borderRadius: 10, backgroundColor: Colors.surface,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, overflow: 'hidden',
+  },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 66,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    minHeight: 54, paddingHorizontal: 18, paddingVertical: 14,
   },
-  actionRow: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 18,
-  },
-  rowPressed: { backgroundColor: 'rgba(255,255,255,0.065)' },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  addr: { fontFamily: Fonts.mono },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.lg,
-    backgroundColor: 'rgba(255,255,255,0.075)',
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  address: { fontFamily: Fonts.mono },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: 18, backgroundColor: Colors.border },
+  actionRow: {
+    minHeight: 58, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', paddingHorizontal: 18,
   },
-
-  field: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: 6 },
-  input: {
-    color: Colors.text,
-    fontSize: 15,
-    fontFamily: Fonts.mono,
-    paddingVertical: Spacing.xs,
+  rowPressed: { backgroundColor: Colors.surfacePress },
+  savedNote: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, paddingBottom: 16 },
+  connectionNote: { paddingHorizontal: 18, paddingBottom: 16, lineHeight: 19 },
+  disconnect: { alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 14 },
+  form: { padding: 18, gap: 14 },
+  formHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  heading: { fontWeight: '600', fontSize: 18 },
+  description: { lineHeight: 19 },
+  field: { gap: 8 },
+  inputFrame: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12,
+    borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background,
   },
-  secretRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  secretInput: { flex: 1 },
-
-  fieldRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+  input: { flex: 1, minWidth: 0, minHeight: 50, color: Colors.text, fontSize: 14, paddingVertical: 12 },
+  primaryButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    minHeight: 48, backgroundColor: Colors.accent, borderRadius: 8,
   },
-  inlineBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.09)',
-  },
-  inlineBtnDisabled: { backgroundColor: 'rgba(255,255,255,0.035)' },
-  fieldError: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md },
-  identityError: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    lineHeight: 17,
-  },
-
-  segment: { flexDirection: 'row', padding: Spacing.xs, gap: Spacing.xs },
-  segmentItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.sm,
-  },
-  segmentItemActive: { backgroundColor: 'rgba(255,255,255,0.10)' },
-
-  note: { marginTop: Spacing.sm, marginHorizontal: Spacing.xs, lineHeight: 16 },
-
-  badge: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-  primaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
-    backgroundColor: Colors.accent,
-    paddingVertical: Spacing.md,
-    borderRadius: 6,
-    marginTop: Spacing.sm,
-  },
-  primaryBtnDisabled: { backgroundColor: 'rgba(255,255,255,0.035)' },
+  disabledButton: { backgroundColor: Colors.surfaceAlt },
+  storageNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
+  storageText: { flex: 1, lineHeight: 17 },
 });

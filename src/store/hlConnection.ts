@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { HlNetwork } from '@/lib/hyperliquid/info';
-import { clearAgentKey, hasAgentKey } from '@/lib/hyperliquid/keyStore';
+import { clearAgentKey, hasAgentKey, setAgentKey } from '@/lib/hyperliquid/keyStore';
 import { mmkvStorage } from '@/lib/mmkv';
 
 /**
@@ -24,6 +24,7 @@ interface HlConnectionState {
   setNetwork: (network: HlNetwork) => void;
   /** Reflect the keyStore state after saving/removing a key. */
   refreshKey: () => void;
+  connectVerifiedAccount: (accountAddress: string, apiKey: string) => void;
   connectDemo: (address: string) => void;
   disconnect: () => void;
 }
@@ -51,6 +52,18 @@ export const useHlConnection = create<HlConnectionState>()(
       setNetwork: (network) => set({ network }),
       refreshKey: () =>
         set((s) => ({ hasKey: hasAgentKey(), keyRevision: s.keyRevision + 1 })),
+      connectVerifiedAccount: (accountAddress, apiKey) => {
+        if (!isHexAddress(accountAddress)) throw new Error('Could not identify your account. Please try again.');
+        // Save first: a failed write must leave the previous account untouched.
+        setAgentKey(apiKey, true);
+        set((s) => ({
+          address: accountAddress.toLowerCase(),
+          network: 'mainnet',
+          hasKey: true,
+          demo: false,
+          keyRevision: s.keyRevision + 1,
+        }));
+      },
       connectDemo: (address) => set({ address, demo: true, hasKey: false }),
       disconnect: () => {
         clearAgentKey();

@@ -25,6 +25,20 @@ The native and web packages intentionally keep independent dependencies and
 compilers. `npm run check` validates the native app and relays; `npm run web:check`
 validates the web package. CI runs both. The old Expo web UI is removed.
 
+## Connect the iPhone app
+
+Open **Settings → Hyperliquid account**, paste a trading API key, and tap
+**Connect account**. The app verifies the key on live Hyperliquid, finds its
+account automatically, and saves it in this phone's secure storage. No network
+or account-address entry is required.
+
+To change a saved or deleted key, use **Replace API key → Save and reconnect**.
+The old connection is retained until the replacement passes verification and
+saves successfully. Returning to Settings rechecks the saved key; a key that can
+no longer be verified shows the replacement field automatically. Keys never
+enter the persisted app settings or account cache. `npm run test:api-key`
+checks account discovery, revoked-key rejection, and secure-storage failures.
+
 
 ## Data sources
 

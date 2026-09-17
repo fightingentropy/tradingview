@@ -157,6 +157,8 @@ export default function SettingsScreen() {
     <Screen edges={[]}>
       <ScrollView
         contentContainerStyle={styles.container}
+        automaticallyAdjustKeyboardInsets
+        keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
         <AppText variant="caption" muted style={styles.sectionLabel}>
