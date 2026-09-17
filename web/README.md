@@ -15,8 +15,8 @@ future-dated oracle data fails closed.
 - Symbol search modal with keyboard shortcuts
 - Candlestick chart with volume and moving averages
 - Local caching for chart data and UI settings
-- Explicit Paper and Hyperliquid Testnet/Mainnet execution modes
-- Session-only API-wallet connection with agent/master validation
+- Live Hyperliquid trading and a separate practice mode
+- Single-field API-key connection with automatic account detection
 - Hyperliquid Standard, Unified, and Portfolio account-mode display
 - Live spot/perp placement, cancellation, position close, leverage, and
   position-level TP/SL updates
@@ -39,10 +39,11 @@ engine.
 
 **Hyperliquid** signs a deliberately limited set of exchange actions in the
 browser with an approved API wallet (Hyperliquid calls this an agent wallet).
-Connecting requires both the agent private key and the separate master account
-address. Never enter a master private key, seed phrase, or hardware-wallet
-secret. The app validates the agent/master relationship on the selected
-network and reads account state using the master address.
+Connecting requires only the trading API key. The app queries Hyperliquid's
+`userRole` endpoint on mainnet and detects the approved account automatically.
+Normal wallet keys, unapproved keys, malformed account responses and expired
+approvals are rejected. Saved connections are also checked against their original
+account. Never enter a wallet private key, seed phrase or hardware-wallet secret.
 
 By default, the API-wallet private key is kept only in memory for the current
 page session. Users can explicitly enable reload-safe unlock with Touch ID or
@@ -53,8 +54,8 @@ The private key, PRF output, and derived AES key are never persisted in Web
 Storage, IndexedDB, Convex, URLs, logs, or environment files.
 
 The saved vault is scoped to the exact site origin and must be re-enrolled on a
-different hostname. A reload leaves it locked until the user explicitly
-unlocks it; the app never silently triggers device verification. WebAuthn can
+different hostname. A reload checks the previously verified session window first, then requests
+device verification if another unlock is needed. WebAuthn can
 use Touch ID, Apple Watch, or the Mac login password, so the website cannot
 guarantee fingerprint-only verification. Browser extensions and any script
 running in the page can still access the decrypted key while the vault is
@@ -63,14 +64,12 @@ short-expiry API wallet and limited funds. Disconnecting clears the live signer
 but retains encrypted vault data; forgetting the device removes that data.
 Neither action revokes the agent, which must be revoked in Hyperliquid.
 
-The connection defaults to testnet. Initial Mainnet connection and Touch ID
-enrollment require typing `MAINNET`. A later explicit device-verified unlock
-restores that saved network without another typed confirmation. Hyperliquid
-account mode is read from the exchange.
-An agent can initialize Standard, Unified, or Portfolio only while the account
-is still in the `default` mode. Changing an already initialized mode requires
-the master wallet in official Hyperliquid settings; this app never requests the
-master key.
+Connections use mainnet only. There is no network selector, manual account
+address, or typed network confirmation. Previously saved testnet connections
+cannot restore or unlock; Settings offers removal and reconnection instead.
+The existing Hyperliquid account mode is read automatically. Account-mode
+changes are available through the official Hyperliquid settings link.
+Appearance and optional security preferences are separate from connection setup.
 
 Only spot and perpetual orders from the Trade view use the API wallet.
 The Convex admin workflow manages the paper ledger. One API wallet is limited to one active TradingView tab; use a separate
@@ -96,8 +95,7 @@ collateral, caps, and liquidation rules](https://hyperliquid.gitbook.io/hyperliq
   - Hyperliquid perps/spot/equity metadata and market stats
   - Hyperliquid account state when an API wallet is connected
 - Websocket data:
-  - Live candle and order-book updates from the selected mainnet or testnet
-    Hyperliquid WebSocket endpoint
+  - Live candle and order-book updates from Hyperliquid mainnet
   - Relevant HIP-3 DEX and open-order discovery for a connected account; REST
     refreshes remain scoped to the default and currently relevant DEXes
 - Caching:

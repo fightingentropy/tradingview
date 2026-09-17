@@ -7,6 +7,7 @@ import type { ExchangeSingleWalletConfig } from "@nktkas/hyperliquid/api/exchang
 import type { SymbolConverter } from "@nktkas/hyperliquid/utils";
 import { createMemo, createRoot, createSignal, onCleanup } from "solid-js";
 import { setHyperliquidDataNetwork } from "../lib/hyperliquidNetwork";
+import { resolveApiWalletAccount } from "../lib/apiWalletAccount";
 
 type HyperliquidExecutionSdk =
   typeof import("../lib/hyperliquidExecutionSdk");
@@ -178,10 +179,9 @@ export type HyperliquidConnection = {
 };
 
 type ConnectInput = {
-  network: HyperliquidNetwork;
-  masterAddress: string;
+  network?: HyperliquidNetwork;
+  masterAddress?: string;
   apiWalletPrivateKey: string;
-  mainnetConfirmation?: string;
 };
 
 type PlaceOrderInput = {
@@ -503,7 +503,7 @@ const createNonceManager = (network: HyperliquidNetwork) => {
 
     if (typeof navigator === "undefined" || !navigator.locks) {
       throw new Error(
-        "Live execution requires browser Web Locks to allocate API-wallet nonces safely.",
+        "This browser cannot safely connect for trading. Try another up-to-date browser.",
       );
     }
     return await navigator.locks.request(storageKey, allocate);
@@ -516,11 +516,11 @@ const acquireExecutionSessionLock = async (
 ): Promise<number> => {
   if (typeof navigator === "undefined" || !navigator.locks) {
     throw new Error(
-      "Live execution requires browser Web Locks to prevent API-wallet nonce collisions across tabs.",
+      "This browser cannot safely connect for trading. Try another up-to-date browser.",
     );
   }
   if (releaseExecutionSessionLock || executionSessionLockTask) {
-    throw new Error("Disconnect the current API-wallet session first.");
+    throw new Error("Disconnect your current account first.");
   }
 
   const lockName = `${NONCE_STORAGE_PREFIX}:session:${network}:${agentAddress.toLowerCase()}`;
@@ -556,10 +556,10 @@ const acquireExecutionSessionLock = async (
       executionSessionLockTask = null;
     }
     if (lockEpoch !== executionSessionLockEpoch) {
-      throw new Error("The API-wallet connection attempt was canceled.");
+      throw new Error("Connection canceled. Please try again.");
     }
     throw new Error(
-      "This API wallet already has a live execution session in another tab. Disconnect it there before reconnecting here.",
+      "This API key is already connected in another tab. Disconnect it there first.",
     );
   }
   return lockEpoch;
@@ -1752,22 +1752,31 @@ const {
         error:
           connectionStatus() === "connecting"
             ? "A connection attempt is already in progress."
-            : "Disconnect the current API-wallet session first.",
+            : "Disconnect your current account first.",
       };
     }
-    const masterAddress = normalizeAddress(input.masterAddress);
-    if (!masterAddress) {
-      return { ok: false, error: "Enter a valid 0x master account address." };
+    if (input.network !== undefined && input.network !== "mainnet") {
+      return {
+        ok: false,
+        error: "This connection is no longer supported. Connect a key from your live Hyperliquid account.",
+      };
+    }
+    const network = "mainnet";
+    const expectedAccount = input.masterAddress
+      ? normalizeAddress(input.masterAddress)
+      : undefined;
+    if (input.masterAddress && !expectedAccount) {
+      return {
+        ok: false,
+        error: "The saved account address is invalid. Remove the saved connection and reconnect.",
+      };
     }
     const privateKey = normalizePrivateKey(input.apiWalletPrivateKey);
     if (!privateKey) {
-      return { ok: false, error: "Enter a 32-byte API-wallet private key." };
-    }
-    if (
-      input.network === "mainnet" &&
-      input.mainnetConfirmation?.trim() !== "MAINNET"
-    ) {
-      return { ok: false, error: "Type MAINNET to enable live execution." };
+      return {
+        ok: false,
+        error: "That key looks incomplete. Copy the full API key from Hyperliquid’s API settings.",
+      };
     }
 
     setConnectionStatus("connecting");
@@ -1786,23 +1795,19 @@ const {
         attemptEpoch !== connectionAttemptEpoch ||
         connectionStatus() !== "connecting"
       ) {
-        throw new Error("The API-wallet connection attempt was canceled.");
+        throw new Error("Connection canceled. Please try again.");
       }
       const wallet = privateKeyToAccount(privateKey);
       const transport = new HttpTransport({
-        isTestnet: input.network === "testnet",
+        isTestnet: false,
         timeout: 12_000,
       });
       const nextInfoClient = new InfoClient({ transport });
       const role = await nextInfoClient.userRole({ user: wallet.address });
-      if (
-        role.role !== "agent" ||
-        role.data.user.toLowerCase() !== masterAddress
-      ) {
-        throw new Error(
-          "This API wallet is not approved for the supplied master account on the selected network.",
-        );
-      }
+      const masterAddress = resolveApiWalletAccount(
+        role,
+        expectedAccount ?? undefined,
+      );
 
       let agentName: string | undefined;
       let agentValidUntil: number | undefined;
@@ -1814,7 +1819,9 @@ const {
         agentName = approved?.name || undefined;
         agentValidUntil = approved?.validUntil ?? undefined;
         if (agentValidUntil !== undefined && agentValidUntil <= Date.now()) {
-          throw new Error("This API wallet approval has expired.");
+          throw new Error(
+            "This API key has expired. Create a new one in Hyperliquid’s API settings.",
+          );
         }
       } catch (error) {
         if (error instanceof Error && error.message.includes("expired")) {
@@ -1837,10 +1844,10 @@ const {
         attemptEpoch !== connectionAttemptEpoch ||
         connectionStatus() !== "connecting"
       ) {
-        throw new Error("The API-wallet connection attempt was canceled.");
+        throw new Error("Connection canceled. Please try again.");
       }
       const sessionLockEpoch = await acquireExecutionSessionLock(
-        input.network,
+        network,
         wallet.address,
       );
       if (
@@ -1848,12 +1855,12 @@ const {
         connectionStatus() !== "connecting"
       ) {
         releaseSessionLock(sessionLockEpoch);
-        throw new Error("The API-wallet connection attempt was canceled.");
+        throw new Error("Connection canceled. Please try again.");
       }
       const nextExchangeConfig: ExchangeSingleWalletConfig<HttpTransport> = {
         transport,
         wallet,
-        nonceManager: createNonceManager(input.network),
+        nonceManager: createNonceManager(network),
         defaultExpiresAfter: () => Date.now() + REQUEST_EXPIRY_MS,
       };
 
@@ -1862,7 +1869,7 @@ const {
       symbolConverter = nextConverter;
       perpDexIndexByName = nextPerpDexIndices;
       const nextConnection: HyperliquidConnection = {
-        network: input.network,
+        network,
         masterAddress,
         agentAddress: wallet.address.toLowerCase() as `0x${string}`,
         agentName,
@@ -1876,7 +1883,7 @@ const {
         attemptEpoch !== connectionAttemptEpoch ||
         connectionStatus() !== "connected"
       ) {
-        throw new Error("The API-wallet connection attempt was canceled.");
+        throw new Error("Connection canceled. Please try again.");
       }
       if (accountRefreshError()) {
         throw new Error(accountRefreshError());
@@ -1887,7 +1894,10 @@ const {
       void startDexDiscovery(nextConnection);
       return { ok: true };
     } catch (error) {
-      const message = getErrorMessage(error, "Could not connect the API wallet.");
+      const message = getErrorMessage(
+        error,
+        "Could not connect your account. Please try again.",
+      );
       if (attemptEpoch === connectionAttemptEpoch) {
         disconnectHyperliquid();
         setConnectionError(message);
@@ -2512,8 +2522,8 @@ export const hyperliquidAccountModeLabel = () => {
 
 export const hyperliquidExecutionLabel = () => {
   const active = connection();
-  if (!active) return "Paper";
-  return `Hyperliquid ${active.network === "mainnet" ? "Mainnet" : "Testnet"}`;
+  if (!active) return "Practice trading";
+  return "Live trading";
 };
 
 export {

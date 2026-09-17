@@ -6,7 +6,9 @@ import {
 import {
   type VaultPayload,
   apiWalletVaultRevocationEpoch,
+  apiWalletVaultMetadata,
   hasSavedApiWalletVault,
+  initializeApiWalletVault,
   restoreApiWalletVaultSession,
   unlockApiWalletVault,
 } from "./apiWalletVault";
@@ -17,8 +19,7 @@ import {
 } from "./apiWalletSession";
 
 export type SavedApiWalletConnectionResult =
-  | { ok: true }
-  | { ok: false; error: string };
+  { ok: true } | { ok: false; error: string };
 
 const connectRecoveredApiWallet = async (
   payload: VaultPayload,
@@ -32,7 +33,7 @@ const connectRecoveredApiWallet = async (
     clearApiWalletSession();
     return {
       ok: false,
-      error: "The API-wallet connection changed before it could be restored.",
+      error: "Your connection changed. Please try connecting again.",
     };
   }
 
@@ -40,8 +41,6 @@ const connectRecoveredApiWallet = async (
     network: payload.network,
     masterAddress: payload.masterAddress,
     apiWalletPrivateKey: payload.apiWalletPrivateKey,
-    mainnetConfirmation:
-      payload.network === "mainnet" ? "MAINNET" : undefined,
   });
   payload.apiWalletPrivateKey = "0x";
   const result = await connectionPromise;
@@ -52,45 +51,60 @@ const connectRecoveredApiWallet = async (
       disconnectHyperliquid();
       return {
         ok: false,
-        error: "The saved API wallet was removed during connection.",
+        error: "The saved connection was removed. Please reconnect.",
       };
     }
   }
   return result.ok ? { ok: true } : result;
 };
 
-export const unlockSavedApiWallet = async (): Promise<
-  SavedApiWalletConnectionResult
-> => {
-  if (!hasSavedApiWalletVault()) {
-    return { ok: false, error: "No saved API wallet is available to unlock." };
-  }
-  if (hyperliquidConnectionStatus() !== "disconnected") {
-    return {
-      ok: false,
-      error:
-        hyperliquidConnectionStatus() === "connecting"
-          ? "The API wallet is already being verified."
-          : "The API wallet is already connected.",
-    };
-  }
+export const unlockSavedApiWallet =
+  async (): Promise<SavedApiWalletConnectionResult> => {
+    if (!hasSavedApiWalletVault()) {
+      return {
+        ok: false,
+        error: "No saved account is available. Connect with your API key.",
+      };
+    }
+    if (apiWalletVaultMetadata()?.network !== "mainnet") {
+      return {
+        ok: false,
+        error:
+          "Open Settings to replace this saved connection with a live Hyperliquid account.",
+      };
+    }
+    if (hyperliquidConnectionStatus() !== "disconnected") {
+      return {
+        ok: false,
+        error:
+          hyperliquidConnectionStatus() === "connecting"
+            ? "Your account is already connecting."
+            : "Your account is already connected.",
+      };
+    }
 
-  const revocationEpoch = apiWalletVaultRevocationEpoch();
-  const unlocked = await unlockApiWalletVault();
-  if (!unlocked.ok) return unlocked;
-  if (
-    passkeyRequirement() !== "every-refresh" &&
-    !unlocked.reloadGraceReady
-  ) {
-    setPasskeyRequirement("every-refresh");
-  }
-  return await connectRecoveredApiWallet(unlocked.payload, revocationEpoch);
-};
+    const revocationEpoch = apiWalletVaultRevocationEpoch();
+    const unlocked = await unlockApiWalletVault();
+    if (!unlocked.ok) return unlocked;
+    if (
+      passkeyRequirement() !== "every-refresh" &&
+      !unlocked.reloadGraceReady
+    ) {
+      setPasskeyRequirement("every-refresh");
+    }
+    return await connectRecoveredApiWallet(unlocked.payload, revocationEpoch);
+  };
 
 export const restoreSavedApiWalletOnStartup = async () => {
   // A reload may restore an in-memory session within its configured grace
   // window. Any other startup falls through to the normal Touch ID unlock.
   const revocationEpoch = apiWalletVaultRevocationEpoch();
+  await initializeApiWalletVault();
+  if (
+    apiWalletVaultRevocationEpoch() !== revocationEpoch ||
+    apiWalletVaultMetadata()?.network !== "mainnet"
+  )
+    return;
   const restored = await restoreApiWalletVaultSession();
   if (restored.ok) {
     await connectRecoveredApiWallet(restored.payload, revocationEpoch);

@@ -42,7 +42,6 @@ import {
   isHyperliquidExecution,
 } from "../stores/hyperliquidExecution";
 import { openConnect } from "../stores/connect";
-import { hyperliquidConnection } from "../stores/hyperliquidExecution";
 import { openSettings } from "../stores/settings";
 
 type OrderSide = "long" | "short";
@@ -853,7 +852,7 @@ const OrderForm: Component = () => {
     // Guard against double-firing while a mutation is in flight.
     if (isSubmitting()) return;
     if (!isAuthenticated() && !isHyperliquidExecution()) {
-      const message = "Sign in or connect a Hyperliquid API wallet to trade.";
+      const message = "Connect your Hyperliquid account to trade, or sign in to practice.";
       if (isSpot()) {
         setSpotError(message);
       } else {
@@ -980,10 +979,8 @@ const OrderForm: Component = () => {
           <h2>Order</h2>
           <span class="execution-mode">
             {isHyperliquidExecution()
-              ? hyperliquidConnection()?.network === "mainnet"
-                ? "Mainnet"
-                : "Testnet"
-              : "Paper trading"}
+              ? "Live trading"
+              : "Practice trading"}
           </span>
         </div>
         <div class="ticket-controls border-b border-brand-border p-4 space-y-4">

@@ -582,7 +582,7 @@ describe("API-wallet reload handoff boundary", () => {
       "value={passkeyRequirement()}",
     );
     const fiveMinutes = source.indexOf(
-      "5 minutes (default)",
+      '<option value="five-minutes">',
       firstRequirementSelect,
     );
     const everyRefresh = source.indexOf(
@@ -592,7 +592,7 @@ describe("API-wallet reload handoff boundary", () => {
     const oneHour = source.indexOf('<option value="one-hour">', everyRefresh);
 
     expect(firstRequirementSelect).toBeGreaterThan(-1);
-    expect(source).toContain('id="locked-passkey-requirement"');
+    expect(source).toContain("Ask me to unlock again");
     expect(fiveMinutes).toBeGreaterThan(-1);
     expect(everyRefresh).toBeGreaterThan(fiveMinutes);
     expect(oneHour).toBeGreaterThan(everyRefresh);

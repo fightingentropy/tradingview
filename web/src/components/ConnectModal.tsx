@@ -19,6 +19,7 @@ import {
 } from "../stores/hyperliquidExecution";
 import {
   apiWalletVaultReady,
+  apiWalletVaultMetadata,
   apiWalletVaultUnlockPending,
   hasSavedApiWalletVault,
 } from "../stores/apiWalletVault";
@@ -40,20 +41,21 @@ const ConnectModal: Component = () => {
 
   const apiWalletDescription = () => {
     if (isHyperliquidExecution()) {
-      return "Manage the API wallet currently routing Trade orders to Hyperliquid.";
+      return "Manage your connected trading account.";
     }
     if (isHyperliquidConnected()) {
-      return "Resume or manage the verified API wallet held in this tab.";
+      return "Switch from practice funds to your real account.";
     }
     if (apiWalletVaultReady() && hasSavedApiWalletVault()) {
-      return "Unlock the saved API wallet with Touch ID or device verification.";
+      return "Unlock your saved account on this device.";
     }
-    return "Use an approved Hyperliquid agent key through the existing session-only flow.";
+    return "Paste your API key to connect your trading account.";
   };
 
   const shouldUnlockSavedWallet = () =>
     apiWalletVaultReady() &&
     hasSavedApiWalletVault() &&
+    apiWalletVaultMetadata()?.network === "mainnet" &&
     hyperliquidConnectionStatus() === "disconnected";
 
   const handleApiWalletSelection = async () => {
@@ -216,7 +218,7 @@ const ConnectModal: Component = () => {
                 <span class="min-w-0 flex-1">
                   <span class="flex items-center justify-between gap-3">
                     <span class="text-sm font-semibold text-slate-100">
-                      API wallet
+                      Hyperliquid
                     </span>
                     <span
                       class={`shrink-0 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${

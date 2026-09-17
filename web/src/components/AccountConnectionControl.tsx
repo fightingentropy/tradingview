@@ -1,9 +1,6 @@
 import { Component, Show, createSignal, onCleanup } from "solid-js";
-import {
-  connectButtonLabel,
-  connectOpen,
-  openConnect,
-} from "../stores/connect";
+import { connectButtonLabel } from "../stores/connect";
+import { openSettings, settingsOpen } from "../stores/settings";
 import {
   hyperliquidConnection,
   hyperliquidConnectionStatus,
@@ -13,6 +10,7 @@ import {
 } from "../stores/hyperliquidExecution";
 import {
   apiWalletVaultReady,
+  apiWalletVaultMetadata,
   apiWalletVaultUnlockPending,
   hasSavedApiWalletVault,
 } from "../stores/apiWalletVault";
@@ -26,7 +24,9 @@ type AccountConnectionControlProps = {
 type CopyState = "idle" | "copied" | "failed";
 
 const shortAddress = (address: string) =>
-  address.length > 10 ? `${address.slice(0, 6)}...${address.slice(-4)}` : address;
+  address.length > 10
+    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    : address;
 
 const AccountConnectionControl: Component<AccountConnectionControlProps> = (
   props,
@@ -43,6 +43,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
   const shouldUnlockDirectly = () =>
     apiWalletVaultReady() &&
     hasSavedApiWalletVault() &&
+    apiWalletVaultMetadata()?.network === "mainnet" &&
     hyperliquidConnectionStatus() === "disconnected";
 
   const handleOpenConnect = async () => {
@@ -53,7 +54,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
       if (!result.ok) setUnlockError(result.error);
       return;
     }
-    openConnect();
+    openSettings();
   };
 
   const handleCopyAddress = async () => {
@@ -73,16 +74,14 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
     if (copyStateTimeout) clearTimeout(copyStateTimeout);
   });
 
-  const networkLabel = () =>
-    hyperliquidConnection()?.network === "mainnet"
-      ? "Hyperliquid Mainnet"
-      : "Hyperliquid Testnet";
+  const networkLabel = () => "Hyperliquid account";
 
   const copyLabel = () => {
     const address = hyperliquidConnection()?.masterAddress ?? "";
-    if (copyState() === "copied") return "Master address copied";
-    if (copyState() === "failed") return "Copy failed. Copy master address again";
-    return `Copy master address ${address}`;
+    if (copyState() === "copied") return "Account address copied";
+    if (copyState() === "failed")
+      return "Copy failed. Copy account address again";
+    return `Copy account address ${address}`;
   };
 
   return (
@@ -94,12 +93,14 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
             type="button"
             aria-label={
               shouldUnlockDirectly()
-                ? "Unlock saved API wallet with Touch ID"
-                : "Connect accounts"
+                ? "Unlock saved account"
+                : "Connect account"
             }
             aria-haspopup={shouldUnlockDirectly() ? undefined : "dialog"}
-            aria-expanded={shouldUnlockDirectly() ? undefined : connectOpen()}
-            aria-controls={shouldUnlockDirectly() ? undefined : "connect-dialog"}
+            aria-expanded={shouldUnlockDirectly() ? undefined : settingsOpen()}
+            aria-controls={
+              shouldUnlockDirectly() ? undefined : "settings-dialog"
+            }
             aria-busy={apiWalletVaultUnlockPending()}
             disabled={
               apiWalletVaultUnlockPending() ||
@@ -127,7 +128,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
                 <span class="min-w-0 flex-1">{message()}</span>
                 <button
                   type="button"
-                  aria-label="Dismiss API wallet error"
+                  aria-label="Dismiss connection error"
                   class="shrink-0 text-brand-slate-500 hover:text-slate-100"
                   onClick={() => setUnlockError(undefined)}
                 >
@@ -142,10 +143,10 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
       <div class="flex h-9 items-stretch overflow-hidden rounded-lg border border-brand-border bg-brand-surface">
         <button
           type="button"
-          aria-label={`Open ${networkLabel()} connection for master address ${hyperliquidConnection()?.masterAddress}`}
+          aria-label={`Manage ${networkLabel()} ${hyperliquidConnection()?.masterAddress}`}
           aria-haspopup="dialog"
-          aria-expanded={connectOpen()}
-          aria-controls="connect-dialog"
+          aria-expanded={settingsOpen()}
+          aria-controls="settings-dialog"
           title={networkLabel()}
           class={`flex min-w-0 items-center gap-2 px-3 transition-colors hover:bg-brand-border/30 ${
             props.compact ? "text-xs" : "text-sm"
@@ -153,7 +154,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
           onClick={handleOpenConnect}
         >
           <Show when={!props.compact}>
-            <span class="font-medium text-brand-slate-400">Master</span>
+            <span class="font-medium text-brand-slate-400">Account</span>
           </Show>
           <span class="font-mono font-medium text-slate-100">
             {shortAddress(hyperliquidConnection()?.masterAddress ?? "")}
@@ -167,7 +168,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
               ? "Copied"
               : copyState() === "failed"
                 ? "Copy failed"
-                : "Copy master address"
+                : "Copy account address"
           }
           class={`flex w-9 shrink-0 items-center justify-center border-l border-brand-border transition-colors hover:bg-brand-border/30 ${
             copyState() === "failed"
@@ -212,9 +213,9 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
         </button>
         <span class="sr-only" role="status" aria-live="polite">
           {copyState() === "copied"
-            ? "Master address copied to clipboard."
+            ? "Account address copied to clipboard."
             : copyState() === "failed"
-              ? "Could not copy the master address."
+              ? "Could not copy the account address."
               : ""}
         </span>
       </div>

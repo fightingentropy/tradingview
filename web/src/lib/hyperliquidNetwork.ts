@@ -20,7 +20,7 @@ export const hyperliquidWsUrl = () =>
 
 export const hyperliquidAppUrl = (
   network: HyperliquidDataNetwork,
-  path: "portfolio" | "settings",
+  path: "portfolio" | "settings" | "API",
 ) =>
   `${
     network === "testnet"

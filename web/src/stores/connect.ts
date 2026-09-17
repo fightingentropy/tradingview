@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import {
   apiWalletVaultUnlockPending,
   apiWalletVaultReady,
+  apiWalletVaultMetadata,
   hasSavedApiWalletVault,
 } from "./apiWalletVault";
 import {
@@ -15,13 +16,15 @@ const [connectOpen, setConnectOpen] = createSignal(false);
 const openConnect = () => setConnectOpen(true);
 const closeConnect = () => setConnectOpen(false);
 
-const apiWalletConnectionLabel = (compact = false) => {
+const apiWalletConnectionLabel = (_compact = false) => {
   if (isHyperliquidExecution()) return hyperliquidExecutionLabel();
   if (isHyperliquidConnected()) {
-    return compact ? "API paused" : "API wallet paused";
+    return "Practice mode";
   }
   if (apiWalletVaultReady() && hasSavedApiWalletVault()) {
-    return "Saved, locked";
+    return apiWalletVaultMetadata()?.network === "mainnet"
+      ? "Saved account"
+      : "Reconnect";
   }
   return "Not connected";
 };
@@ -32,7 +35,9 @@ const connectButtonLabel = (compact = false) => {
   }
   if (isHyperliquidConnected()) return apiWalletConnectionLabel(compact);
   if (apiWalletVaultReady() && hasSavedApiWalletVault()) {
-    return compact ? "Unlock" : "Unlock API wallet";
+    return apiWalletVaultMetadata()?.network === "mainnet"
+      ? "Unlock account"
+      : "Connect";
   }
   return "Connect";
 };
