@@ -17,10 +17,10 @@ export interface TradeSubmission {
   requestedSize: number;
   szDecimals: number;
   action: string;
+  orderType: OrderType;
+  limitPrice?: number;
   fullClose: boolean;
   reduceOnly: boolean;
-  /** undefined = refresh unavailable/context changed; null = confirmed flat. */
-  remainingPosition?: PositionDraft | null;
 }
 
 export interface PositionDraft {

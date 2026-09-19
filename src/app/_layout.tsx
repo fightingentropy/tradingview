@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AlertHost } from '@/components/AlertHost';
+import { TradeFeedbackHost } from '@/components/TradeFeedbackHost';
 import { SymbolMenuProvider } from '@/components/SymbolMenu';
 import { Colors } from '@/constants/theme';
 import { QueryLifecycle } from '@/hooks/QueryLifecycle';
@@ -103,6 +104,7 @@ export default function RootLayout() {
             <NewsPushRegistration />
             <PriceAlertRegistration />
             <AlertHost />
+            <TradeFeedbackHost />
           </ThemeProvider>
         </PersistQueryClientProvider>
       </SafeAreaProvider>

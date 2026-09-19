@@ -21,12 +21,12 @@ export const styles = StyleSheet.create({
     paddingBottom: Spacing.xxl,
     gap: Spacing.md,
     // A definite height lets the flexing ScrollView yield space to the fixed
-    // review dock. `maxHeight` alone can leave the sheet intrinsically sized and
+    // action dock. `maxHeight` alone can leave the sheet intrinsically sized and
     // clip the dock when a longer sizing mode is selected.
     flex: 1,
   },
   sheetFallback: { backgroundColor: Colors.surface },
-  // Give the scrolling body a bounded flex area so the review dock remains pinned
+  // Give the scrolling body a bounded flex area so the action dock remains pinned
   // even when a sizing mode (notably Risk) adds more fields than fit on screen.
   ticketContent: {
     flexGrow: 1,
@@ -341,8 +341,10 @@ export const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: GLASS_HAIRLINE,
   },
-  submitSummary: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  submitSummaryRight: { alignItems: 'flex-end' },
+  submitSummary: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', justifyContent: 'space-between' },
+  inlineFeedback: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
+  feedbackCopy: { flex: 1, gap: 4 },
+  feedbackDone: { minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.sm },
   stopDisclaimer: { textAlign: 'center' },
   submit: {
     alignItems: 'center',
@@ -377,19 +379,4 @@ export const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     backgroundColor: Colors.accentSoft,
   },
-
-  result: { alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.lg },
-  resultLegs: {
-    alignSelf: 'stretch',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: GLASS_FILL,
-  },
-  resultLegRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  resultLegCopy: { flex: 1 },
-  resultBtns: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md, alignSelf: 'stretch' },
-  resultBtn: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md },
-  resultBtnGhost: { backgroundColor: GLASS_FILL },
 });

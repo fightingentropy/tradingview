@@ -832,6 +832,22 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
   };
 }
 
+/** Fresh position facts for an order, without loading unrelated balances or venues. */
+export async function fetchHlPositionSnapshot(address: string, coin: string, network: HlNetwork = 'mainnet'): Promise<{ side: 'long' | 'short'; size: number } | null> {
+  const dex = coin.includes(':') ? coin.split(':')[0] : undefined;
+  const state = await infoRequest<RawClearinghouse>(network, {
+    type: 'clearinghouseState', user: address, ...(dex ? { dex } : {}),
+  });
+  if (!Array.isArray(state?.assetPositions) || state.assetPositions.some((entry) =>
+    typeof entry?.position?.coin !== 'string' || portfolioNumber(entry.position.szi) == null)) {
+    throw new Error('Couldn’t refresh your position. Try again.');
+  }
+  const positions = state.assetPositions.filter((entry) => entry.position.coin === coin);
+  if (positions.length > 1) throw new Error('Couldn’t verify your position. Try again.');
+  const signedSize = positions.length ? portfolioNumber(positions[0].position.szi)! : 0;
+  return signedSize === 0 ? null : { side: signedSize > 0 ? 'long' : 'short', size: Math.abs(signedSize) };
+}
+
 // ---- Portfolio history ----------------------------------------------------
 
 export interface HlPortfolioPoint {

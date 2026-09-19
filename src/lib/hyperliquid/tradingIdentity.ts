@@ -278,8 +278,14 @@ export async function verifySignedTradingIdentity(
   }
 
   let role: HlUserRole;
+  let accountRole: HlUserRole;
   try {
-    role = await fetchUserRole(signerAddress, expected.network);
+    // The reviewed account is already bound to this key. Read both public roles
+    // together, then reject any changed mapping before validating or signing.
+    [role, accountRole] = await Promise.all([
+      fetchUserRole(signerAddress, expected.network),
+      fetchUserRole(expected.accountAddress, expected.network),
+    ]);
   } catch (error) {
     throw new TradingIdentityError(
       `Could not freshly verify the API wallet; no action was sent: ${
@@ -288,17 +294,7 @@ export async function verifySignedTradingIdentity(
     );
   }
   const accountAddress = accountForVerifiedAgent(signerAddress, role);
-  let accountRole: HlUserRole;
-  try {
-    accountRole = await fetchUserRole(accountAddress, expected.network);
-  } catch (error) {
-    throw new TradingIdentityError(
-      `Could not freshly verify the API wallet’s master account; no action was sent: ${
-        error instanceof Error ? error.message : 'network error'
-      }`,
-    );
-  }
-  assertDirectMasterAccount(accountAddress, accountRole);
+  assertDirectMasterAccount(expected.accountAddress, accountRole);
   if (accountAddress !== expected.accountAddress) {
     throw new TradingIdentityError(
       'The API wallet’s master account changed after review. No action was sent.',

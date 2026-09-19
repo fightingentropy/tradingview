@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   InputAccessoryView,
   Keyboard,
@@ -34,7 +33,6 @@ import {
   placeBracket,
   placeOrder,
   updateLeverage,
-  type OrderResult,
   type TriggerLeg,
 } from '@/lib/hyperliquid/exchange';
 import {
@@ -42,7 +40,11 @@ import {
   signedIdentityBinding
 } from '@/lib/hyperliquid/tradingIdentity';
 import { queryKeys } from '@/lib/queryKeys';
-import { materiallyDifferentMid } from '@/lib/tradePreflight';
+import { submitTradeDraft } from '@/lib/tradeExecution';
+import { fetchActiveAssetData, fetchHlPositionSnapshot, fetchOrderBook } from '@/lib/hyperliquid/info';
+import { priceToWire } from '@/lib/hyperliquid/sign';
+import { tradeReceipt } from '@/lib/tradeReceipt';
+import { useTradeFeedback } from '@/store/tradeFeedback';
 import {
   defaultTradeSizeMode,
   shouldDismissTradeTicket,
@@ -53,7 +55,7 @@ import { orderRecovery } from '@/store/orderRecovery';
 
 import { ResultView } from '@/components/trading/TradeResult';
 import { GLASS_FILL, GLASS_HAIRLINE, styles } from '@/components/trading/tradeTicketStyles';
-import { ActiveSettingsDraft, CORE_FEE_ALLOWANCE, HIP3_FEE_ALLOWANCE, OrderType, PositionDraft, RiskUnit, Side, SizeMode, TradeDraft, TradePreflightError, TradeSubmission, TradeSubmissionUnknownError, adverseEntryBound, compactNumber, deriveRiskCoinSize, errorMessage, floorSize, levPresets, lossPerCoinAtBounds, lotQuantized, num, triggerLegIsValid } from '@/lib/tradeTicketModel';
+import { ActiveSettingsDraft, CORE_FEE_ALLOWANCE, HIP3_FEE_ALLOWANCE, OrderType, PositionDraft, RiskUnit, Side, SizeMode, TradeDraft, TradePreflightError, TradeSubmission, TradeSubmissionUnknownError, adverseEntryBound, compactNumber, deriveRiskCoinSize, errorMessage, floorSize, levPresets, lossPerCoinAtBounds, num, triggerLegIsValid } from '@/lib/tradeTicketModel';
 
 export interface TradeTicketProps {
   visible: boolean;
@@ -74,7 +76,7 @@ export interface TradeTicketProps {
   lockSide?: boolean;
   /** Optional sheet heading for contextual actions. */
   title?: string;
-  /** Optional verb used by the review and submit actions (e.g. "Reduce"). */
+  /** Optional verb for the submit action (e.g. "Reduce"). */
   actionLabel?: string;
   /** Prefill the size, in coins (switches the size field to coin mode). */
   initialSizeCoin?: number;
@@ -120,14 +122,13 @@ export function TradeTicket({
   const authenticatedIdentity = signedIdentityBinding(tradingIdentity);
   const recovery = useOrderRecovery(network, tradingIdentity?.accountAddress);
   const { data: meta } = useHlMeta();
-  const { data: account, refetch: refetchAccount } = useHlAccount(visible);
+  const { data: account } = useHlAccount(visible);
   const {
     data: active,
     isLoading: activeLoading,
     isError: activeError,
-    refetch: refetchActive,
-  } = useActiveAsset(coin);
-  const { data: orderBook, refetch: refetchOrderBook } = useOrderBook(
+  } = useActiveAsset(visible ? coin : undefined);
+  const { data: orderBook } = useOrderBook(
     visible ? coin : undefined,
   );
   const liveContextRef = useRef({ coin, visible, mounted: true });
@@ -159,6 +160,8 @@ export function TradeTicket({
   const [levOverride, setLevOverride] = useState<number | null>(null);
   const [crossOverride, setCrossOverride] = useState<boolean | null>(null);
   const [result, setResult] = useState<TradeSubmission | null>(null);
+  const [submitError, setSubmitError] = useState<{ title: string; message: string } | null>(null);
+  const submissionInFlight = useRef(false);
   // Optional bracket: take-profit / stop-loss to attach to a new entry.
   const [tpPrice, setTpPrice] = useState('');
   const [slPrice, setSlPrice] = useState('');
@@ -229,7 +232,7 @@ export function TradeTicket({
           })
         : num(amount);
   // Hyperliquid sizes have a fixed decimal precision. Round down in the UI so the
-  // review values exactly match the wire order and never exceed a risk/capacity limit.
+  // displayed values match the wire order and never exceed a risk/capacity limit.
   const coinSize = floorSize(rawCoinSize, assetMeta?.szDecimals ?? 4);
   const execution = estimateExecution(orderBook, isBuy, coinSize);
   const marketEntryBoundPx = adverseEntryBound(
@@ -237,14 +240,10 @@ export function TradeTicket({
     isBuy,
     marketSlippage,
   );
-  const likelyEntryPx =
-    orderType === 'limit'
-      ? limitNum > 0
-        ? limitNum
-        : sizingPx
-      : execution?.sufficientDepth
-        ? execution.averagePrice
-        : (touchPx ?? resolvedExecutionMidPx);
+  const submittedPrice = Number(priceToWire(
+    orderType === 'limit' ? limitNum : marketEntryBoundPx,
+    assetMeta?.szDecimals ?? 4,
+  ));
   const refPx =
     orderType === 'limit'
       ? limitNum > 0
@@ -351,10 +350,6 @@ export function TradeTicket({
   const slPnl = maxLoss ? -maxLoss : 0;
   const rewardRisk =
     tpNum > 0 && tpOk && maxLoss && maxLoss > 0 ? Math.max(0, tpPnl) / maxLoss : null;
-  const lossEstimateBasis =
-    orderType === 'limit'
-      ? 'Limit + stop cap + fee allowance'
-      : 'Entry IOC cap + stop cap + fee allowance';
 
   const needsSlippage = orderType === 'market' || hasBracket;
   const slippageOk = !needsSlippage || (slippagePctNum >= 0.01 && slippagePctNum <= 5);
@@ -472,333 +467,55 @@ export function TradeTicket({
   };
 
   const mutation = useMutation<TradeSubmission, unknown, TradeDraft>({
-    mutationFn: async (draft): Promise<TradeSubmission> => {
-      let leveragePostAttempted = false;
-      let leveragePostSucceeded = false;
-      let orderPostAttempted = false;
-
-      const makeSubmission = (
-        results: OrderResult[],
-        legTypes: TriggerLeg['tpsl'][],
-      ): TradeSubmission => ({
-        results,
-        legTypes,
-        coin: draft.coin,
-        network: draft.network,
-        connectionAddress: draft.connectionAddress,
-        requestedSize: draft.size,
-        szDecimals: draft.szDecimals,
-        action: draft.action,
-        fullClose: draft.fullClose,
-        reduceOnly: draft.reduceOnly,
-      });
-
-      const assertContextStillMatches = () => {
+    retry: false,
+    networkMode: 'always',
+    mutationFn: (draft) => submitTradeDraft(draft, {
+      assertCurrent: () => {
         orderRecovery.assertCanSubmit(draft.network, draft.identity.accountAddress);
         const connection = useHlConnection.getState();
-        const liveContext = liveContextRef.current;
-        if (
-          !liveContext.mounted ||
-          !liveContext.visible ||
-          liveContext.coin !== draft.coin ||
-          connection.network !== draft.network ||
-          connection.address !== draft.connectionAddress
-        ) {
-          throw new TradePreflightError(
-            'The selected account, network, or market changed after review.',
-          );
+        const live = liveContextRef.current;
+        if (!live.mounted || !live.visible || live.coin !== draft.coin ||
+            connection.network !== draft.network || connection.address !== draft.connectionAddress) {
+          throw new TradePreflightError('The account or market changed. Reopen the order.');
         }
         assertTradingIdentityCurrent(draft.identity, connection);
-      };
-
-      const validateDraftState = async (expectPostUpdateSettings: boolean) => {
-        assertContextStillMatches();
-
-        // Read the book first: the reviewed IOC cap is immutable, so later price
-        // movement can only reduce fillability, never worsen the reviewed bound.
-        const latestBookQuery =
-          draft.orderType === 'market' ? await refetchOrderBook() : null;
-
-        // Position and trigger-mark state can independently change while a slow
-        // request is in flight. Always use the completed fresh reads below;
-        // elapsed network time alone does not make an unchanged price unsafe.
-        const [latestAccountQuery, latestActiveQuery] = await Promise.all([
-          refetchAccount(),
-          draft.reduceOnly ? Promise.resolve(null) : refetchActive(),
-        ]);
-
-        // Every order, including Add/Reduce, is bound to the exact position snapshot
-        // shown in review. Compare exchange-lot-quantized sizes to avoid float noise.
-        if (latestAccountQuery.isError || !latestAccountQuery.data) {
-          throw new TradePreflightError('Could not refresh the live account state.');
-        }
-        const latestPosition = latestAccountQuery.data.positions.find(
-          (position) => position.coin === draft.coin,
-        );
-        const expectedPosition = draft.expectedPosition;
-        const positionPresenceChanged = !!latestPosition !== !!expectedPosition;
-        const positionDetailsChanged =
-          !!latestPosition &&
-          !!expectedPosition &&
-          (latestPosition.side !== expectedPosition.side ||
-            lotQuantized(latestPosition.size, draft.szDecimals) !==
-              lotQuantized(expectedPosition.size, draft.szDecimals));
-        if (positionPresenceChanged || positionDetailsChanged) {
-          throw new TradePreflightError('The live position side or size changed after review.');
-        }
-
-        if (draft.reduceOnly) {
-          const reducesLatest =
-            !!latestPosition &&
-            ((latestPosition.side === 'long' && draft.side === 'sell') ||
-              (latestPosition.side === 'short' && draft.side === 'buy'));
-          const latestSize = lotQuantized(latestPosition?.size ?? 0, draft.szDecimals);
-          const orderSize = lotQuantized(draft.size, draft.szDecimals);
-          if (!reducesLatest || orderSize > latestSize) {
-            throw new TradePreflightError('This reduce-only order no longer matches the live position.');
-          }
-          // A Close action must still flatten the exact live lot-quantized size.
-          if (draft.fullClose && orderSize !== latestSize) {
-            throw new TradePreflightError('The full-close size changed after review.');
-          }
-        }
-
-        let freshActive: Awaited<ReturnType<typeof refetchActive>>['data'];
-        if (!draft.reduceOnly) {
-          freshActive =
-            !latestActiveQuery || latestActiveQuery.isError
-              ? undefined
-              : latestActiveQuery.data;
-          if (expectPostUpdateSettings) {
-            if (!freshActive) {
-              throw new TradePreflightError(
-                'Could not confirm the requested leverage and margin mode.',
-              );
-            }
-            if (
-              freshActive.leverage !== draft.leverage ||
-              freshActive.isCross !== draft.isCross
-            ) {
-              throw new TradePreflightError(
-                'The requested leverage or margin mode is not active yet.',
-              );
-            }
-          } else if (draft.expectedActive) {
-            if (!freshActive) {
-              throw new TradePreflightError('Could not refresh leverage and margin settings.');
-            }
-            if (
-              freshActive.leverage !== draft.expectedActive.leverage ||
-              freshActive.isCross !== draft.expectedActive.isCross
-            ) {
-              throw new TradePreflightError('Leverage or margin mode changed after review.');
-            }
-          } else if (
-            freshActive &&
-            (freshActive.leverage !== draft.leverage || freshActive.isCross !== draft.isCross)
-          ) {
-            throw new TradePreflightError(
-              'Live leverage settings became available and differ from the reviewed safe fallback.',
-            );
-          }
-
-          if (draft.triggers.length > 0) {
-            const freshTriggerMarkPx = freshActive?.markPx;
-            if (!freshTriggerMarkPx || freshTriggerMarkPx <= 0) {
-              throw new TradePreflightError('Could not refresh the TP/SL trigger mark.');
-            }
-            const reviewedTriggersValid = draft.triggers.every((leg) =>
-              triggerLegIsValid(
-                leg,
-                draft.side,
-                draft.riskEntryPx,
-                draft.triggerMarkPx,
-                draft.slippage,
-              ),
-            );
-            const freshTriggersValid = draft.triggers.every((leg) =>
-              triggerLegIsValid(
-                leg,
-                draft.side,
-                draft.riskEntryPx,
-                freshTriggerMarkPx,
-                draft.slippage,
-              ),
-            );
-            if (!reviewedTriggersValid || freshTriggersValid !== reviewedTriggersValid) {
-              throw new TradePreflightError('A TP/SL trigger is no longer valid at the fresh mark.');
-            }
-          }
-        }
-
-        if (draft.orderType === 'market') {
-          const latestBook =
-            !latestBookQuery || latestBookQuery.isError ? undefined : latestBookQuery.data;
-          const latestBid = latestBook?.bids[0]?.price;
-          const latestAsk = latestBook?.asks[0]?.price;
-          if (!(latestBid && latestBid > 0 && latestAsk && latestAsk > 0)) {
-            throw new TradePreflightError('Could not refresh both sides of the order book.');
-          }
-          const freshMid = (latestBid + latestAsk) / 2;
-          if (materiallyDifferentMid(draft.executionMidPx, freshMid, draft.slippage)) {
-            throw new TradePreflightError('The execution midpoint moved materially after review.');
-          }
-          const reviewedHardCap = adverseEntryBound(
-            draft.executionMidPx,
-            draft.side === 'buy',
-            draft.slippage,
-          );
-          if (Math.abs(reviewedHardCap - draft.hardIocPx) > Math.max(1e-10, reviewedHardCap * 1e-12)) {
-            throw new TradePreflightError('The reviewed IOC cap is internally inconsistent.');
-          }
-        }
-
-        // Network/market/account may change while the three fresh reads are in flight.
-        assertContextStillMatches();
-      };
-
-      try {
-        // Fail early for a clear no-POST error, then repeat the same checks from
-        // the exchange's post-identity, immediately-before-signing callback.
-        await validateDraftState(false);
-
-        if (draft.needsLeverageUpdate) {
-          await updateLeverage({
-            network: draft.network,
-            recoveryCoin: draft.coin,
-            identity: draft.identity,
-            validateImmediatelyBeforeSigning: () => validateDraftState(false),
-            assertIdentityCurrent: assertContextStillMatches,
-            assetIndex: draft.assetIndex,
-            isCross: draft.isCross,
-            leverage: draft.leverage,
-            onPostAttempt: () => {
-              leveragePostAttempted = true;
-            },
-          });
-          leveragePostSucceeded = true;
-          // The settings POST yielded control; do not continue into an order if the
-          // user changed account/network/market while it was in flight.
-          assertContextStillMatches();
-        }
-
-        const legs: TriggerLeg[] = draft.triggers.map((leg) => ({ ...leg }));
-        if (legs.length > 0) {
-          const results = await placeBracket({
-            network: draft.network,
-            recoveryCoin: draft.coin,
-            identity: draft.identity,
-            validateImmediatelyBeforeSigning: () =>
-              validateDraftState(draft.needsLeverageUpdate),
-            assertIdentityCurrent: assertContextStillMatches,
-            assetIndex: draft.assetIndex,
-            szDecimals: draft.szDecimals,
-            isBuy: draft.side === 'buy',
-            size: draft.size,
-            limitPrice: draft.orderType === 'limit' ? draft.limitPrice : undefined,
-            postOnly: draft.orderType === 'limit' && draft.postOnly,
-            markPx: draft.executionMidPx,
-            slippage: draft.slippage,
-            legs,
-            onPostAttempt: () => {
-              orderPostAttempted = true;
-            },
-          });
-          if (!results[0]) throw new Error('Hyperliquid returned no parent order status');
-          return makeSubmission(results, legs.map((leg) => leg.tpsl));
-        }
-
-        const result = await placeOrder({
-          network: draft.network,
-          recoveryCoin: draft.coin,
-          identity: draft.identity,
-          validateImmediatelyBeforeSigning: () =>
-            validateDraftState(draft.needsLeverageUpdate),
-          assertIdentityCurrent: assertContextStillMatches,
-          assetIndex: draft.assetIndex,
-          szDecimals: draft.szDecimals,
-          isBuy: draft.side === 'buy',
-          size: draft.size,
-          reduceOnly: draft.reduceOnly,
-          limitPrice: draft.orderType === 'limit' ? draft.limitPrice : undefined,
-          postOnly: draft.orderType === 'limit' && draft.postOnly,
-          markPx: draft.executionMidPx,
-          slippage: draft.slippage,
-          onPostAttempt: () => {
-            orderPostAttempted = true;
-          },
-        });
-        return makeSubmission([result], []);
-      } catch (error) {
-        if (error instanceof OrderRejectedError) throw error;
-        if (leveragePostAttempted || orderPostAttempted) {
-          throw new TradeSubmissionUnknownError(
-            errorMessage(error),
-            leveragePostAttempted,
-            leveragePostSucceeded,
-            orderPostAttempted,
-          );
-        }
-        if (error instanceof TradePreflightError) throw error;
-        throw new TradePreflightError(errorMessage(error));
-      }
-    },
-    onSuccess: async (submission) => {
-      let remainingPosition: PositionDraft | null | undefined;
-      const latestAccountQuery = await refetchAccount().catch(() => null);
-      const connection = useHlConnection.getState();
-      const liveContext = liveContextRef.current;
-      const sameReviewedIdentity =
-        liveContext.mounted &&
-        liveContext.visible &&
-        liveContext.coin === submission.coin &&
-        connection.network === submission.network &&
-        connection.address === submission.connectionAddress;
-      if (
-        sameReviewedIdentity &&
-        latestAccountQuery &&
-        !latestAccountQuery.isError &&
-        latestAccountQuery.data
-      ) {
-        const remaining = latestAccountQuery.data.positions.find(
-          (position) => position.coin === submission.coin,
-        );
-        remainingPosition = remaining
-          ? Object.freeze({ side: remaining.side, size: remaining.size })
-          : null;
-      }
-      if (sameReviewedIdentity) {
-        setResult({ ...submission, remainingPosition });
-      }
+      },
+      readPosition: () => fetchHlPositionSnapshot(draft.identity.accountAddress, draft.coin, draft.network),
+      readBook: () => fetchOrderBook(draft.coin, draft.network),
+      readActive: () => fetchActiveAssetData(draft.identity.accountAddress, draft.coin, draft.network).catch(() => undefined),
+      placeOrder, placeBracket, updateLeverage,
+    }),
+    onSuccess: (submission) => {
       invalidateTradingState();
+      const connection = useHlConnection.getState();
+      const live = liveContextRef.current;
+      if (!live.mounted || !live.visible || live.coin !== submission.coin ||
+          connection.network !== submission.network || connection.address !== submission.connectionAddress) return;
+      const receipt = tradeReceipt(submission, label, priceDecimals);
+      if (receipt.dismiss) {
+        useTradeFeedback.getState().show(receipt);
+        reset();
+        onClose();
+      } else {
+        setResult(submission);
+      }
     },
     onError: (error) => {
+      invalidateTradingState();
       if (error instanceof OrderRejectedError) {
-        invalidateTradingState();
-        Alert.alert('Order rejected', `${error.message}\n\nThe exchange rejected this order. Review the refreshed ticket before trying again.`);
-        return;
+        setSubmitError({ title: 'Order not placed', message: error.message });
+      } else if (error instanceof TradeSubmissionUnknownError) {
+        setSubmitError({
+          title: error.orderPostAttempted ? 'Checking order status' : 'Check leverage settings',
+          message: error.orderPostAttempted
+            ? 'Your order may be live. Check Account before trying again.'
+            : 'No order was sent. Your leverage settings may have changed.',
+        });
+      } else {
+        setSubmitError({ title: 'Order not sent', message: errorMessage(error) });
       }
-      if (error instanceof TradeSubmissionUnknownError) {
-        invalidateTradingState();
-        const leverageWarning = error.leveragePostAttempted
-          ? error.leveragePostSucceeded
-            ? '\n\nLeverage/margin mode was updated before the order result became unknown.'
-            : '\n\nThe leverage/margin update may already have changed settings, even if no order was placed.'
-          : '';
-        const orderWarning = error.orderPostAttempted
-          ? '\n\nThe order POST began, so its fill/resting status is unknown.'
-          : '\n\nNo order POST began, but an earlier account-setting POST may have changed state.';
-        Alert.alert(
-          'Submission status unknown',
-          `${error.message}${leverageWarning}${orderWarning}\n\nIf an order POST began, new orders are paused while its saved order IDs are checked. Open Account to review the recovered status.`,
-        );
-        return;
-      }
-      Alert.alert(
-        'Review required',
-        `${errorMessage(error)}\n\nNo order was sent. Review the refreshed ticket and confirm again.`,
-      );
     },
+    onSettled: () => { submissionInFlight.current = false; },
   });
 
   const reset = () => {
@@ -819,6 +536,7 @@ export function TradeTicket({
     setLevOverride(null);
     setCrossOverride(null);
     setResult(null);
+    setSubmitError(null);
     mutation.reset();
   };
 
@@ -878,8 +596,8 @@ export function TradeTicket({
 
   const submitVerb = actionLabel ?? (closing ? 'Close' : side === 'buy' ? 'Buy' : 'Sell');
 
-  const confirm = () => {
-    if (!canSubmit || !assetMeta || !account || !authenticatedIdentity) return;
+  const submit = () => {
+    if (submissionInFlight.current || mutation.isPending || result || !canSubmit || !assetMeta || !account || !authenticatedIdentity) return;
     const draftTriggers: readonly Readonly<TriggerLeg>[] = Object.freeze(
       !closing && !reduceOnly
         ? [
@@ -932,61 +650,12 @@ export function TradeTicket({
       expectedPosition,
       triggers: draftTriggers,
     });
-    const verb = submitVerb;
-    const sizeStr = `${compactNumber(draft.size, draft.szDecimals)} ${label}`;
-    const priceStr =
-      orderType === 'market'
-        ? execution?.sufficientDepth
-          ? `likely $${formatPrice(likelyEntryPx, priceDecimals)} (book VWAP)`
-          : `up to $${formatPrice(marketEntryBoundPx, priceDecimals)} (IOC cap)`
-        : `$${formatPrice(num(limitPrice), priceDecimals)} (limit)`;
-    const levLine = !closing ? `\nLeverage ${leverage}× ${isCross ? 'Cross' : 'Isolated'}` : '';
-    const riskLine =
-      closing || reduceOnly
-        ? ''
-        : maxLoss
-          ? `\nEst. loss at hard entry/stop caps + fees* ${usd(maxLoss)}`
-          : '\nNo stop — loss is not capped';
-    const rrLine = rewardRisk ? ` · R:R 1:${rewardRisk.toFixed(2)}` : '';
-    const executionLine =
-      orderType === 'market'
-        ? `\nIOC cap $${formatPrice(marketEntryBoundPx, priceDecimals)} · ${slippagePctNum.toFixed(2)}%`
-        : postOnly
-          ? '\nPost-only limit'
-          : '';
-    const tpSlLine =
-      !closing && (tpNum > 0 || slNum > 0)
-        ? '\n' +
-          [
-            tpNum > 0 ? `TP $${formatPrice(tpNum, priceDecimals)}` : '',
-            slNum > 0 ? `SL $${formatPrice(slNum, priceDecimals)}` : '',
-          ]
-            .filter(Boolean)
-            .join(' · ')
-        : '';
-    Alert.alert(
-      `${verb} ${label}?`,
-      `${verb} ${sizeStr} ≈ ${usd(notional)}\nat ${priceStr}` +
-        levLine +
-        tpSlLine +
-        riskLine +
-        rrLine +
-        executionLine +
-        (positionImplication ? `\nPosition if filled: ${positionImplication}` : '') +
-        (reduceOnly ? '\nReduce-only' : '') +
-        (network === 'mainnet' ? '\n\nThis uses real funds on mainnet.' : '\n\nTestnet order.') +
-        (maxLoss
-          ? `\n*Uses ${lossEstimateBasis.toLowerCase()} at ${(feeRate * 100).toFixed(2)}% per fill; partial/unfilled stops can lose more.`
-          : ''),
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: verb,
-          style: side === 'buy' ? 'default' : 'destructive',
-          onPress: () => mutation.mutate(draft),
-        },
-      ],
-    );
+    // The final, explicitly labelled Buy/Sell button approves this exact snapshot.
+    // A synchronous latch catches double taps before React can disable the button.
+    submissionInFlight.current = true;
+    setSubmitError(null);
+    Keyboard.dismiss();
+    mutation.mutate(draft);
   };
 
   const presets = levPresets(maxLev);
@@ -1051,19 +720,11 @@ export function TradeTicket({
             </View>
           </View>
 
-          <OrderRecoveryNotice network={network} address={tradingIdentity?.accountAddress} />
-          {result ? (
-            <ResultView
-              coin={label}
-              submission={result}
-              priceDecimals={priceDecimals}
-              onDone={close}
-              onAgain={reset}
-            />
-          ) : (
+          {!mutation.isPending ? <OrderRecoveryNotice network={network} address={tradingIdentity?.accountAddress} /> : null}
             <View style={styles.ticketContent}>
               <ScrollView
                 {...sheetPanResponder.panHandlers}
+                pointerEvents={mutation.isPending || result ? 'none' : 'auto'}
                 style={styles.body}
                 bounces={false}
                 contentContainerStyle={styles.bodyContent}
@@ -1117,8 +778,8 @@ export function TradeTicket({
                   />
                   <AppText variant="caption" muted>
                     {closing
-                      ? `Reduce-only ${side === 'buy' ? 'buy' : 'sell'} to close your position`
-                      : `${side === 'buy' ? 'Buy / Long' : 'Sell / Short'} side locked for this action`}
+                      ? `Closes your position only`
+                      : `${side === 'buy' ? 'Buy / Long' : 'Sell / Short'}`}
                   </AppText>
                 </View>
               ) : (
@@ -1146,7 +807,7 @@ export function TradeTicket({
 
               <View style={styles.availableRow}>
                 <AppText variant="caption" muted>
-                  Avail. to Trade
+                  Available
                 </AppText>
                 <AppText variant="label" numeric color={Colors.text}>
                   {account?.totalEquityLoaded === true ? `${compactNumber(avail, 2)} USDC` : '—'}
@@ -1242,7 +903,7 @@ export function TradeTicket({
                         <View style={styles.levRow}>
                           <View>
                             <AppText variant="caption" muted>
-                              Market slippage cap
+                              Price tolerance
                             </AppText>
                             <AppText variant="caption" muted>
                               0.01%–5%
@@ -1287,7 +948,7 @@ export function TradeTicket({
                                   Post-only
                                 </AppText>
                                 <AppText variant="caption" muted>
-                                  Cancel instead of taking liquidity
+                                  Only place if it can wait for a match
                                 </AppText>
                               </View>
                               <Pressable
@@ -1557,27 +1218,27 @@ export function TradeTicket({
                 </View>
               ) : null}
 
-              {/* Order summary */}
+              {/* Essential order figures; optional estimates stay with settings. */}
               <View style={styles.infoCard}>
-                {!closing && !reduceOnly ? (
+                {advancedOpen && liqPrice && !closing && !reduceOnly ? (
                   <InfoRow
-                    label="Liquidation Price"
+                    label="Est. liquidation"
                     value={liqPrice ? `$${formatPrice(liqPrice, priceDecimals)}` : 'N/A'}
                     valueColor={liqPrice ? Colors.down : Colors.textMuted}
                   />
                 ) : null}
                 <InfoRow
-                  label="Order Value"
+                  label="Order value"
                   value={notional > 0 ? `${compactNumber(notional, 2)} USDC` : '—'}
                 />
                 {!closing && !reduceOnly ? (
                   <InfoRow
-                    label="Margin Required"
+                    label="Margin"
                     value={marginRequired > 0 ? `${compactNumber(marginRequired, 2)} USDC` : '—'}
                   />
                 ) : null}
-                <InfoRow
-                  label="Slippage"
+                {advancedOpen ? <InfoRow
+                  label="Price tolerance"
                   value={
                     orderType === 'market'
                       ? `Max ${slippagePctNum.toFixed(2)}%`
@@ -1586,7 +1247,7 @@ export function TradeTicket({
                         : 'Limit price'
                   }
                   valueColor={orderType === 'market' ? Colors.accent : Colors.text}
-                />
+                /> : null}
               </View>
 
               {visibleDepthShort && execution ? (
@@ -1598,7 +1259,7 @@ export function TradeTicket({
               ) : null}
               {estimatedBeyondCap ? (
                 <AppText variant="caption" color={Colors.warning} style={styles.hint}>
-                  The estimated average fill is beyond your slippage cap; the IOC may fill only part of the order.
+                  This price limit may only fill part of your order.
                 </AppText>
               ) : null}
 
@@ -1606,20 +1267,20 @@ export function TradeTicket({
               {!tradable ? (
                 <AppText variant="caption" color={Colors.warning} style={styles.hint}>
                   {demo
-                    ? 'Demo account is read-only. Connect your own account with an API key in Settings to trade.'
-                    : 'Add an API wallet key in Settings to enable trading.'}
+                    ? 'Preview only. Connect your account to trade.'
+                    : 'Connect your API key in Settings to trade.'}
                 </AppText>
               ) : null}
               {tradable && sizeMode === 'risk' && !riskOk ? (
                 <AppText variant="caption" color={Colors.warning} style={styles.hint}>
                   {percentageRiskUnavailable && riskUnit === 'percent'
-                    ? 'Portfolio Margin does not expose a safe percentage-sizing base. Switch to $ risk.'
+                    ? 'Use a dollar risk amount with Portfolio Margin.'
                     : 'Enter a risk amount and a stop on the loss side of the entry price.'}
                 </AppText>
               ) : null}
               {tradable && !slippageOk ? (
                 <AppText variant="caption" color={Colors.warning} style={styles.hint}>
-                  Set market slippage between 0.01% and 5% under Advanced.
+                  Set price tolerance between 0.01% and 5% in Order settings.
                 </AppText>
               ) : null}
               {tradable && !withinCapacity ? (
@@ -1644,6 +1305,17 @@ export function TradeTicket({
 
               {/* Always-visible action, matching the reference ticket's full-width order button. */}
               <View style={styles.submitDock}>
+                {result ? <ResultView coin={label} submission={result} priceDecimals={priceDecimals} onDone={close} /> : <>
+                {submitError ? <View style={styles.inlineFeedback} accessibilityLiveRegion="polite">
+                  <Ionicons name="alert-circle-outline" size={21} color={Colors.warning} />
+                  <View style={styles.feedbackCopy}><AppText variant="label" color={Colors.warning}>{submitError.title}</AppText><AppText variant="caption">{submitError.message}</AppText></View>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Dismiss order message" onPress={() => setSubmitError(null)} hitSlop={10}><Ionicons name="close" size={18} color={Colors.textMuted} /></Pressable>
+                </View> : null}
+                <View style={styles.submitSummary}>
+                  <AppText variant="label" numeric>{coinSize > 0 ? `${compactNumber(coinSize, assetMeta?.szDecimals ?? 4)} ${label}` : label}</AppText>
+                  <AppText variant="caption" numeric muted>{orderType === 'limit' ? 'Limit' : isBuy ? 'Max' : 'Min'} {submittedPrice > 0 ? `$${formatPrice(submittedPrice, priceDecimals)}` : '—'}</AppText>
+                </View>
+                {currentPosition && positionImplication ? <AppText variant="caption" muted numeric>{positionImplication}</AppText> : null}
                 <Pressable
                   style={[
                     styles.submit,
@@ -1652,9 +1324,9 @@ export function TradeTicket({
                       borderColor: canSubmit ? sideColor : GLASS_HAIRLINE,
                     },
                   ]}
-                  onPress={confirm}
+                  onPress={submit}
                   accessibilityRole="button"
-                  accessibilityLabel={mutation.isPending ? 'Submitting order' : closing || actionLabel ? `${submitVerb} ${label}` : 'Review order'}
+                  accessibilityLabel={mutation.isPending ? 'Submitting order' : `${submitVerb} ${compactNumber(coinSize, assetMeta?.szDecimals ?? 4)} ${label} ${orderType} order`}
                   disabled={!canSubmit || mutation.isPending}
                   accessibilityState={{
                     disabled: !canSubmit || mutation.isPending,
@@ -1666,7 +1338,7 @@ export function TradeTicket({
                     </View>
                   ) : (
                     <AppText variant="label" color={canSubmit ? sideColor : Colors.textFaint}>
-                      {closing || actionLabel ? `${submitVerb} ${label}` : 'Review order'}
+                      {`${submitVerb} ${label}`}
                     </AppText>
                   )}
                 </Pressable>
@@ -1675,15 +1347,15 @@ export function TradeTicket({
                     Estimated using the price limit and fees. Losses can be larger if a stop fills partly or not at all.
                   </AppText>
                 ) : null}
+                </>}
               </View>
             </View>
-          )}
           </SheetSurface>
         </Animated.View>
 
         {/* Above-keyboard bar: decimal-pads have no Done key, so this is the only
             way to dismiss. Steppers nudge the focused field. */}
-        {Platform.OS === 'ios' && !result ? (
+        {Platform.OS === 'ios' && !result && !mutation.isPending ? (
           <InputAccessoryView nativeID={ACCESSORY_ID} backgroundColor={Colors.background}>
             <View style={styles.accessory}>
               <View style={styles.steppers}>
@@ -1703,7 +1375,7 @@ export function TradeTicket({
                   : focused === 'sl'
                     ? 'Stop loss'
                     : focused === 'slippage'
-                      ? 'Slippage cap · %'
+                      ? 'Price tolerance · %'
                       : sizeMode === 'risk'
                         ? `Account risk · ${riskUnit === 'usd' ? 'USD' : '%'}`
                         : `Size · ${sizeMode === 'usd' ? 'USD' : label}`}
