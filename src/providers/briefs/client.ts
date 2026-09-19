@@ -1,5 +1,5 @@
 // The native and web readers share the same publication and safe Markdown parser.
-import { parseBriefIndex, parseBriefPayload, type BriefEntry } from '../../../web/src/lib/dailyBriefFeed';
+import { parseBriefIndex, parseBriefPayload, type BriefEntry } from '@tradingview/shared/brief-feed';
 
 export const DAILY_BRIEF_URL = 'https://trade.erlin.org/brief';
 const FEED_URL = 'https://trade.erlin.org/api/daily-briefs';

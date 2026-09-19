@@ -1,8 +1,8 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from 'solid-js';
 import { editionStatus, formatBriefDate, type DailyBrief } from '../lib/dailyBrief';
 import { parseBriefIndex, parseBriefPayload } from '../lib/dailyBriefFeed';
-import BriefContent from './BriefContent';
 import './Brief.css';
+import BriefContent from './BriefContent';
 
 const ChevronDown: Component = () => (
   <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -112,9 +112,7 @@ const Brief: Component = () => {
       <div class="brief-frame">
         <header class="brief-masthead">
           <div>
-            <div class="brief-eyebrow">Markets & perspective</div>
             <h1>Daily brief<span aria-hidden="true">.</span></h1>
-            <p>What changed. Why it matters. What comes next.</p>
           </div>
           <Show when={edition()}>{(brief) => <a class="brief-download" download={`market-overview-${brief().id}.md`} href={`data:text/markdown;charset=utf-8,${encodeURIComponent(brief().raw)}`}>
             <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg>
@@ -146,14 +144,17 @@ const Brief: Component = () => {
 
           <article class="brief-article" aria-labelledby="brief-title" aria-busy={loading()}>
             <div class="brief-article-header">
-              <div class="brief-publication-line"><span classList={{ 'brief-status': true, 'brief-status-today': status() === 'today' }}>{status() === 'today' ? "Today's edition" : 'Latest available edition'}</span><time dateTime={brief().id}>{formatBriefDate(brief().id)}</time></div>
+              <div class="brief-publication-line"><span classList={{ 'brief-status': true, 'brief-status-today': status() === 'today' }}>{status() === 'today' ? "Today's edition" : 'Latest available edition'}</span></div>
               <h2 id="brief-title">{brief().title}</h2>
-              <Show when={status() !== 'today'}><p class="brief-cutoff-note">A newer brief has not been published yet. Figures reflect the cutoff below.</p></Show>
-              <dl class="brief-metadata">
+              <Show when={status() !== 'today'}><p class="brief-cutoff-note">A newer brief has not been published yet. Open About this brief for data times.</p></Show>
+              <details class="brief-about">
+                <summary><span>About this brief</span><ChevronDown /></summary>
+                <dl class="brief-metadata">
                 <div><dt>Generated</dt><dd>{brief().generated.slice(11)} <span>Europe/London</span></dd></div>
                 <div><dt>Market state</dt><dd>{brief().marketState}</dd></div>
                 <div class="brief-cutoff"><dt>Data cutoff</dt><dd>{brief().cutoff}</dd></div>
-              </dl>
+                </dl>
+              </details>
             </div>
 
             <div class="brief-mobile-contents">

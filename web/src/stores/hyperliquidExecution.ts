@@ -6,200 +6,29 @@ import type {
 import type { ExchangeSingleWalletConfig } from "@nktkas/hyperliquid/api/exchange";
 import type { SymbolConverter } from "@nktkas/hyperliquid/utils";
 import { createMemo, createRoot, createSignal, onCleanup } from "solid-js";
-import { setHyperliquidDataNetwork } from "../lib/hyperliquidNetwork";
 import { resolveApiWalletAccount } from "../lib/apiWalletAccount";
+import { availableSpotBalance, borrowedSpotBalance, derivePortfolioMarginSummary, marketSymbol, normalizeAccountTransfer, normalizeCumulativeFunding, normalizeFeeSummary, normalizeFundingPayment, normalizeHistoricalOrder, normalizeInterestPayment, normalizePortfolioSnapshots, normalizeTradeFill, normalizeTwapOrder, parseCollateralLtv, parseNumber, requiresMaintenanceAvailability } from "../lib/hyperliquidAccountData";
+import { setHyperliquidDataNetwork } from "../lib/hyperliquidNetwork";
 
-type HyperliquidExecutionSdk =
+type HyperliquidExecutionSdk=
   typeof import("../lib/hyperliquidExecutionSdk");
 
-let hyperliquidExecutionSdkPromise: Promise<HyperliquidExecutionSdk> | null =
+let hyperliquidExecutionSdkPromise: Promise<HyperliquidExecutionSdk>|null=
   null;
 
-const loadHyperliquidExecutionSdk = () => {
-  hyperliquidExecutionSdkPromise ??= import(
+const loadHyperliquidExecutionSdk=() => {
+  hyperliquidExecutionSdkPromise??=import(
     "../lib/hyperliquidExecutionSdk"
   );
   return hyperliquidExecutionSdkPromise;
 };
 
-export const preloadHyperliquidExecutionSdk = () => {
+export const preloadHyperliquidExecutionSdk=() => {
   void loadHyperliquidExecutionSdk();
 };
 
-export type HyperliquidNetwork = "testnet" | "mainnet";
-export type HyperliquidAccountMode =
-  | "default"
-  | "disabled"
-  | "unifiedAccount"
-  | "portfolioMargin";
-
-export type HyperliquidLiveOrder = {
-  oid: number;
-  symbol: string;
-  side: "buy" | "sell";
-  type: "market" | "limit";
-  price: number;
-  size: number;
-  originalSize: number;
-  createdAt: number;
-  reduceOnly: boolean;
-  isTrigger: boolean;
-  isPositionTpsl: boolean;
-  orderType: string;
-  triggerPrice?: number;
-};
-
-export type HyperliquidLivePosition = {
-  symbol: string;
-  size: number;
-  entryPrice: number;
-  markPrice: number;
-  leverage: number;
-  marginType: "isolated" | "cross";
-  liquidationPrice?: number;
-  marginUsed: number;
-  unrealizedPnl: number;
-  returnOnEquity: number;
-  cumulativeFunding: number;
-};
-
-export type HyperliquidTradeFill = {
-  time: number;
-  symbol: string;
-  direction: string;
-  side: "buy" | "sell";
-  price: number;
-  size: number;
-  tradeValue: number;
-  fee: number;
-  feeToken: string;
-  closedPnl: number;
-  orderId: number;
-};
-
-export type HyperliquidFundingPayment = {
-  time: number;
-  symbol: string;
-  size: number;
-  side: "long" | "short";
-  payment: number;
-  rate: number;
-};
-
-export type HyperliquidHistoricalOrder = {
-  time: number;
-  createdAt: number;
-  orderId: number;
-  symbol: string;
-  side: "buy" | "sell";
-  type: string;
-  size: number;
-  filledSize: number;
-  orderValue: number;
-  price: number;
-  reduceOnly: boolean;
-  triggerCondition: string;
-  tpsl: string;
-  status: string;
-};
-
-export type HyperliquidTwapOrder = {
-  twapId?: number;
-  symbol: string;
-  side: "buy" | "sell";
-  size: number;
-  executedSize: number;
-  averagePrice?: number;
-  totalMinutes: number;
-  triggerPrice?: number;
-  stopPrice?: number;
-  reduceOnly: boolean;
-  createdAt: number;
-  status: "activated" | "waitingForTrigger";
-};
-
-export type HyperliquidPortfolioPeriod =
-  | "day"
-  | "week"
-  | "month"
-  | "allTime"
-  | "perpDay"
-  | "perpWeek"
-  | "perpMonth"
-  | "perpAllTime";
-
-export type HyperliquidPortfolioSnapshot = {
-  accountValueHistory: Array<{ time: number; value: number }>;
-  pnlHistory: Array<{ time: number; value: number }>;
-  volume: number;
-};
-
-export type HyperliquidFeeSummary = {
-  volume14d: number;
-  perpTakerRate: number;
-  perpMakerRate: number;
-  spotTakerRate: number;
-  spotMakerRate: number;
-};
-
-export type HyperliquidPortfolioMarginSummary = {
-  marginRatio?: number;
-  portfolioValue?: number;
-  unrealizedPnl: number;
-  borrowCapUsed?: number;
-  perpsMaintenanceMargin: number;
-  accountLeverage?: number;
-};
-
-export type HyperliquidInterestPayment = {
-  time: number;
-  asset: string;
-  paid: number;
-  earned: number;
-};
-
-export type HyperliquidAccountTransfer = {
-  time: number;
-  status: "Complete";
-  action: string;
-  source: string;
-  destination: string;
-  amount: number;
-  asset: string;
-  fee?: number;
-  feeAsset?: string;
-};
-
-export type HyperliquidConnection = {
-  network: HyperliquidNetwork;
-  masterAddress: `0x${string}`;
-  agentAddress: `0x${string}`;
-  agentName?: string;
-  agentValidUntil?: number;
-};
-
-type ConnectInput = {
-  network?: HyperliquidNetwork;
-  masterAddress?: string;
-  apiWalletPrivateKey: string;
-};
-
-type PlaceOrderInput = {
-  symbol: string;
-  side: "buy" | "sell";
-  type: "market" | "limit";
-  size: number;
-  price?: number;
-  leverage?: number;
-  marginType?: "isolated" | "cross";
-  reduceOnly?: boolean;
-  marketType?: "perp" | "spot";
-};
-
-type ActionResult =
-  | { ok: true; message?: string }
-  | { ok: false; error: string };
-
+import type { ActionResult, ConnectInput, HyperliquidAccountMode, HyperliquidAccountTransfer, HyperliquidConnection, HyperliquidFeeSummary, HyperliquidFundingPayment, HyperliquidHistoricalOrder, HyperliquidInterestPayment, HyperliquidLiveOrder, HyperliquidLivePosition, HyperliquidNetwork, HyperliquidPortfolioMarginSummary, HyperliquidPortfolioPeriod, HyperliquidPortfolioSnapshot, HyperliquidTradeFill, HyperliquidTwapOrder, PlaceOrderInput } from "../lib/hyperliquidExecutionTypes";
+export type * from "../lib/hyperliquidExecutionTypes";
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const PRIVATE_KEY_PATTERN = /^(?:0x)?[0-9a-fA-F]{64}$/;
 const NONCE_STORAGE_PREFIX = "trade-xyz-hyperliquid-nonce-v1";
@@ -252,187 +81,6 @@ type PerpDexAccountSnapshot = {
   dex: string;
   state: Awaited<ReturnType<InfoClient["clearinghouseState"]>>;
   orders: Awaited<ReturnType<InfoClient["frontendOpenOrders"]>>;
-};
-
-const parseNumber = (value: unknown): number => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const normalizeCumulativeFunding = (value: unknown): number => {
-  // Hyperliquid reports cumulative funding from the payment perspective:
-  // positive means the trader paid, while negative means they received.
-  // The account UI displays cash flow, so invert that convention here.
-  const payment = parseNumber(value);
-  return payment === 0 ? 0 : -payment;
-};
-
-const parseOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === "") return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-};
-
-const parseCollateralLtv = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === "") return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
-    ? parsed
-    : undefined;
-};
-
-const availableSpotBalance = (
-  total: unknown,
-  hold: unknown,
-  availableAfterMaintenance?: unknown,
-  requireMaintenanceAvailability = false,
-) =>
-  Math.max(
-    availableAfterMaintenance === undefined
-      ? requireMaintenanceAvailability
-        ? 0
-        : parseNumber(total) - parseNumber(hold)
-      : parseNumber(availableAfterMaintenance),
-    0,
-  );
-
-const borrowedSpotBalance = (borrowed: unknown, total: unknown) => {
-  const reportedBorrowed = parseOptionalNumber(borrowed);
-  if (reportedBorrowed !== undefined) return Math.max(reportedBorrowed, 0);
-  return Math.max(-parseNumber(total), 0);
-};
-
-const requiresMaintenanceAvailability = (mode: HyperliquidAccountMode) =>
-  mode === "unifiedAccount" || mode === "portfolioMargin";
-
-type PortfolioMarginSpotStateInput = {
-  portfolioMarginRatio?: unknown;
-  tokenToPortfolioBorrowRatio?: Array<readonly [number, unknown]>;
-  balances: Array<{
-    coin: string;
-    total: unknown;
-    ltv?: unknown;
-  }>;
-};
-
-type PortfolioMarginPerpStateInput = {
-  marginSummary: { totalNtlPos: unknown };
-  crossMaintenanceMarginUsed: unknown;
-  assetPositions: Array<{
-    position: { unrealizedPnl: unknown };
-  }>;
-};
-
-const buildSpotUsdPriceMap = (referencePrices: Record<string, number>) => {
-  const usdPrices = new Map<string, number>([["USDC", 1]]);
-  const spotPairs = Object.entries(referencePrices).flatMap(
-    ([symbol, rawPrice]) => {
-      const [base, quote, extra] = symbol.toUpperCase().split("/");
-      const price = Number(rawPrice);
-      return !extra && base && quote && Number.isFinite(price) && price > 0
-        ? [{ base, quote, price }]
-        : [];
-    },
-  );
-
-  // Resolve quoted spot pairs into USDC, including reverse and multi-hop pairs.
-  for (let pass = 0; pass <= spotPairs.length; pass += 1) {
-    let changed = false;
-    for (const { base, quote, price } of spotPairs) {
-      const baseUsd = usdPrices.get(base);
-      const quoteUsd = usdPrices.get(quote);
-      if (quoteUsd !== undefined && baseUsd === undefined) {
-        usdPrices.set(base, price * quoteUsd);
-        changed = true;
-      }
-      if (baseUsd !== undefined && quoteUsd === undefined) {
-        usdPrices.set(quote, baseUsd / price);
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-
-  // A perp mark is a real exchange price and is a safe fallback when an asset
-  // has no direct spot/USDC midpoint in the current response.
-  for (const [symbol, rawPrice] of Object.entries(referencePrices)) {
-    if (symbol.includes("/")) continue;
-    const normalized = symbol.toUpperCase();
-    const price = Number(rawPrice);
-    if (!usdPrices.has(normalized) && Number.isFinite(price) && price > 0) {
-      usdPrices.set(normalized, price);
-    }
-  }
-  return usdPrices;
-};
-
-const derivePortfolioMarginSummary = (
-  spotState: PortfolioMarginSpotStateInput,
-  perpStates: PortfolioMarginPerpStateInput[],
-  referencePrices: Record<string, number>,
-): HyperliquidPortfolioMarginSummary => {
-  const usdPrices = buildSpotUsdPriceMap(referencePrices);
-  let portfolioValue = 0;
-  let grossCollateralExposure = 0;
-  let fullyPriced = true;
-
-  for (const balance of spotState.balances) {
-    const total = parseNumber(balance.total);
-    if (total === 0) continue;
-    const price = usdPrices.get(balance.coin.toUpperCase());
-    if (price === undefined) {
-      fullyPriced = false;
-      continue;
-    }
-    const marketValue = total * price;
-    portfolioValue += marketValue;
-    const collateralLtv = parseCollateralLtv(balance.ltv);
-    if (total > 0 && collateralLtv !== undefined && collateralLtv > 0) {
-      grossCollateralExposure += marketValue;
-    }
-  }
-
-  const totalPerpsNotional = perpStates.reduce(
-    (total, state) =>
-      total + Math.abs(parseNumber(state.marginSummary.totalNtlPos)),
-    0,
-  );
-  const perpsMaintenanceMargin = perpStates.reduce(
-    (total, state) => total + parseNumber(state.crossMaintenanceMarginUsed),
-    0,
-  );
-  const unrealizedPnl = perpStates.reduce(
-    (total, state) =>
-      total +
-      state.assetPositions.reduce(
-        (stateTotal, entry) =>
-          stateTotal + parseNumber(entry.position.unrealizedPnl),
-        0,
-      ),
-    0,
-  );
-  const borrowRatios = spotState.tokenToPortfolioBorrowRatio?.map(([, ratio]) =>
-    Math.max(0, parseNumber(ratio)),
-  );
-  const resolvedPortfolioValue = fullyPriced ? portfolioValue : undefined;
-
-  return {
-    marginRatio: parseOptionalNumber(spotState.portfolioMarginRatio),
-    portfolioValue: resolvedPortfolioValue,
-    unrealizedPnl,
-    borrowCapUsed:
-      borrowRatios === undefined
-        ? undefined
-        : borrowRatios.length === 0
-          ? 0
-          : Math.max(...borrowRatios),
-    perpsMaintenanceMargin,
-    accountLeverage:
-      resolvedPortfolioValue !== undefined && resolvedPortfolioValue > 0
-        ? (grossCollateralExposure + totalPerpsNotional) /
-          resolvedPortfolioValue
-        : undefined,
-  };
 };
 
 const normalizeAddress = (value: string): `0x${string}` | null => {
@@ -591,369 +239,6 @@ const stopDexDiscovery = () => {
     void subscription.unsubscribe().catch(() => undefined);
   }
   transport?.close();
-};
-
-const marketSymbol = (symbol: string, marketType: "perp" | "spot") => {
-  const trimmed = symbol.trim();
-  if (marketType === "spot") {
-    const [base, quote = "USDC"] = trimmed.split("/", 2);
-    return `${base.toUpperCase()}/${quote.toUpperCase()}`;
-  }
-  const separator = trimmed.indexOf(":");
-  if (separator > 0) {
-    return `${trimmed.slice(0, separator).toLowerCase()}:${trimmed
-      .slice(separator + 1)
-      .toUpperCase()}`;
-  }
-  return trimmed.toUpperCase();
-};
-
-type RawUserFill = Awaited<ReturnType<InfoClient["userFills"]>>[number];
-type RawUserFunding = Awaited<ReturnType<InfoClient["userFunding"]>>[number];
-type RawHistoricalOrder = Awaited<
-  ReturnType<InfoClient["historicalOrders"]>
->[number];
-type RawTwapHistory = Awaited<ReturnType<InfoClient["twapHistory"]>>[number];
-type RawPortfolio = Awaited<ReturnType<InfoClient["portfolio"]>>;
-type RawUserFees = Awaited<ReturnType<InfoClient["userFees"]>>;
-type RawUserInterest = Awaited<
-  ReturnType<InfoClient["userBorrowLendInterest"]>
->[number];
-type RawLedgerUpdate = Awaited<
-  ReturnType<InfoClient["userNonFundingLedgerUpdates"]>
->[number];
-
-const accountDisplaySymbol = (
-  symbol: string,
-  converter: SymbolConverter | null = symbolConverter,
-) =>
-  symbol.startsWith("@")
-    ? converter?.getSymbolBySpotPairId(symbol) ?? symbol
-    : symbol;
-
-const normalizeTradeFill = (
-  fill: RawUserFill,
-  converter: SymbolConverter | null = symbolConverter,
-): HyperliquidTradeFill => {
-  const price = parseNumber(fill.px);
-  const size = Math.abs(parseNumber(fill.sz));
-  return {
-    time: fill.time,
-    symbol: accountDisplaySymbol(fill.coin, converter),
-    direction: fill.dir,
-    side: fill.side === "B" ? "buy" : "sell",
-    price,
-    size,
-    tradeValue: price * size,
-    fee: parseNumber(fill.fee),
-    feeToken: fill.feeToken,
-    closedPnl: parseNumber(fill.closedPnl),
-    orderId: fill.oid,
-  };
-};
-
-const normalizeFundingPayment = (
-  update: RawUserFunding,
-  converter: SymbolConverter | null = symbolConverter,
-): HyperliquidFundingPayment => {
-  const signedSize = parseNumber(update.delta.szi);
-  return {
-    time: update.time,
-    symbol: accountDisplaySymbol(update.delta.coin, converter),
-    size: Math.abs(signedSize),
-    side: signedSize < 0 ? "short" : "long",
-    payment: parseNumber(update.delta.usdc),
-    rate: parseNumber(update.delta.fundingRate),
-  };
-};
-
-const normalizeHistoricalOrder = (
-  entry: RawHistoricalOrder,
-  converter: SymbolConverter | null = symbolConverter,
-): HyperliquidHistoricalOrder => {
-  const order = entry.order;
-  const size = Math.abs(parseNumber(order.origSz));
-  const remainingSize = Math.abs(parseNumber(order.sz));
-  const price = parseNumber(order.limitPx);
-  return {
-    time: entry.statusTimestamp,
-    createdAt: order.timestamp,
-    orderId: order.oid,
-    symbol: accountDisplaySymbol(order.coin, converter),
-    side: order.side === "B" ? "buy" : "sell",
-    type: order.orderType,
-    size,
-    filledSize: Math.max(0, size - remainingSize),
-    orderValue: size * price,
-    price,
-    reduceOnly: order.reduceOnly,
-    triggerCondition: order.isTrigger
-      ? `${order.triggerCondition} @ ${order.triggerPx}`
-      : "--",
-    tpsl: order.isPositionTpsl ? order.orderType : "--",
-    status: entry.status,
-  };
-};
-
-const normalizeTwapOrder = (
-  entry: RawTwapHistory,
-  converter: SymbolConverter | null = symbolConverter,
-): HyperliquidTwapOrder | null => {
-  if (
-    entry.status.status !== "activated" &&
-    entry.status.status !== "waitingForTrigger"
-  ) {
-    return null;
-  }
-  const state = entry.state;
-  const executedSize = Math.abs(parseNumber(state.executedSz));
-  const executedNotional = Math.abs(parseNumber(state.executedNtl));
-  return {
-    twapId: entry.twapId,
-    symbol: accountDisplaySymbol(state.coin, converter),
-    side: state.side === "B" ? "buy" : "sell",
-    size: Math.abs(parseNumber(state.sz)),
-    executedSize,
-    averagePrice:
-      executedSize > 0 ? executedNotional / executedSize : undefined,
-    totalMinutes: state.minutes,
-    triggerPrice:
-      state.trigger === null ? undefined : parseNumber(state.trigger.px),
-    stopPrice: state.stopPx === null ? undefined : parseNumber(state.stopPx),
-    reduceOnly: state.reduceOnly,
-    createdAt:
-      state.timestamp > 0
-        ? state.timestamp
-        : entry.time < 1_000_000_000_000
-          ? entry.time * 1_000
-          : entry.time,
-    status: entry.status.status,
-  };
-};
-
-const normalizePortfolioSnapshots = (response: RawPortfolio) => {
-  const snapshots: Partial<
-    Record<HyperliquidPortfolioPeriod, HyperliquidPortfolioSnapshot>
-  > = {};
-  for (const [period, data] of response) {
-    snapshots[period] = {
-      accountValueHistory: data.accountValueHistory.map(([time, value]) => ({
-        time,
-        value: parseNumber(value),
-      })),
-      pnlHistory: data.pnlHistory.map(([time, value]) => ({
-        time,
-        value: parseNumber(value),
-      })),
-      volume: parseNumber(data.vlm),
-    };
-  }
-  return snapshots;
-};
-
-const normalizeFeeSummary = (response: RawUserFees): HyperliquidFeeSummary => {
-  const volume14d = response.dailyUserVlm
-    .slice()
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 14)
-    .reduce(
-      (total, day) =>
-        total + parseNumber(day.userCross) + parseNumber(day.userAdd),
-      0,
-    );
-  return {
-    volume14d,
-    perpTakerRate: parseNumber(response.userCrossRate),
-    perpMakerRate: parseNumber(response.userAddRate),
-    spotTakerRate: parseNumber(response.userSpotCrossRate),
-    spotMakerRate: parseNumber(response.userSpotAddRate),
-  };
-};
-
-const normalizeInterestPayment = (
-  payment: RawUserInterest,
-): HyperliquidInterestPayment => ({
-  time: payment.time,
-  asset: payment.token,
-  paid: Math.abs(parseNumber(payment.borrow)),
-  earned: Math.abs(parseNumber(payment.supply)),
-});
-
-const shortLedgerAddress = (address: string) =>
-  address.length > 10
-    ? `${address.slice(0, 6)}...${address.slice(-4)}`
-    : address;
-
-const ledgerAccountLabel = (address: string, user: string) =>
-  address.toLowerCase() === user.toLowerCase()
-    ? "Trading Account"
-    : shortLedgerAddress(address);
-
-const normalizeAccountTransfer = (
-  update: RawLedgerUpdate,
-  user: string,
-): HyperliquidAccountTransfer | null => {
-  const delta = update.delta;
-  switch (delta.type) {
-    case "deposit":
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Deposit",
-        source: "Arbitrum",
-        destination: "Trading Account",
-        amount: parseNumber(delta.usdc),
-        asset: "USDC",
-      };
-    case "withdraw":
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Withdraw",
-        source: "Trading Account",
-        destination: "Arbitrum",
-        amount: -parseNumber(delta.usdc),
-        asset: "USDC",
-        fee: parseNumber(delta.fee),
-        feeAsset: "USDC",
-      };
-    case "accountClassTransfer":
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Transfer",
-        source: delta.toPerp ? "Spot" : "Perps",
-        destination: delta.toPerp ? "Perps" : "Spot",
-        amount: parseNumber(delta.usdc),
-        asset: "USDC",
-      };
-    case "internalTransfer": {
-      const outgoing = delta.user.toLowerCase() === user.toLowerCase();
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Transfer",
-        source: ledgerAccountLabel(delta.user, user),
-        destination: ledgerAccountLabel(delta.destination, user),
-        amount: parseNumber(delta.usdc) * (outgoing ? -1 : 1),
-        asset: "USDC",
-        fee: parseNumber(delta.fee),
-        feeAsset: "USDC",
-      };
-    }
-    case "subAccountTransfer": {
-      const outgoing = delta.user.toLowerCase() === user.toLowerCase();
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Transfer",
-        source: ledgerAccountLabel(delta.user, user),
-        destination: ledgerAccountLabel(delta.destination, user),
-        amount: parseNumber(delta.usdc) * (outgoing ? -1 : 1),
-        asset: "USDC",
-      };
-    }
-    case "spotTransfer": {
-      const outgoing = delta.user.toLowerCase() === user.toLowerCase();
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Transfer",
-        source: ledgerAccountLabel(delta.user, user),
-        destination: ledgerAccountLabel(delta.destination, user),
-        amount: parseNumber(delta.amount) * (outgoing ? -1 : 1),
-        asset: delta.token,
-        fee: parseNumber(delta.nativeTokenFee || delta.fee),
-        feeAsset: delta.feeToken,
-      };
-    }
-    case "send": {
-      const outgoing = delta.user.toLowerCase() === user.toLowerCase();
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Transfer",
-        source: ledgerAccountLabel(delta.user, user),
-        destination: ledgerAccountLabel(delta.destination, user),
-        amount: parseNumber(delta.amount) * (outgoing ? -1 : 1),
-        asset: delta.token,
-        fee: parseNumber(delta.nativeTokenFee || delta.fee),
-        feeAsset: delta.feeToken,
-      };
-    }
-    case "vaultCreate":
-    case "vaultDeposit":
-      return {
-        time: update.time,
-        status: "Complete",
-        action: delta.type === "vaultCreate" ? "Create Vault" : "Vault Deposit",
-        source: "Trading Account",
-        destination: "Vault",
-        amount: -parseNumber(delta.usdc),
-        asset: "USDC",
-        fee: delta.type === "vaultCreate" ? parseNumber(delta.fee) : undefined,
-        feeAsset: delta.type === "vaultCreate" ? "USDC" : undefined,
-      };
-    case "vaultWithdraw":
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Vault Withdraw",
-        source: "Vault",
-        destination: "Trading Account",
-        amount: parseNumber(delta.netWithdrawnUsd),
-        asset: "USDC",
-        fee: parseNumber(delta.commission) + parseNumber(delta.closingCost),
-        feeAsset: "USDC",
-      };
-    case "cStakingTransfer":
-      return {
-        time: update.time,
-        status: "Complete",
-        action: delta.isDeposit ? "Stake" : "Unstake",
-        source: delta.isDeposit ? "Trading Account" : "Staking",
-        destination: delta.isDeposit ? "Staking" : "Trading Account",
-        amount: parseNumber(delta.amount) * (delta.isDeposit ? -1 : 1),
-        asset: delta.token,
-      };
-    case "vaultDistribution":
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Vault Distribution",
-        source: "Vault",
-        destination: "Trading Account",
-        amount: parseNumber(delta.usdc),
-        asset: "USDC",
-      };
-    case "rewardsClaim":
-      return {
-        time: update.time,
-        status: "Complete",
-        action: "Rewards Claim",
-        source: "Rewards",
-        destination: "Trading Account",
-        amount: parseNumber(delta.amount),
-        asset: delta.token,
-      };
-    case "borrowLend": {
-      const incoming =
-        delta.operation === "borrow" || delta.operation === "withdraw";
-      return {
-        time: update.time,
-        status: "Complete",
-        action: delta.operation.replace(/^./u, (character) =>
-          character.toUpperCase(),
-        ),
-        source: incoming ? "Lending" : "Trading Account",
-        destination: incoming ? "Trading Account" : "Lending",
-        amount: parseNumber(delta.amount) * (incoming ? 1 : -1),
-        asset: delta.token,
-      };
-    }
-    default:
-      return null;
-  }
 };
 
 const perpDexForSymbol = (symbol: string): string => {
@@ -1592,28 +877,28 @@ const {
       if (fillsResult.status === "fulfilled") {
         setLiveTradeFills(
           fillsResult.value
-            .map((fill) => normalizeTradeFill(fill))
+            .map((fill) => normalizeTradeFill(fill, symbolConverter))
             .sort((a, b) => b.time - a.time),
         );
       }
       if (fundingResult.status === "fulfilled") {
         setLiveFundingPayments(
           fundingResult.value
-            .map((update) => normalizeFundingPayment(update))
+            .map((update) => normalizeFundingPayment(update, symbolConverter))
             .sort((a, b) => b.time - a.time),
         );
       }
       if (ordersResult.status === "fulfilled") {
         setLiveHistoricalOrders(
           ordersResult.value
-            .map((entry) => normalizeHistoricalOrder(entry))
+            .map((entry) => normalizeHistoricalOrder(entry, symbolConverter))
             .sort((a, b) => b.time - a.time),
         );
       }
       if (twapResult.status === "fulfilled") {
         setLiveTwapOrders(
           twapResult.value
-            .map((entry) => normalizeTwapOrder(entry))
+            .map((entry) => normalizeTwapOrder(entry, symbolConverter))
             .filter(
               (entry): entry is HyperliquidTwapOrder => entry !== null,
             )
@@ -2527,45 +1812,17 @@ export const hyperliquidExecutionLabel = () => {
 };
 
 export {
-  connection as hyperliquidConnection,
-  connectionStatus as hyperliquidConnectionStatus,
-  connectionError as hyperliquidConnectionError,
-  accountMode as hyperliquidAccountMode,
-  accountRefreshError as hyperliquidAccountRefreshError,
-  lastAccountRefreshAt as hyperliquidLastRefreshAt,
-  liveOpenOrders as hyperliquidOpenOrders,
-  livePositions as hyperliquidPositions,
-  liveReferencePrices as hyperliquidReferencePrices,
-  liveSpotBalances as hyperliquidSpotBalances,
-  liveSpotAvailableBalances as hyperliquidSpotAvailableBalances,
-  liveSpotBorrowedBalances as hyperliquidSpotBorrowedBalances,
-  liveSpotCollateralLtvs as hyperliquidSpotCollateralLtvs,
-  liveWithdrawable as hyperliquidWithdrawable,
-  liveAccountValue as hyperliquidAccountValue,
-  livePortfolioMarginSummary as hyperliquidPortfolioMarginSummary,
-  liveTradeFills as hyperliquidTradeFills,
-  liveFundingPayments as hyperliquidFundingPayments,
-  liveHistoricalOrders as hyperliquidHistoricalOrders,
-  liveTwapOrders as hyperliquidTwapOrders,
-  activityRefreshPending as hyperliquidActivityRefreshPending,
-  activityRefreshError as hyperliquidActivityRefreshError,
-  lastActivityRefreshAt as hyperliquidLastActivityRefreshAt,
-  livePortfolioSnapshots as hyperliquidPortfolioSnapshots,
-  liveFeeSummary as hyperliquidFeeSummary,
-  liveInterestPayments as hyperliquidInterestPayments,
-  liveAccountTransfers as hyperliquidAccountTransfers,
-  portfolioRefreshPending as hyperliquidPortfolioRefreshPending,
-  portfolioRefreshError as hyperliquidPortfolioRefreshError,
-  lastPortfolioRefreshAt as hyperliquidLastPortfolioRefreshAt,
-  isHyperliquidConnected,
-  isHyperliquidExecution,
-  setExecutionEnabled as setHyperliquidExecutionEnabled,
-  connectHyperliquid,
-  disconnectHyperliquid,
-  refreshHyperliquidAccount,
-  refreshHyperliquidActivity,
-  refreshHyperliquidPortfolio,
-  setHyperliquidAccountMode,
+connectHyperliquid,
+disconnectHyperliquid,accountMode as hyperliquidAccountMode,
+accountRefreshError as hyperliquidAccountRefreshError,liveAccountTransfers as hyperliquidAccountTransfers,liveAccountValue as hyperliquidAccountValue,activityRefreshError as hyperliquidActivityRefreshError,activityRefreshPending as hyperliquidActivityRefreshPending,connection as hyperliquidConnection,connectionError as hyperliquidConnectionError,connectionStatus as hyperliquidConnectionStatus,liveFeeSummary as hyperliquidFeeSummary,liveFundingPayments as hyperliquidFundingPayments,
+liveHistoricalOrders as hyperliquidHistoricalOrders,liveInterestPayments as hyperliquidInterestPayments,lastActivityRefreshAt as hyperliquidLastActivityRefreshAt,lastPortfolioRefreshAt as hyperliquidLastPortfolioRefreshAt,lastAccountRefreshAt as hyperliquidLastRefreshAt,
+liveOpenOrders as hyperliquidOpenOrders,livePortfolioMarginSummary as hyperliquidPortfolioMarginSummary,portfolioRefreshError as hyperliquidPortfolioRefreshError,portfolioRefreshPending as hyperliquidPortfolioRefreshPending,livePortfolioSnapshots as hyperliquidPortfolioSnapshots,livePositions as hyperliquidPositions,
+liveReferencePrices as hyperliquidReferencePrices,liveSpotAvailableBalances as hyperliquidSpotAvailableBalances,liveSpotBalances as hyperliquidSpotBalances,liveSpotBorrowedBalances as hyperliquidSpotBorrowedBalances,
+liveSpotCollateralLtvs as hyperliquidSpotCollateralLtvs,liveTradeFills as hyperliquidTradeFills,liveTwapOrders as hyperliquidTwapOrders,liveWithdrawable as hyperliquidWithdrawable,isHyperliquidConnected,
+isHyperliquidExecution,refreshHyperliquidAccount,
+refreshHyperliquidActivity,
+refreshHyperliquidPortfolio,
+setHyperliquidAccountMode,setExecutionEnabled as setHyperliquidExecutionEnabled
 };
 
 export const __test = {

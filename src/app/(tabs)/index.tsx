@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useIsRestoring } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Pressable, RefreshControl, StyleSheet, useWindowDimensions, View } from 'react-native';
 import ReorderableList, {
   reorderItems,
   useIsActive,
@@ -10,26 +10,25 @@ import ReorderableList, {
   type ReorderableListReorderEvent,
 } from 'react-native-reorderable-list';
 
-import { SymbolRow, SYMBOL_ROW_HEIGHT, SYMBOL_PRICE_WIDTH, SYMBOL_CHANGE_WIDTH } from '@/components/SymbolRow';
+import { MarketFeedNotice } from '@/components/MarketFeedNotice';
+import { SYMBOL_CHANGE_WIDTH, SYMBOL_PRICE_WIDTH, symbolRowHeight, SymbolRow } from '@/components/SymbolRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { WatchlistMenu, type SortDir, type SortKey } from '@/components/WatchlistMenu';
 import { Colors, Spacing } from '@/constants/theme';
-import type { Instrument, Quote } from '@/domain/types';
-import { useInstrumentsByIds, useMarkets } from '@/data/useMarkets';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
+import { useInstrumentsByIds, useMarkets } from '@/data/useMarkets';
+import type { Instrument, Quote } from '@/domain/types';
+import { hasMarketFeedError } from '@/lib/marketCatalog';
 import { restoreRemovedSymbols, sortWatchlistView } from '@/lib/watchlistSort';
 import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
-
-// Keep the fixed list estimate aligned with SymbolRow's compact data rows.
-const ROW_HEIGHT = SYMBOL_ROW_HEIGHT;
 
 function WatchlistHeader({ name, onLists, onMore, onAdd }: { name: string; onLists: () => void; onMore: () => void; onAdd: () => void }) {
   return (
     <View style={styles.header}>
       <Pressable onPress={onLists} style={styles.listSelector} accessibilityRole="button" accessibilityLabel={`${name}, choose watchlist`}>
-        <AppText style={styles.headerTitle} numberOfLines={1}>{name}</AppText>
+        <AppText style={styles.headerTitle} numberOfLines={2}>{name}</AppText>
         <Ionicons name="chevron-down" size={17} color={Colors.textMuted} />
       </Pressable>
       <View style={styles.headerActions}>
@@ -117,6 +116,9 @@ function WatchlistRow({
 }
 
 export default function WatchlistScreen() {
+  const { fontScale } = useWindowDimensions();
+  const rowHeight = symbolRowHeight(fontScale);
+  const largeText = fontScale > 1.15;
   const router = useRouter();
   const lists = useWatchlists((s) => s.lists);
   const activeId = useWatchlists((s) => s.activeId);
@@ -124,7 +126,7 @@ export default function WatchlistScreen() {
   const createList = useWatchlists((s) => s.createList);
   const active = lists.find((l) => l.id === activeId) ?? lists[0];
 
-  const { data, isLoading, isError, refetch, isFetching } = useMarkets();
+  const { data, isLoading, isError, isPaused, refetch, isFetching } = useMarkets();
   // True while the persisted cache is rehydrating; queries are paused so isLoading
   // is false. Without this the empty-state branch flashes before the cache lands.
   const isRestoring = useIsRestoring();
@@ -295,14 +297,14 @@ export default function WatchlistScreen() {
     [data?.quotes, onPress, editing, selected, onToggleSelect],
   );
 
-  // Rows are fixed-height, so skip per-row measurement on layout.
+  // Keep virtualization aligned with the current iOS text size.
   const getItemLayout = useCallback(
     (_data: ArrayLike<Instrument> | null | undefined, index: number) => ({
-      length: ROW_HEIGHT,
-      offset: ROW_HEIGHT * index,
+      length: rowHeight,
+      offset: rowHeight * index,
       index,
     }),
-    [],
+    [rowHeight],
   );
 
   const headerName = useMemo(() => active?.name ?? 'Watchlist', [active?.name]);
@@ -328,7 +330,7 @@ export default function WatchlistScreen() {
               onPress={() => onSort(key)}
               accessibilityRole="button"
               accessibilityLabel={`Sort by ${key === 'symbol' ? 'symbol' : key === 'price' ? 'last price' : '24 hour change'}${effectiveSortKey === key ? `, ${effectiveSortDir === 'asc' ? 'ascending' : 'descending'}` : ''}`}
-              style={[styles.column, key === 'symbol' ? styles.symbolColumn : key === 'price' ? styles.priceColumn : styles.changeColumn]}>
+              style={[styles.column, largeText ? styles.largeSortColumn : key === 'symbol' ? styles.symbolColumn : key === 'price' ? styles.priceColumn : styles.changeColumn]}>
               <AppText style={[styles.columnLabel, effectiveSortKey === key && styles.sortedColumn]}>{key === 'symbol' ? 'Symbol' : key === 'price' ? 'Last' : '24h %'}</AppText>
               {effectiveSortKey === key ? <Ionicons name={effectiveSortDir === 'asc' ? 'arrow-up' : 'arrow-down'} size={11} color={Colors.text} /> : null}
             </Pressable>
@@ -344,11 +346,12 @@ export default function WatchlistScreen() {
         </View>
       ) : null}
 
+      {instruments.length > 0 && hasMarketFeedError(data?.marketErrors, isError || isPaused) ? <MarketFeedNotice busy={isFetching} onRetry={() => void refetch()} /> : null}
       {isLoading || isRestoring ? (
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading watchlist" />
         </View>
-      ) : isError && instruments.length === 0 ? (
+      ) : (isError || isPaused) && instruments.length === 0 ? (
         <View style={styles.center}>
           <AppText muted>Couldn’t load markets.</AppText>
           <Pressable onPress={() => refetch()} style={styles.retry}>
@@ -403,7 +406,8 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 60,
+    minHeight: 60,
+    paddingVertical: 6,
     paddingHorizontal: Spacing.lg,
   },
   listSelector: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 12 },
@@ -432,7 +436,8 @@ const styles = StyleSheet.create({
   symbolColumn: { flex: 1, justifyContent: 'flex-start' },
   priceColumn: { width: SYMBOL_PRICE_WIDTH },
   changeColumn: { width: SYMBOL_CHANGE_WIDTH, marginLeft: 12, justifyContent: 'center' },
-  columnLabel: { fontSize: 11, lineHeight: 16, color: Colors.textMuted },
+  largeSortColumn: { flex: 1, minHeight: 44, justifyContent: 'center' },
+  columnLabel: { fontSize: 12, lineHeight: 16, color: Colors.textMuted },
   sortedColumn: { color: Colors.text },
   undoBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingLeft: Spacing.lg, paddingRight: Spacing.sm, backgroundColor: Colors.surfaceAlt },
   undoText: { flex: 1 },

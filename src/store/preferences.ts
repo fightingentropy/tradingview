@@ -8,6 +8,8 @@ import { mmkvStorage } from '@/lib/mmkv';
 /** USD threshold below which a balance counts as "dust". */
 export const SMALL_BALANCE_USD = 1;
 
+export type MarketsFilter = 'all' | 'crypto' | 'stocks' | 'spot';
+
 export type AccountTab =
   | 'positions' | 'orders' | 'balances' | 'history'
   | 'funding' | 'interest' | 'orderHistory' | 'transfers';
@@ -32,6 +34,8 @@ interface PreferencesState {
   privacyMode: boolean;
   setPrivacyMode: (value: boolean) => void;
   /** Markets-tab row order (default = by volume). Remembered across launches. */
+  marketsFilter: MarketsFilter;
+  setMarketsFilter: (value: MarketsFilter) => void;
   marketsSort: SortMode;
   setMarketsSort: (value: SortMode) => void;
   /** Watchlist row order (default = the list's manual order). Remembered across launches. */
@@ -66,6 +70,8 @@ export const usePreferences = create<PreferencesState>()(
       setHideSmallBalances: (value) => set({ hideSmallBalances: value }),
       privacyMode: false,
       setPrivacyMode: (value) => set({ privacyMode: value }),
+      marketsFilter: 'all',
+      setMarketsFilter: (value) => set({ marketsFilter: value }),
       marketsSort: 'default',
       setMarketsSort: (value) => set({ marketsSort: value }),
       watchlistSort: 'default',

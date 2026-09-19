@@ -24,6 +24,7 @@ import AccountDockFilters from "./AccountDockFilters";
 import BalancesPanel from "./BalancesPanel";
 import OpenOrdersTable from "./OpenOrdersTable";
 import PositionsTable from "./PositionsTable";
+import Spinner from "./Spinner";
 import {
   ACCOUNT_TABS,
   type AccountSideFilter,
@@ -54,6 +55,12 @@ const OrderHistoryTable = lazy(() =>
 );
 const TradeHistoryTable = lazy(() => import("./TradeHistoryTable"));
 
+const PRIMARY_TABS = new Set<AccountTab>(["positions", "openOrders", "balances", "tradeHistory"]);
+const TAB_STORAGE_KEY = "trade-xyz-account-tab";
+const loadTab = (): AccountTab => {
+  try { const saved = localStorage.getItem(TAB_STORAGE_KEY); return ACCOUNT_TABS.find(tab => tab.id === saved)?.id ?? "positions"; } catch { return "positions"; }
+};
+
 const HEIGHT_STORAGE_KEY = "trade-xyz-trade-panel-height";
 const DEFAULT_HEIGHT = 200;
 const MIN_HEIGHT = 160;
@@ -78,7 +85,11 @@ const loadHeight = () => {
 };
 
 const TradePanel: Component = () => {
-  const [activeTab, setActiveTab] = createSignal<AccountTab>("positions");
+  const [activeTab, setTab] = createSignal<AccountTab>(loadTab());
+  const setActiveTab = (tab: AccountTab) => {
+    setTab(tab);
+    try { localStorage.setItem(TAB_STORAGE_KEY, tab); } catch { /* Optional display preference. */ }
+  };
   const [sideFilter, setSideFilter] = createSignal<AccountSideFilter>("all");
   const [marketFilter, setMarketFilter] = createSignal("all");
   const [panelHeight, setPanelHeight] = createSignal(loadHeight());
@@ -184,7 +195,7 @@ const TradePanel: Component = () => {
       </div>
       <div class="flex min-h-10 items-stretch border-b border-brand-border">
         <div class="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-          <For each={ACCOUNT_TABS}>
+          <For each={[...ACCOUNT_TABS].filter(tab => PRIMARY_TABS.has(tab.id)).sort((a, b) => ["positions", "openOrders", "balances", "tradeHistory"].indexOf(a.id) - ["positions", "openOrders", "balances", "tradeHistory"].indexOf(b.id))}>
             {(tab) => (
               <button
                 type="button"
@@ -204,6 +215,10 @@ const TradePanel: Component = () => {
               </button>
             )}
           </For>
+          <select aria-label="More account sections" class="max-w-40 border-0 bg-brand-surface px-3 text-xs text-brand-slate-400" value={PRIMARY_TABS.has(activeTab()) ? '' : activeTab()} onChange={event => setActiveTab(event.currentTarget.value as AccountTab)}>
+            <option value="" disabled>More</option>
+            <For each={ACCOUNT_TABS.filter(tab => !PRIMARY_TABS.has(tab.id))}>{tab => <option value={tab.id}>{tab.label}</option>}</For>
+          </select>
         </div>
         <AccountDockFilters
           tab={activeTab()}
@@ -218,7 +233,7 @@ const TradePanel: Component = () => {
         <Suspense
           fallback={
             <div class="flex h-full items-center justify-center text-xs text-brand-slate-500">
-              Loading activity…
+              <Spinner label="Loading account activity" />
             </div>
           }
         >

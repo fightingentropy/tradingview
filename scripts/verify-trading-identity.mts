@@ -116,6 +116,6 @@ assert.throws(
   TradingIdentityError,
   'a synchronously replaced key must fail before signing',
 );
-clearAgentKey();
+await clearAgentKey();
 
 console.log('  ✓ trading identity is fail-closed and transaction-bound');

@@ -1,3 +1,18 @@
+import type {
+  IChartApi,
+  IPriceLine,
+  ISeriesApi,
+  LineData,
+} from "lightweight-charts";
+import {
+  CandlestickData,
+  CandlestickSeries,
+  ColorType,
+  HistogramSeries,
+  LineSeries,
+  Time,
+  createChart,
+} from "lightweight-charts";
 import {
   Component,
   For,
@@ -8,35 +23,7 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
-import {
-  createChart,
-  CandlestickSeries,
-  LineSeries,
-  HistogramSeries,
-  CandlestickData,
-  Time,
-  ColorType,
-} from "lightweight-charts";
-import type {
-  IChartApi,
-  ISeriesApi,
-  LineData,
-  IPriceLine,
-} from "lightweight-charts";
-import {
-  MARKETS,
-  currentSymbol,
-  currentMarketType,
-  dataProvider,
-  selectMarket,
-  isTickerWatchlisted,
-  tickerWatchlistSymbols,
-  getWatchlistCoreSymbol,
-  showChartGrid,
-  showChartVolume,
-  type DataProvider,
-} from "../stores/market";
-import { getPositionForSymbol } from "../stores/clob";
+import { createLatestAnimationFrameBatcher } from "../lib/animationFrameBatcher";
 import { resolutionToMs, type Candle } from "../lib/candles";
 import {
   fetchHyperliquidCandles,
@@ -45,15 +32,28 @@ import {
   type HyperliquidMarketType,
 } from "../lib/hyperliquid";
 import {
+  hyperliquidDataNetwork,
+  hyperliquidWsUrl,
+} from "../lib/hyperliquidNetwork";
+import {
   getCachedCandles,
   updateCachedCandles,
   updateLastCandle,
 } from "../stores/chartCache";
+import { getPositionForSymbol } from "../stores/clob";
 import {
-  hyperliquidDataNetwork,
-  hyperliquidWsUrl,
-} from "../lib/hyperliquidNetwork";
-import { createLatestAnimationFrameBatcher } from "../lib/animationFrameBatcher";
+  MARKETS,
+  currentMarketType,
+  currentSymbol,
+  dataProvider,
+  getWatchlistCoreSymbol,
+  isTickerWatchlisted,
+  selectMarket,
+  showChartGrid,
+  showChartVolume,
+  tickerWatchlistSymbols,
+  type DataProvider,
+} from "../stores/market";
 
 const RESOLUTIONS = ["1", "5", "15", "60", "240", "1D", "1W"] as const;
 type Resolution = (typeof RESOLUTIONS)[number];
@@ -1165,7 +1165,7 @@ const TradingViewChart: Component = () => {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            <span class="text-sm font-medium">Loading chart...</span>
+            <span class="sr-only">Loading chart</span>
           </div>
         </div>
       )}

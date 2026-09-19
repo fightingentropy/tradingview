@@ -1,0 +1,13 @@
+{
+  "name": "@tradingview/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./brief": "./brief/dailyBrief.ts",
+    "./brief-feed": "./brief/dailyBriefFeed.ts"
+  },
+  "dependencies": {
+    "marked": "18.0.13"
+  }
+}

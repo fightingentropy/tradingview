@@ -1,22 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
+import { useIsFocused } from 'expo-router';
 
 import {
+  fetchHistoricalOrders,
   fetchHlAccount,
-  fetchLegalCheck,
-  fetchHlPortfolio,
   fetchHlAccountFees,
   fetchHlEarnBalance,
-  fetchHistoricalOrders,
+  fetchHlPortfolio,
+  fetchLegalCheck,
   fetchOpenOrders,
   fetchUserFills,
   type HlAccount,
+  type HlAccountFees,
+  type HlEarnBalance,
   type HlFill,
   type HlHistoricalOrder,
   type HlLegalCheck,
   type HlOpenOrder,
   type HlPortfolio,
-  type HlAccountFees,
-  type HlEarnBalance,
 } from '@/lib/hyperliquid/info';
 import {
   resolveTradingIdentity,
@@ -96,7 +97,8 @@ export function useHlLegalCheck() {
  * address is public), refreshed every few seconds so marks + unrealized PnL stay
  * current.
  */
-export function useHlAccount() {
+export function useHlAccount(enabled = true) {
+  const focused = useIsFocused();
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
 
@@ -105,21 +107,22 @@ export function useHlAccount() {
     // Guarded value rather than a non-null assertion: the query is enabled-gated on
     // `account`, but resolve the address inside the closure so TS stays sound.
     queryFn: () => fetchHlAccount(account as string, network),
-    enabled: !!account,
+    enabled: enabled && focused && !!account,
     refetchInterval: 5_000,
     staleTime: 4_000,
   });
 }
 
 /** Resting (pending) orders for the resolved master account. Read-only. */
-export function useHlOpenOrders() {
+export function useHlOpenOrders(enabled = true) {
+  const focused = useIsFocused();
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
 
   return useQuery<HlOpenOrder[]>({
     queryKey: queryKeys.hlOpenOrders(network, account ?? ''),
     queryFn: () => fetchOpenOrders(account as string, network),
-    enabled: !!account,
+    enabled: enabled && focused && !!account,
     refetchInterval: 8_000,
     staleTime: 6_000,
   });
@@ -127,13 +130,14 @@ export function useHlOpenOrders() {
 
 /** Recent final order states for the resolved master account. Read-only. */
 export function useHlHistoricalOrders(enabled = true) {
+  const focused = useIsFocused();
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
 
   return useQuery<HlHistoricalOrder[]>({
     queryKey: queryKeys.hlHistoricalOrders(network, account ?? ''),
     queryFn: () => fetchHistoricalOrders(account as string, network),
-    enabled: enabled && !!account,
+    enabled: focused && enabled && !!account,
     refetchInterval: 30_000,
     staleTime: 20_000,
   });
@@ -143,48 +147,52 @@ export function useHlHistoricalOrders(enabled = true) {
  * Portfolio value + PnL history for the resolved master account. The series updates
  * slowly, so it polls on a lazy 60s cadence. Read-only.
  */
-export function useHlPortfolio() {
+export function useHlPortfolio(enabled = true) {
+  const focused = useIsFocused();
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
 
   return useQuery<HlPortfolio>({
     queryKey: queryKeys.hlPortfolio(network, account ?? ''),
     queryFn: () => fetchHlPortfolio(account as string, network),
-    enabled: !!account,
+    enabled: enabled && focused && !!account,
     refetchInterval: 60_000,
     staleTime: 55_000,
   });
 }
 
-export function useHlAccountFees() {
+export function useHlAccountFees(enabled = true) {
+  const focused = useIsFocused();
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
   return useQuery<HlAccountFees>({
     queryKey: queryKeys.hlAccountFees(network, account ?? ''),
-    queryFn: () => fetchHlAccountFees(account as string, network), enabled: !!account,
+    queryFn: () => fetchHlAccountFees(account as string, network), enabled: enabled && focused && !!account,
     staleTime: 5 * 60_000, refetchOnWindowFocus: true,
   });
 }
 
-export function useHlEarnBalance() {
+export function useHlEarnBalance(enabled = true) {
+  const focused = useIsFocused();
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
   return useQuery<HlEarnBalance>({
     queryKey: queryKeys.hlEarnBalance(network, account ?? ''),
-    queryFn: () => fetchHlEarnBalance(account as string, network), enabled: !!account,
+    queryFn: () => fetchHlEarnBalance(account as string, network), enabled: enabled && focused && !!account,
     staleTime: 30_000, refetchInterval: 60_000,
   });
 }
 
 /** Recent fills (trade history) for the resolved master account. Read-only. */
-export function useHlFills() {
+export function useHlFills(enabled = true) {
+  const focused = useIsFocused();
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
 
   return useQuery<HlFill[]>({
     queryKey: queryKeys.hlFills(network, account ?? ''),
     queryFn: () => fetchUserFills(account as string, network),
-    enabled: !!account,
+    enabled: enabled && focused && !!account,
     refetchInterval: 20_000,
     staleTime: 15_000,
   });

@@ -43,3 +43,8 @@ export function retainUnavailableMarkets(
   }
   return { instruments, quotes };
 }
+
+/** Hidden outcome-feed failures should not interrupt the ordinary market list. */
+export function hasMarketFeedError(errors: Record<string, string> = {}, queryFailed = false): boolean {
+  return queryFailed || Object.keys(errors).some((source) => source !== 'hyperliquid:outcome');
+}

@@ -14,6 +14,9 @@
  * simulator dev client) we degrade to an in-memory fallback instead.
  */
 import type * as SecureStoreModule from 'expo-secure-store';
+import { createApiKeyStore, normalizeKey } from './apiKeyStore';
+
+export { normalizeKey } from './apiKeyStore';
 
 let SecureStore: typeof SecureStoreModule | null = null;
 try {
@@ -32,62 +35,18 @@ function options(): SecureStoreModule.SecureStoreOptions | undefined {
     : undefined;
 }
 
-let memoryFallback: string | null = null;
-
-/** Normalize to a 0x-prefixed lowercase hex string. */
-export function normalizeKey(raw: string): string {
-  const k = raw.trim();
-  return k.startsWith('0x') || k.startsWith('0X') ? '0x' + k.slice(2).toLowerCase() : '0x' + k.toLowerCase();
-}
+const keyStore = createApiKeyStore(SecureStore ? {
+  read: () => SecureStore!.getItem(KEY, options()),
+  write: (key) => SecureStore!.setItem(KEY, key, options()),
+  remove: () => SecureStore!.deleteItemAsync(KEY, options()),
+} : null);
 
 /** A 32-byte hex private key (with or without 0x prefix). */
 export function isValidPrivateKey(raw: string): boolean {
   return /^0x[0-9a-f]{64}$/.test(normalizeKey(raw));
 }
 
-export function setAgentKey(privateKey: string, requirePersistence = false) {
-  const k = normalizeKey(privateKey);
-  if (SecureStore) {
-    try {
-      SecureStore.setItem(KEY, k, options());
-      memoryFallback = null;
-      return;
-    } catch {
-      if (requirePersistence) {
-        throw new Error('Could not save your API key securely. Unlock your phone and try again.');
-      }
-      /* fall through to memory */
-    }
-  }
-  if (requirePersistence) {
-    throw new Error('Secure storage is unavailable. Please update the app and try again.');
-  }
-  memoryFallback = k;
-}
-
-export function getAgentKey(): string | null {
-  if (SecureStore) {
-    try {
-      return SecureStore.getItem(KEY, options()) ?? memoryFallback;
-    } catch {
-      /* fall through to memory */
-    }
-  }
-  return memoryFallback;
-}
-
-export function clearAgentKey() {
-  memoryFallback = null;
-  if (SecureStore) {
-    try {
-      // No synchronous delete is exposed; fire-and-forget the async removal.
-      SecureStore.deleteItemAsync(KEY, options()).catch(() => {});
-    } catch {
-      /* native module absent — memory fallback already cleared */
-    }
-  }
-}
-
-export function hasAgentKey(): boolean {
-  return !!getAgentKey();
-}
+export const setAgentKey = keyStore.set;
+export const getAgentKey = keyStore.get;
+export const clearAgentKey = keyStore.clear;
+export function hasAgentKey(): boolean { return !!getAgentKey(); }

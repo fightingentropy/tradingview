@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { memo, useCallback } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
-import { useSymbolMenu } from '@/components/SymbolMenu';
-import { SymbolLogo } from '@/components/SymbolLogo';
 import { PriceStatus } from '@/components/PriceStatus';
+import { SymbolLogo } from '@/components/SymbolLogo';
+import { useSymbolMenu } from '@/components/SymbolMenu';
 import { AppText } from '@/components/ui/AppText';
 import { Colors, Spacing } from '@/constants/theme';
 import { instrumentDisplayName } from '@/domain/instrumentDisplay';
@@ -13,14 +13,15 @@ import { useContextMenuTrigger } from '@/hooks/useContextMenuTrigger';
 import {
   formatPercent,
   formatPrice,
-  formatSignedPrice,
   formatProbability,
   formatProbabilityPointChange,
+  formatSignedPrice,
   priceDecimalsFor,
 } from '@/lib/format';
 import { useMarketPrice } from '@/store/livePrices';
 
 export const SYMBOL_ROW_HEIGHT = 64;
+export const symbolRowHeight = (fontScale: number) => Math.max(SYMBOL_ROW_HEIGHT, Math.ceil(44 * fontScale + 20));
 export const SYMBOL_PRICE_WIDTH = 92;
 export const SYMBOL_CHANGE_WIDTH = 78;
 
@@ -56,6 +57,9 @@ function SymbolRowImpl({
   onToggleSelect,
   columns = false,
 }: Props) {
+  const { fontScale, width } = useWindowDimensions();
+  const largeText = fontScale > 1.15;
+  const separateColumns = columns && !largeText;
   const { open } = useSymbolMenu();
   const onOpenMenu = useCallback(() => open(instrument), [open, instrument]);
   const menuTrigger = useContextMenuTrigger(onOpenMenu);
@@ -95,7 +99,7 @@ function SymbolRowImpl({
       {...longPressProps}
       accessibilityRole={editing ? 'checkbox' : 'button'}
       accessibilityState={editing ? { checked: !!selected } : undefined}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed, dragging && styles.dragging]}>
+      style={({ pressed }) => [styles.row, { height: symbolRowHeight(fontScale) }, pressed && styles.pressed, dragging && styles.dragging]}>
       {editing ? (
         <Pressable
           hitSlop={10}
@@ -127,17 +131,17 @@ function SymbolRowImpl({
       </View>
 
       {editing ? null : (
-        <View style={[styles.right, columns && styles.priceColumn]}>
-          <AppText style={[styles.price, priceState.stale && { color: Colors.textMuted }]} numeric numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+        <View style={[styles.right, separateColumns && styles.priceColumn, largeText && { width: Math.min(168 * fontScale, width * 0.48) }]}>
+          <AppText style={[styles.price, priceState.stale && { color: Colors.textMuted }]} numeric numberOfLines={1} adjustsFontSizeToFit={!largeText} minimumFontScale={0.8}>
             {isOutcome ? formatProbability(last) : formatPrice(last, decimals)}
           </AppText>
-          <AppText style={[styles.change, { color: changeColor }]} numeric numberOfLines={1}>
-            {columns ? (isOutcome ? '' : formatSignedPrice(absChange, decimals)) : changeText}
+          <AppText style={[styles.change, largeText && styles.largeChange, { color: changeColor }]} numeric numberOfLines={1}>
+            {separateColumns ? (isOutcome ? '' : formatSignedPrice(absChange, decimals)) : changeText}
           </AppText>
         </View>
       )}
 
-      {!editing && columns ? (
+      {!editing && separateColumns ? (
         <View style={[styles.changeBadge, { backgroundColor: changePct === null ? Colors.surfaceAlt : changeColor + '1C' }]}>
           <AppText style={[styles.badgeText, { color: changeColor }]} numeric numberOfLines={1}>
             {changeText}
@@ -202,14 +206,15 @@ const styles = StyleSheet.create({
   checkbox: { marginRight: Spacing.md, alignItems: 'center', justifyContent: 'center' },
   mid: { flex: 1, minWidth: 0, marginLeft: 10, paddingRight: Spacing.sm },
   symbol: { fontSize: 15, lineHeight: 20, fontWeight: '600', letterSpacing: 0.1, color: Colors.text },
-  description: { flexDirection: 'row', alignItems: 'center', height: 20 },
-  name: { flexShrink: 1, fontSize: 11, lineHeight: 16, color: Colors.textMuted },
+  description: { flexDirection: 'row', alignItems: 'center', minHeight: 20 },
+  name: { flexShrink: 1, fontSize: 12, lineHeight: 17, color: Colors.textMuted },
   right: { alignItems: 'flex-end', marginLeft: Spacing.sm },
   priceColumn: { width: SYMBOL_PRICE_WIDTH, marginLeft: 0 },
   price: { fontSize: 16, lineHeight: 21, fontWeight: '500', letterSpacing: -0.3, color: Colors.text },
-  change: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  change: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  largeChange: { fontSize: 14, fontWeight: '600' },
   changeBadge: { width: SYMBOL_CHANGE_WIDTH, minHeight: 30, marginLeft: 12, paddingHorizontal: 4, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { width: '100%', textAlign: 'center', fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  badgeText: { width: '100%', textAlign: 'center', fontSize: 13, lineHeight: 18, fontWeight: '600' },
   star: { paddingLeft: Spacing.md },
   dragHandle: { paddingLeft: Spacing.md, paddingVertical: 4 },
 });

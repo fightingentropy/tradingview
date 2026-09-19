@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AlertHost } from '@/components/AlertHost';
 import { SymbolMenuProvider } from '@/components/SymbolMenu';
 import { Colors } from '@/constants/theme';
+import { QueryLifecycle } from '@/hooks/QueryLifecycle';
 import { AlertWatcher } from '@/hooks/useAlertWatcher';
 import { NewsPushRegistration } from '@/hooks/useNewsPushRegistration';
 import { PriceAlertRegistration } from '@/hooks/usePriceAlertRegistration';
@@ -36,12 +37,12 @@ const navTheme = {
  * between a stray glitch and losing the session mid-trade. It renders outside the
  * app providers, so it sticks to plain views + the static theme constants.
  */
-export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
   return (
     <View style={styles.fallback}>
       <Text style={styles.fallbackTitle}>Something went wrong</Text>
       <Text style={styles.fallbackMsg} numberOfLines={4}>
-        {error.message}
+        Please reload the app to continue.
       </Text>
       <Pressable onPress={retry} style={styles.fallbackBtn}>
         <Text style={styles.fallbackBtnText}>Reload</Text>
@@ -67,6 +68,7 @@ export default function RootLayout() {
             },
           }}>
           <ThemeProvider value={navTheme}>
+            <QueryLifecycle />
             <StatusBar style="light" />
             <SymbolMenuProvider>
               <Stack

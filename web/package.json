@@ -15,7 +15,8 @@
     "check": "bun run typecheck && bun run test && bun run build",
     "preview": "vite preview",
     "deploy:convex": "bash -lc \"export CONVEX_DEPLOYMENT=$(grep -m1 '^CONVEX_DEPLOYMENT=' .env.local | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//'); CONVEX_NO_UPDATE_CHECK=true bun x convex deploy\"",
-    "migrate:accounting:prod": "bun run scripts/backfill-accounting-production.ts --confirm-production"
+    "migrate:accounting:prod": "bun run scripts/backfill-accounting-production.ts --confirm-production",
+    "preinstall": "bun install --cwd ../shared --frozen-lockfile"
   },
   "dependencies": {
     "@nktkas/hyperliquid": "0.33.3",
@@ -23,7 +24,8 @@
     "lightweight-charts": "^5.1.0",
     "marked": "18.0.13",
     "solid-js": "1.9.15",
-    "viem": "2.56.0"
+    "viem": "2.56.0",
+    "@tradingview/shared": "file:../shared"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",

@@ -8,10 +8,11 @@ import { AppText } from '@/components/ui/AppText';
 import { Colors } from '@/constants/theme';
 import { useDailyBrief } from '@/data/useDailyBrief';
 import { DAILY_BRIEF_URL } from '@/providers/briefs/client';
-import { editionStatus, formatBriefDate } from '../../web/src/lib/dailyBrief';
+import { editionStatus, formatBriefDate } from '@tradingview/shared/brief';
 
 export function DailyBriefReader() {
   const { brief, loading, refreshing, error, refresh, now } = useDailyBrief();
+  const [metadataOpen, setMetadataOpen] = useState(false);
   const [contentsOpen, setContentsOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const scroller = useRef<ScrollView>(null);
@@ -42,6 +43,12 @@ export function DailyBriefReader() {
         <View style={styles.mastheadCopy}>
           <AppText accessibilityRole="header" style={styles.title}>Daily brief<AppText style={styles.titleDot}>.</AppText></AppText>
         </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="About this brief" accessibilityState={{ expanded: metadataOpen }} onPress={() => setMetadataOpen(!metadataOpen)} style={styles.iconButton}>
+          <Ionicons name="information-circle-outline" size={21} color={Colors.textMuted} />
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Jump to a brief section" onPress={() => setContentsOpen(true)} style={styles.iconButton}>
+          <Ionicons name="list-outline" size={21} color={Colors.textMuted} />
+        </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Share this brief" onPress={() => void share()} style={styles.iconButton}>
           <Ionicons name="share-outline" size={21} color={Colors.textMuted} />
         </Pressable>
@@ -55,20 +62,15 @@ export function DailyBriefReader() {
       {error && <View style={styles.notice}><AppText style={styles.noticeText}>Couldn’t refresh · Showing saved edition</AppText><Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Retry</AppText></Pressable></View>}
 
       <View style={styles.articleHeader}>
-        <AppText style={styles.status}>{status === 'today' ? 'TODAY’S EDITION' : 'LATEST AVAILABLE EDITION'}</AppText>
+        {status !== 'today' && <AppText style={styles.status}>Latest available edition</AppText>}
         <AppText accessibilityRole="header" style={styles.headline}>{brief.title}</AppText>
-        {status !== 'today' && <AppText style={styles.cutoffNote}>A newer brief has not been published yet. Figures reflect the cutoff below.</AppText>}
-        <View style={styles.metadata}>
+        {status !== 'today' && <AppText style={styles.cutoffNote}>A newer brief has not been published yet. Open the information button for data times.</AppText>}
+        {metadataOpen && <View testID="brief-metadata" style={styles.metadata}>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>GENERATED</AppText><AppText style={styles.metadataValue}>{brief.generated.slice(11)} · Europe/London</AppText></View>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>MARKET STATE</AppText><AppText style={styles.metadataValue}>{brief.marketState}</AppText></View>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>DATA CUTOFF</AppText><AppText style={styles.metadataValue}>{brief.cutoff}</AppText></View>
-        </View>
+        </View>}
       </View>
-
-      <Pressable accessibilityRole="button" accessibilityLabel="Jump to a brief section" onPress={() => setContentsOpen(true)} style={styles.contentsButton}>
-        <View style={styles.contentsLabel}><Ionicons name="list-outline" size={18} color={Colors.textMuted} /><AppText style={styles.contentsText}>In this brief</AppText></View>
-        <AppText style={styles.sectionCount}>{brief.sections.length} sections</AppText><Ionicons name="chevron-down" size={15} color={Colors.textMuted} />
-      </Pressable>
 
       {brief.sections.map((section, index) => <View key={`${brief.id}:${section.id}`} style={styles.section} onLayout={(event) => { sectionPositions.current[section.id] = event.nativeEvent.layout.y; }}>
         <View style={styles.sectionHeading}><AppText style={styles.sectionNumber}>{String(index + 1).padStart(2, '0')}</AppText><AppText accessibilityRole="header" style={styles.sectionTitle}>{section.title}</AppText></View>
@@ -103,30 +105,30 @@ export function DailyBriefReader() {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 24, maxWidth: 760, width: '100%', alignSelf: 'center' },
-  masthead: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingBottom: 24 },
+  content: { padding: 16, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  masthead: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 10 },
   mastheadCopy: { flex: 1 },
-  title: { fontSize: 30, lineHeight: 36, letterSpacing: -1, fontWeight: '600' },
-  titleDot: { fontSize: 30, lineHeight: 36, color: '#9BCABC' },
+  title: { fontSize: 23, lineHeight: 30, letterSpacing: -1, fontWeight: '600' },
+  titleDot: { fontSize: 23, lineHeight: 30, color: '#9BCABC' },
   iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  editionBar: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, marginBottom: 28, paddingVertical: 16 },
+  editionBar: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, marginBottom: 18, paddingVertical: 10 },
   dateText: { fontSize: 13, fontWeight: '500' },
-  readingTime: { flex: 1, textAlign: 'right', fontSize: 10, color: Colors.textMuted },
-  articleHeader: { gap: 14 },
-  status: { color: '#9BCABC', fontSize: 9, letterSpacing: 1, lineHeight: 15 },
-  headline: { fontSize: 31, lineHeight: 37, fontWeight: '500', letterSpacing: -0.9 },
+  readingTime: { flex: 1, textAlign: 'right', fontSize: 12, color: Colors.textMuted },
+  articleHeader: { gap: 12, marginBottom: 24 },
+  status: { color: '#9BCABC', fontSize: 12, letterSpacing: 1, lineHeight: 15 },
+  headline: { fontSize: 27, lineHeight: 33, fontWeight: '500', letterSpacing: -0.9 },
   cutoffNote: { color: Colors.textMuted, fontSize: 12, lineHeight: 19 },
   metadata: { gap: 12, paddingVertical: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
   metadataRow: { flexDirection: 'row', gap: 12 },
-  metadataLabel: { width: 84, fontSize: 8, lineHeight: 18, letterSpacing: 0.4, color: Colors.textFaint },
-  metadataValue: { flex: 1, color: Colors.textMuted, fontSize: 11, lineHeight: 18 },
+  metadataLabel: { width: 100, fontSize: 12, lineHeight: 18, letterSpacing: 0.4, color: Colors.textFaint },
+  metadataValue: { flex: 1, color: Colors.textMuted, fontSize: 12, lineHeight: 18 },
   contentsButton: { flexDirection: 'row', gap: 10, alignItems: 'center', minHeight: 52, marginTop: 12, marginBottom: 24 },
   contentsLabel: { flex: 1, flexDirection: 'row', gap: 10, alignItems: 'center' },
   contentsText: { fontSize: 13, color: Colors.textMuted },
-  sectionCount: { fontSize: 11, color: Colors.textFaint },
+  sectionCount: { fontSize: 12, color: Colors.textFaint },
   section: { paddingBottom: 15, marginBottom: 28, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
   sectionHeading: { flexDirection: 'row', alignItems: 'baseline', gap: 12, marginBottom: 18 },
-  sectionNumber: { fontSize: 10, lineHeight: 22, color: Colors.textFaint, fontVariant: ['tabular-nums'] },
+  sectionNumber: { fontSize: 12, lineHeight: 22, color: Colors.textFaint, fontVariant: ['tabular-nums'] },
   sectionTitle: { flex: 1, fontSize: 18, lineHeight: 25, fontWeight: '500', letterSpacing: -0.3 },
   sourcesButton: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 48 },
   sourcesTitle: { flex: 1, fontSize: 15, fontWeight: '500' },
@@ -135,9 +137,9 @@ const styles = StyleSheet.create({
   source: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
   sourceBody: { flex: 1, gap: 3 },
   sourceLabel: { fontSize: 14, lineHeight: 21, color: '#9BCABC' },
-  sourceHost: { fontSize: 11, color: Colors.textFaint },
+  sourceHost: { fontSize: 12, color: Colors.textFaint },
   footer: { marginTop: 28, gap: 10, alignItems: 'flex-start' },
-  footerLabel: { color: Colors.textFaint, fontSize: 9, letterSpacing: 0.6 },
+  footerLabel: { color: Colors.textFaint, fontSize: 12, letterSpacing: 0.6 },
   linkText: { color: Colors.accent, fontSize: 13, fontWeight: '500' },
   retry: { minHeight: 44, justifyContent: 'center' },
   notice: { paddingBottom: 16 },

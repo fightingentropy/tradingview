@@ -10,6 +10,7 @@ import { ensureNotificationPermission, hasNotificationPermission } from '@/lib/n
 import { buildRemotePriceRules, priceAlertNotificationMatch } from '@/lib/priceAlertRegistration';
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/lib/queryKeys';
+import { notificationErrorMessage } from '@/lib/userMessages';
 import { newsFeedEndpoint, newsRelayAccessToken } from '@/providers/news/client';
 import { useAlertFeed } from '@/store/alertFeed';
 import { useAlerts } from '@/store/alerts';
@@ -101,7 +102,7 @@ async function sync(force?: boolean): Promise<void> {
       sources: [...new Set(rules.map(rule => rule.coinKey.startsWith('xyz:') ? 'xyz' : rule.source))], checkedAt: Date.now() });
     for (const event of result.events) applyRemotePriceNotification({ ...event, type: 'price-alert' });
   } catch (error) {
-    usePriceMonitor.setState({ error: error instanceof Error ? error.message : 'Price alert sync failed.' });
+    usePriceMonitor.setState({ error: notificationErrorMessage(error) });
     throw error;
   } finally { usePriceMonitor.setState({ syncing: false }); }
 }

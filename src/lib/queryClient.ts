@@ -14,7 +14,7 @@ export const queryClient = new QueryClient({
       // garbage-collected before they're observed and never show on cold start.
       gcTime: PERSIST_MAX_AGE,
       retry: 2,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true,
     },
   },
 });

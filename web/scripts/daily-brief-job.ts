@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { homedir, hostname } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,15 +11,35 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const serviceHome = resolve(homedir(), 'Library/Application Support/TradingView Daily Brief');
 const statePath = resolve(serviceHome, 'status.json');
 const publicFeed = 'https://trade.erlin.org/api/daily-briefs';
-type Attempt = { day: string; attempts: number; lastAttempt: string; state: string; error?: string; headline?: string; host: string };
+export type Attempt = { day: string; attempts: number; lastAttempt: string; state: string; error?: string; failureKind?: 'quota' | 'other'; nextAttemptAt?: string; headline?: string; host: string };
 
 export function canAttempt(now: Date, previous?: Attempt): boolean {
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hourCycle: 'h23' }).format(now));
   if (hour < 8) return false;
   if (!previous || previous.day !== londonDateKey(now)) return true;
-  if (previous.state === 'published' || previous.attempts >= 4) return false;
+  if (previous.state === 'published') return false;
+  const quota = previous.failureKind === 'quota' || isQuotaFailure(previous.error ?? '');
+  if (quota) {
+    const next = Date.parse(previous.nextAttemptAt ?? '') || Date.parse(previous.lastAttempt) + 60 * 60_000;
+    return now.getTime() >= next;
+  }
+  if (previous.attempts >= 4) return false;
   const retryMinutes = [0, 30, 60, 120][Math.min(previous.attempts, 3)]!;
   return now.getTime() - Date.parse(previous.lastAttempt) >= retryMinutes * 60_000;
+}
+
+/** A quota reset can happen within the same day; keep checking at a bounded cadence. */
+export function isQuotaFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /usage[ _-]*limit|rate[ _-]*limit|quota|too many requests|\b429\b/i.test(message);
+}
+
+export function failureState(error: unknown, now = new Date()) {
+  return {
+    error: error instanceof Error ? error.message : String(error),
+    failureKind: isQuotaFailure(error) ? 'quota' as const : 'other' as const,
+    ...(isQuotaFailure(error) ? { nextAttemptAt: new Date(now.getTime() + 60 * 60_000).toISOString() } : {}),
+  };
 }
 
 function run(command: string, args: string[], options: { input?: string; cwd?: string; timeout?: number; quiet?: boolean } = {}): Promise<string> {
@@ -157,7 +177,7 @@ async function main() {
     saveState({ ...attempt, state: 'published', headline: brief.title });
     console.log(JSON.stringify({ state: 'published', day, headline: brief.title, host: hostname() }));
   } catch (error) {
-    if (attempt && !researchOnly) saveState({ ...attempt, state: 'failed', error: error instanceof Error ? error.message : String(error) });
+    if (attempt && !researchOnly) saveState({ ...attempt, state: 'failed', ...failureState(error) });
     throw error;
   } finally { await new Promise<void>((accept) => lock.close(() => accept())); }
 }

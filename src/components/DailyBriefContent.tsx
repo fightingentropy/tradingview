@@ -3,7 +3,7 @@ import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native
 
 import { AppText } from '@/components/ui/AppText';
 import { Colors } from '@/constants/theme';
-import { safeBriefUrl, type BriefBlock, type BriefInline } from '../../web/src/lib/dailyBrief';
+import { safeBriefUrl, type BriefBlock, type BriefInline } from '@tradingview/shared/brief';
 
 export async function openBriefSource(value: string) {
   const url = safeBriefUrl(value);

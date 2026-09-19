@@ -13,7 +13,9 @@ interactive login and does not require the Codex desktop app or the laptop.
 - A verified edition already published for the London date is never regenerated
   or overwritten. An existing edition is checked through the public API.
 - Failed generation retries after 30, 60, then 120 minutes, with four attempts
-  maximum per day. The last published edition remains online.
+  maximum per day for ordinary failures. Usage-limit failures retry hourly so a
+  same-day quota reset recovers automatically; they never regenerate an already
+  published edition. The last published edition remains online.
 - A loopback-only process lock prevents overlapping research. A separate lock
   serializes publication. The OS releases both locks after termination/reboot.
 - Research has a 40-minute limit. Publication runs through the existing validated
@@ -80,8 +82,8 @@ sign-in on the Mac mini. Never copy secrets into the repository or plist.
 
 The iPhone app opens **News → Daily brief** by default. It reads the same public
 index and dated editions as the website, so new publications need no app update.
-The native renderer uses the web reader's publication validation and safe
-Markdown parser; the content, timestamps and sources stay identical. Both readers
+Both renderers use the shared publication validation and safe
+Markdown parser in `@tradingview/shared`; the content, timestamps and sources stay identical. Both readers
 show only the latest edition, with no archive picker or bundled historical fallback.
 Each publication replaces the discovery index with its single current entry.
 

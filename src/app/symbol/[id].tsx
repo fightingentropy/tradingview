@@ -12,12 +12,12 @@ import {
   View,
 } from 'react-native';
 
-import { IndicatorMenu } from '@/components/IndicatorMenu';
 import { FundingChart } from '@/components/FundingChart';
-import { PriceChart, type ChartOrderLevel, type ChartType } from '@/components/PriceChart';
+import { IndicatorMenu } from '@/components/IndicatorMenu';
+import { InstrumentNewsLink } from '@/components/InstrumentNews';
+import { PriceChart, type ChartOrderLevel } from '@/components/PriceChart';
 import { PriceStatus } from '@/components/PriceStatus';
 import { RangeBar } from '@/components/RangeBar';
-import { InstrumentNewsLink } from '@/components/InstrumentNews';
 import { useSymbolMenu } from '@/components/SymbolMenu';
 import {
   floorSizeToDecimals,
@@ -30,14 +30,14 @@ import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { VenueBadge } from '@/components/VenueBadge';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { DEFAULT_RANGE, resolveRange, type RangeKey } from '@/domain/ranges';
-import type { Candle } from '@/domain/types';
 import { useActiveAsset } from '@/data/useActiveAsset';
 import { useCandles } from '@/data/useCandles';
 import { useHlAccount, useHlOpenOrders, useTradingIdentity } from '@/data/useHlAccount';
 import { useHlMeta } from '@/data/useHlMeta';
-import { useAllMarkets } from '@/data/useMarkets';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
+import { useAllMarkets } from '@/data/useMarkets';
+import { resolveRange } from '@/domain/ranges';
+import type { Candle } from '@/domain/types';
 import {
   formatCompact,
   formatFundingApr,
@@ -60,18 +60,18 @@ import {
   type HlOpenOrder,
   type HlPosition,
 } from '@/lib/hyperliquid/info';
+import { priceToWire, sizeToWire } from '@/lib/hyperliquid/sign';
 import {
   assertTradingIdentityCurrent,
   signedIdentityBinding,
   TradingIdentityError,
   type SignedTradingIdentityBinding,
 } from '@/lib/hyperliquid/tradingIdentity';
-import { priceToWire, sizeToWire } from '@/lib/hyperliquid/sign';
+import { marketCatalogErrorForId, marketDataError } from '@/lib/marketCatalog';
 import { queryKeys } from '@/lib/queryKeys';
 import { useChartSettings } from '@/store/chartSettings';
 import { useHlConnection } from '@/store/hlConnection';
 import { useMarketPrice } from '@/store/livePrices';
-import { marketCatalogErrorForId, marketDataError } from '@/lib/marketCatalog';
 import { usePreferences } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
@@ -168,8 +168,10 @@ export default function SymbolScreen() {
       ? instrument.coinKey
       : undefined;
 
-  const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);
-  const [chartType, setChartType] = useState<ChartType>('candle');
+  const range = useChartSettings((s) => s.range);
+  const setRange = useChartSettings((s) => s.setRange);
+  const chartType = useChartSettings((s) => s.chartType);
+  const setChartType = useChartSettings((s) => s.setChartType);
   const [detailTab, setDetailTab] = useState<'chart' | 'funding'>('chart');
   const [ticketMode, setTicketMode] = useState<TicketMode | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
@@ -968,7 +970,7 @@ export default function SymbolScreen() {
         <View style={styles.controls}>
           <Pressable
             style={styles.typeToggle}
-            onPress={() => setChartType((t) => (t === 'candle' ? 'line' : 'candle'))}
+            onPress={() => setChartType(chartType === 'candle' ? 'line' : 'candle')}
             accessibilityRole="button"
             accessibilityLabel="Toggle chart type">
             <Ionicons

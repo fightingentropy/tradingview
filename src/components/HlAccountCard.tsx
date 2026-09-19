@@ -29,6 +29,8 @@ function ConnectedCard() {
   const hasKey = useHlConnection((s) => s.hasKey);
   const demo = useHlConnection((s) => s.demo);
   const disconnect = useHlConnection((s) => s.disconnect);
+  const disconnecting = useHlConnection((s) => s.disconnecting);
+  const disconnectError = useHlConnection((s) => s.disconnectError);
   const [editing, setEditing] = useState(false);
   const { data: identity, isError, isFetching, refetch } = useTradingIdentity();
 
@@ -37,7 +39,7 @@ function ConnectedCard() {
 
   const live = network === 'mainnet';
   const verified = live && hasKey && !isError && identity?.status === 'verified-signer';
-  const needsKey = !demo && (!hasKey || !live || (isError && !isFetching));
+  const needsKey = !disconnecting && !demo && (!hasKey || !live || (isError && !isFetching));
   const showForm = editing || needsKey;
   const status = demo ? 'Practice account'
     : !live ? 'Reconnect account'
@@ -101,8 +103,11 @@ function ConnectedCard() {
         />
       ) : null}
 
-      <Pressable accessibilityRole="button" style={styles.disconnect} onPress={disconnect}>
-        <AppText variant="caption" muted>{demo ? 'Exit practice account' : 'Disconnect account'}</AppText>
+      {disconnectError ? <AppText accessibilityRole="alert" variant="caption" color={Colors.down} style={styles.connectionNote}>{disconnectError}</AppText> : null}
+      <Pressable accessibilityRole="button" accessibilityLabel={demo ? 'Exit practice account' : 'Disconnect account'} accessibilityState={{ busy: disconnecting, disabled: disconnecting }} disabled={disconnecting} style={styles.disconnect} onPress={() => {
+        void disconnect().catch(() => { /* The connection store keeps the error visible after remount. */ });
+      }}>
+        {disconnecting ? <ActivityIndicator color={Colors.textMuted} /> : <AppText variant="caption" muted>{demo ? 'Exit practice account' : 'Disconnect account'}</AppText>}
       </Pressable>
     </>
   );

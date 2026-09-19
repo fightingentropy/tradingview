@@ -26,7 +26,9 @@ interface HlConnectionState {
   refreshKey: () => void;
   connectVerifiedAccount: (accountAddress: string, apiKey: string) => void;
   connectDemo: (address: string) => void;
-  disconnect: () => void;
+  disconnecting: boolean;
+  disconnectError: string | null;
+  disconnect: () => Promise<void>;
 }
 
 /** Public address with open positions, for previewing the screen before connecting. */
@@ -36,12 +38,14 @@ const isHexAddress = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a.trim());
 
 export const useHlConnection = create<HlConnectionState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       address: null,
       network: 'mainnet',
       hasKey: false,
       keyRevision: 0,
       demo: false,
+      disconnecting: false,
+      disconnectError: null,
       setAddress: (address) =>
         set((s) => ({
           // Only adopt a valid 0x address; an invalid string must not become the
@@ -53,6 +57,7 @@ export const useHlConnection = create<HlConnectionState>()(
       refreshKey: () =>
         set((s) => ({ hasKey: hasAgentKey(), keyRevision: s.keyRevision + 1 })),
       connectVerifiedAccount: (accountAddress, apiKey) => {
+        if (get().disconnecting) throw new Error('Your account is disconnecting. Please try again in a moment.');
         if (!isHexAddress(accountAddress)) throw new Error('Could not identify your account. Please try again.');
         // Save first: a failed write must leave the previous account untouched.
         setAgentKey(apiKey, true);
@@ -65,9 +70,18 @@ export const useHlConnection = create<HlConnectionState>()(
         }));
       },
       connectDemo: (address) => set({ address, demo: true, hasKey: false }),
-      disconnect: () => {
-        clearAgentKey();
-        set((s) => ({ address: null, hasKey: false, demo: false, keyRevision: s.keyRevision + 1 }));
+      disconnect: async () => {
+        if (get().disconnecting) return;
+        set((s) => ({ disconnecting: true, disconnectError: null, hasKey: false, keyRevision: s.keyRevision + 1 }));
+        try {
+          await clearAgentKey();
+          set((s) => ({ address: null, hasKey: false, demo: false, keyRevision: s.keyRevision + 1 }));
+        } catch (error) {
+          set((s) => ({ hasKey: hasAgentKey(), disconnectError: error instanceof Error ? error.message : 'Could not disconnect. Please try again.', keyRevision: s.keyRevision + 1 }));
+          throw error;
+        } finally {
+          set({ disconnecting: false });
+        }
       },
     }),
     {

@@ -1,23 +1,25 @@
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useIsRestoring } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import { MarketFeedNotice } from '@/components/MarketFeedNotice';
 import { SortControl } from '@/components/SortControl';
 import { SymbolRow } from '@/components/SymbolRow';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { instrumentDisplayName } from '@/domain/instrumentDisplay';
-import type { AssetClass, Instrument } from '@/domain/types';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useMarkets } from '@/data/useMarkets';
-import { usePreferences } from '@/store/preferences';
+import { instrumentDisplayName } from '@/domain/instrumentDisplay';
+import type { AssetClass, Instrument } from '@/domain/types';
+import { hasMarketFeedError } from '@/lib/marketCatalog';
+import { usePreferences, type MarketsFilter } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
 
-type Filter = 'all' | 'crypto' | 'stocks' | 'spot';
+type Filter = MarketsFilter;
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -45,10 +47,12 @@ interface Searchable {
 export default function MarketsScreen() {
   const router = useRouter();
   const listRef = useRef<FlashListRef<Instrument>>(null);
-  const { data, isLoading } = useMarkets();
+  const { data, isLoading, isError, isPaused, isFetching, refetch } = useMarkets();
+  const feedUnavailable = hasMarketFeedError(data?.marketErrors, isError || isPaused);
   const isRestoring = useIsRestoring();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
+  const filter = usePreferences((s) => s.marketsFilter);
+  const setFilter = usePreferences((s) => s.setMarketsFilter);
   // Persisted so the chosen order survives app restarts.
   const sort = usePreferences((s) => s.marketsSort);
   const setSort = usePreferences((s) => s.setMarketsSort);
@@ -191,6 +195,7 @@ export default function MarketsScreen() {
         <AppText style={[styles.columnLabel, styles.priceColumn]}>Last / 24h</AppText>
       </View>
 
+      {feedUnavailable && results.length > 0 ? <MarketFeedNotice busy={isFetching} onRetry={() => void refetch()} /> : null}
       {isLoading || isRestoring ? (
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} />
@@ -203,12 +208,12 @@ export default function MarketsScreen() {
           keyExtractor={(item) => item.id}
           keyboardShouldPersistTaps="handled"
           renderItem={renderItem}
-          ListEmptyComponent={
+          ListEmptyComponent={feedUnavailable ? <MarketFeedNotice empty busy={isFetching} onRetry={() => void refetch()} /> : (
             <View style={styles.empty}>
               <AppText style={styles.emptyTitle}>No matching markets</AppText>
               <AppText variant="caption" muted>Try another symbol or category.</AppText>
             </View>
-          }
+          )}
         />
       )}
     </Screen>

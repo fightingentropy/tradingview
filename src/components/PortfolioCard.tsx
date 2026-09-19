@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { EquityCurve } from '@/components/EquityCurve';
 import { AppText } from '@/components/ui/AppText';
 import { Colors } from '@/constants/theme';
@@ -7,6 +5,8 @@ import { useHlPortfolio } from '@/data/useHlAccount';
 import { signedUsd, usd } from '@/lib/format';
 import type { HlPortfolioPeriodKey } from '@/lib/hyperliquid/info';
 import { portfolioWindowMetrics, rebasedPnl } from '@/lib/portfolioMetrics';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 export const PORTFOLIO_PERIODS: { key: HlPortfolioPeriodKey; label: string }[] = [
   { key: 'day', label: '24H' }, { key: 'week', label: '7D' }, { key: 'month', label: '30D' }, { key: 'allTime', label: 'ALL' },
@@ -42,5 +42,5 @@ const styles = StyleSheet.create({
   metrics: { flexDirection: 'row', paddingTop: 16, paddingBottom: 6, gap: 20 }, metric: { flex: 1, gap: 5, minWidth: 0 }, value: { fontSize: 19, lineHeight: 25, fontWeight: '600' },
   empty: { height: 202, alignItems: 'center', justifyContent: 'center', gap: 12 }, footer: { flexDirection: 'row', gap: 6, marginTop: 16 },
   period: { minWidth: 48, paddingVertical: 8, alignItems: 'center', borderRadius: 6 }, periodActive: { backgroundColor: Colors.surfaceAlt },
-  details: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 14, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border }, note: { marginTop: 8, fontSize: 10, lineHeight: 15 },
+  details: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 14, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border }, note: { marginTop: 8, fontSize: 12, lineHeight: 18 },
 });

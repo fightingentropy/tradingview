@@ -1,6 +1,7 @@
 import { Component, For, Show, createMemo } from "solid-js";
-import { currentSymbol, markPrice } from "../stores/market";
 import { getOrderBook } from "../stores/clob";
+import { currentSymbol, markPrice } from "../stores/market";
+import Spinner from "./Spinner";
 
 const MAX_DEPTH = 15;
 
@@ -70,7 +71,7 @@ const OrderBook: Component = () => {
         when={!isEmpty()}
         fallback={
           <div class="flex-1 flex items-center justify-center px-3 text-xs text-brand-slate-500">
-            Loading order book…
+            <Spinner label="Loading order book" />
           </div>
         }
       >

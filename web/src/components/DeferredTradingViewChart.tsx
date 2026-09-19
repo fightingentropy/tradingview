@@ -7,6 +7,7 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
+import Spinner from "./Spinner";
 
 const TradingViewChart = lazy(() => import("./TradingViewChart"));
 
@@ -18,7 +19,7 @@ const ChartPlaceholder: Component = () => (
   >
     <div class="h-9 shrink-0 border-b border-brand-border bg-brand-surface/50" />
     <div class="flex flex-1 items-center justify-center text-xs text-brand-slate-500">
-      Loading chart…
+      <Spinner label="Loading chart" />
     </div>
   </div>
 );

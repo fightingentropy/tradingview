@@ -1,27 +1,28 @@
+import { notificationErrorMessage } from '@/lib/userMessages';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { Fragment, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { HlAccountCard } from '@/components/HlAccountCard';
-import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AppText } from '@/components/ui/AppText';
+import { GlassToggle } from '@/components/ui/GlassToggle';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Spacing } from '@/constants/theme';
+import { useAllMarkets } from '@/data/useMarkets';
 import {
   ALL_NEWS_NOTIFICATION_SOURCE_IDS,
   NEWS_NOTIFICATION_SOURCES,
   normalizeNewsNotificationSourceIds,
 } from '@/domain/newsNotificationSources';
 import { priceAlertDeliveryLabel, priceMonitorLabel } from '@/domain/priceAlerts';
-import { useAllMarkets } from '@/data/useMarkets';
-import { buildRemotePriceRules } from '@/lib/priceAlertRegistration';
-import { setRemotePriceAlertsEnabled, syncRemotePriceAlerts } from '@/lib/priceAlertSync';
 import { formatPrice, formatProbability } from '@/lib/format';
 import {
   registerNewsPushNotifications,
   unregisterNewsPushNotifications,
 } from '@/lib/newsPush';
+import { buildRemotePriceRules } from '@/lib/priceAlertRegistration';
+import { setRemotePriceAlertsEnabled, syncRemotePriceAlerts } from '@/lib/priceAlertSync';
 import { useAlerts } from '@/store/alerts';
 import { useChartSettings } from '@/store/chartSettings';
 import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
@@ -92,7 +93,7 @@ export default function SettingsScreen() {
     } catch (error) {
       Alert.alert(
         'Price alerts unavailable',
-        error instanceof Error ? error.message : 'Could not update price alert notifications.',
+        notificationErrorMessage(error),
       );
     } finally {
       setPendingAction(null);
@@ -118,7 +119,7 @@ export default function SettingsScreen() {
     } catch (error) {
       Alert.alert(
         'News alerts unavailable',
-        error instanceof Error ? error.message : 'Could not register this device for news alerts.',
+        notificationErrorMessage(error),
       );
     } finally {
       setPendingAction(null);
@@ -146,7 +147,7 @@ export default function SettingsScreen() {
       setNewsNotificationSources(previous);
       Alert.alert(
         'Could not update news alerts',
-        error instanceof Error ? error.message : 'The selected sources could not be saved.',
+        notificationErrorMessage(error),
       );
     } finally {
       setPendingAction(null);
