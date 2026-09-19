@@ -5,6 +5,7 @@
 import { toNum } from '@/lib/format';
 import { earnUsdcState, feeVolume14d, portfolioNumber, portfolioPoints } from '@/lib/portfolioMetrics';
 import { normalizeAccountActivity, type AccountActivity } from '@/lib/accountActivity';
+import { deriveAccountOverview, type HlAccountOverview, type OverviewSpotState } from '@/lib/accountOverview';
 import {
   deriveModeAwareAccountMetrics,
   deriveSignedSpotEquity,
@@ -455,8 +456,8 @@ export async function fetchUserRole(address: string, network: HlNetwork = 'mainn
   return infoRequest<HlUserRole>(network, { type: 'userRole', user: address });
 }
 
-interface RawSpotState {
-  balances: { coin: string; token: number; total: string; hold: string }[];
+interface RawSpotState extends OverviewSpotState {
+  balances: { coin: string; token: number; total: string; hold: string; ltv?: string }[];
 }
 interface SpotMeta {
   universe: { name: string; tokens: [number, number]; index: number }[];
@@ -501,15 +502,23 @@ function spotPrices([meta, ctxs]: [SpotMeta, SpotCtx[]]): SpotPrices {
     if (mark != null && mark >= 0) markByCoin[c.coin] = mark;
   }
   const byToken: Record<number, number> = { 0: 1 }; // USDC is token 0
-  for (const u of meta.universe) {
-    const [base, quote] = u.tokens;
-    if (quote !== 0) continue; // only USDC-quoted pairs give a USD price
-    const px =
-      markByCoin[u.name] ??
-      markByCoin[`@${u.index}`] ??
-      midByCoin[u.name] ??
-      midByCoin[`@${u.index}`];
-    if (px != null) byToken[base] = px;
+  // Resolve every reachable quote token (e.g. BTC/USDT -> USDT/USDC).
+  for (let pass = 0; pass <= meta.universe.length; pass++) {
+    let changed = false;
+    for (const u of meta.universe) {
+      const [base, quote] = u.tokens;
+      const px = markByCoin[u.name] ?? markByCoin[`@${u.index}`] ?? midByCoin[u.name] ?? midByCoin[`@${u.index}`];
+      if (px == null || px < 0) continue;
+      if (byToken[base] == null && byToken[quote] != null) {
+        byToken[base] = px * byToken[quote];
+        changed = true;
+      }
+      if (px > 0 && byToken[quote] == null && byToken[base] != null) {
+        byToken[quote] = byToken[base] / px;
+        changed = true;
+      }
+    }
+    if (!changed) break;
   }
   const byCoin: Record<string, number> = {};
   for (const coin of new Set([...Object.keys(midByCoin), ...Object.keys(markByCoin)])) {
@@ -517,6 +526,30 @@ function spotPrices([meta, ctxs]: [SpotMeta, SpotCtx[]]): SpotPrices {
     if (px != null) byCoin[coin] = px;
   }
   return { byToken, byCoin };
+}
+
+/** Full exchange summary, subscribed only while Account's Overview is expanded. */
+export async function fetchHlAccountOverview(
+  address: string,
+  mode: HlAccountMode,
+  network: HlNetwork = 'mainnet',
+): Promise<HlAccountOverview> {
+  const [spot, prices, perps] = await Promise.allSettled([
+    infoRequest<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }),
+    infoRequest<[SpotMeta, SpotCtx[]]>(network, { type: 'spotMetaAndAssetCtxs' }).then(spotPrices),
+    fetchPerpDexCollaterals(network).then((dexes) => Promise.all(dexes.map(async ({ dex, collateralToken }) => ({
+      collateralToken,
+      state: await infoRequest<RawClearinghouse>(network, {
+        type: 'clearinghouseState', user: address, ...(dex ? { dex } : {}),
+      }),
+    })))),
+  ]);
+  return deriveAccountOverview({
+    mode,
+    spot: spot.status === 'fulfilled' ? spot.value : null,
+    prices: prices.status === 'fulfilled' ? prices.value : null,
+    perps: perps.status === 'fulfilled' ? perps.value : null,
+  });
 }
 
 /**

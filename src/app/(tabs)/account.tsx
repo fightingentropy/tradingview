@@ -1003,7 +1003,7 @@ export default function AccountScreen() {
         <OrderRecoveryNotice network={network} address={tradingIdentity?.accountAddress} />
         <AccountReadStatus label="account" query={accountQuery} freshForMs={15_000} />
 
-        <AccountSummary account={account} riskSummary={openOrders !== undefined ? riskSummary ?? undefined : undefined} address={tradingIdentity?.accountAddress ?? address} refreshing={isFetching} onRefresh={() => { void refetch(); void ordersQuery.refetch(); }} />
+        <AccountSummary account={account} address={tradingIdentity?.accountAddress ?? address} refreshing={isFetching} onRefresh={() => { void refetch(); void ordersQuery.refetch(); }} />
         {openOrders !== undefined ? <RiskStrip compact summary={riskSummary!} hidden={privacyMode} /> : null}
         {ordersQuery.isError ? <AccountReadStatus label="orders" query={ordersQuery} freshForMs={20_000} /> : null}
 

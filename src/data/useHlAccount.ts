@@ -4,6 +4,7 @@ import { useIsFocused } from 'expo-router';
 import {
   fetchHistoricalOrders,
   fetchHlAccount,
+  fetchHlAccountOverview,
   fetchHlAccountFees,
   fetchHlEarnBalance,
   fetchHlPortfolio,
@@ -25,6 +26,7 @@ import {
 } from '@/lib/hyperliquid/tradingIdentity';
 import { queryKeys } from '@/lib/queryKeys';
 import { useHlConnection } from '@/store/hlConnection';
+import type { HlAccountMode } from '@/lib/accountRisk';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
@@ -110,6 +112,20 @@ export function useHlAccount(enabled = true) {
     enabled: enabled && focused && !!account,
     refetchInterval: 5_000,
     staleTime: 4_000,
+  });
+}
+
+/** Includes all perp DEXs, independently of the markets offered by the app. */
+export function useHlAccountOverview(mode: HlAccountMode, enabled = true) {
+  const focused = useIsFocused();
+  const network = useHlConnection((s) => s.network);
+  const { data: account } = useTradingAddress();
+  return useQuery({
+    queryKey: queryKeys.hlAccountOverview(network, account ?? '', mode),
+    queryFn: () => fetchHlAccountOverview(account as string, mode, network),
+    enabled: enabled && focused && !!account,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
   });
 }
 
