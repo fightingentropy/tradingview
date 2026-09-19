@@ -42,20 +42,20 @@ publishers or use `--initialize` after the first publication.
 ## Storage and reader
 
 Cloudflare KV binding `DAILY_BRIEFS` stores each edition separately under
-`edition:v1:YYYY-MM-DD`. `index:v1` contains dates/headlines only and is published
-last, after all content writes succeed. The publication process retains all
-previous editions. No frontend rebuild or Git commit is needed for daily content.
+`edition:v1:YYYY-MM-DD`. `index:v1` contains only the latest date/headline and is
+published last, after its content write succeeds. Earlier stored documents are
+not listed in the app. No frontend rebuild or Git commit is needed for daily content.
 
-The reader loads the index and fetches editions on demand, with safe Markdown
-rendering, archive navigation, source links, and a Markdown download. It checks
-for new publications every five minutes while visible and when returning to
-the tab. Later publications do not interrupt an edition already being read.
+The web and iPhone readers fetch only the latest edition, with safe Markdown
+rendering, source links, and sharing/downloads. They check for new publications
+every five minutes while visible and when returning to the app or tab. A new
+publication replaces the previous one automatically; there is no archive menu.
 Missing editions are never synthesized or relabeled as today's news.
 
-Bundled editions provide an honest dated fallback if the feed is unavailable.
-The initial 7 September, 5 September, and 25 August 2026 editions preserve final
-responses from task `brief` (`019f4806-e3d3-70d1-84f0-2d83dfa6d712`). The
-16 September edition is fresh research prepared during this feature's setup.
+The Markdown files in this directory are parser and validation fixtures only.
+They are not bundled into either reader or seeded into the publication index.
+A first-load failure shows a retry action. If a later refresh fails, an already
+loaded latest edition may remain visible with its original date and a refresh notice.
 
 ## Validation
 
