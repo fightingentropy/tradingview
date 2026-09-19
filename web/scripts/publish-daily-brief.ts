@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { briefEntry, parseBriefIndex, parseBriefPayload, validateFreshBrief, type BriefIndex } from '../src/lib/dailyBriefFeed';
+import { briefEntry, parseBriefIndex, parseBriefPayload, validateFreshBrief } from '../src/lib/dailyBriefFeed';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const { values } = parseArgs({ options: {
@@ -42,34 +42,22 @@ if (values['dry-run']) {
     const existing = get('index:v1');
     if (existing === null && !values.initialize) throw new Error('No publication index. Use --initialize only for the first publication.');
     if (existing !== null && values.initialize) throw new Error('The index already exists; omit --initialize.');
-    const index: BriefIndex = existing === null ? { version: 1, publishedAt: new Date().toISOString(), editions: [] } : parseBriefIndex(existing);
-    const incoming = [current];
-    if (values.initialize) {
-      for (const [id, title] of [
-        ['2026-09-07', 'Inflation pressure, resilient AI hardware'],
-        ['2026-09-05', 'Strong jobs. Higher oil. Narrow leadership.'],
-        ['2026-08-25', 'Relief in rates and oil. The next test is earnings.'],
-      ]) incoming.push(parseBriefPayload({ title, markdown: readFileSync(resolve(root, `web/src/data/briefs/${id}.md`), 'utf8') }));
+    const previousIndex = existing === null ? undefined : parseBriefIndex(existing);
+    if (previousIndex && previousIndex.editions[0]!.generated > current.generated) throw new Error('A newer edition is already published.');
+    const key = `edition:v1:${current.id}`;
+    const previous = get(key);
+    if (previous !== null) {
+      const published = parseBriefPayload(previous);
+      if (published.raw !== current.raw || published.title !== current.title) throw new Error(`Edition ${current.id} is already published. Refusing to overwrite its original analysis.`);
+    } else {
+      put(key, { title: current.title, markdown: current.raw });
     }
-    for (const brief of incoming) {
-      const key = `edition:v1:${brief.id}`;
-      const previous = get(key);
-      if (previous !== null) {
-        const published = parseBriefPayload(previous);
-        if (published.raw !== brief.raw || published.title !== brief.title) throw new Error(`Edition ${brief.id} is already published. Refusing to overwrite its original analysis.`);
-      } else {
-        put(key, { title: brief.title, markdown: brief.raw });
-      }
-      index.editions = [briefEntry(brief), ...index.editions.filter((entry) => entry.id !== brief.id)];
-    }
-    index.editions.sort((a, b) => b.generated.localeCompare(a.generated));
-    index.publishedAt = new Date().toISOString();
-    parseBriefIndex(index);
-    // Publish discovery last, after every referenced edition has been stored successfully.
+    // Publish discovery last. The reader offers only the latest daily edition.
+    const index = parseBriefIndex({ version: 1, publishedAt: new Date().toISOString(), editions: [briefEntry(current)] });
     put('index:v1', index);
     const verified = parseBriefIndex(get('index:v1'));
     if (!verified.editions.some((entry) => entry.id === current.id && entry.title === current.title)) throw new Error('Publication written but read-back verification is pending. Inspect the public feed before retrying.');
-    console.log(JSON.stringify({ published: current.id, title: current.title, archiveCount: verified.editions.length, url: 'https://trade.erlin.org/brief' }));
+    console.log(JSON.stringify({ published: current.id, title: current.title, url: 'https://trade.erlin.org/brief' }));
   } finally {
     rmSync(staging, { recursive: true, force: true });
     await new Promise<void>((accept) => lock.close(() => accept()));

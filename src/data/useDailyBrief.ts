@@ -7,7 +7,6 @@ import { loadBriefEdition, loadBriefIndex } from '@/providers/briefs/client';
 
 export function useDailyBrief() {
   const focused = useIsFocused();
-  const [selectedId, setSelectedId] = useState<string>();
   const [now, setNow] = useState(() => new Date());
   const index = useQuery({
     queryKey: ['daily-brief', 'index'],
@@ -16,8 +15,7 @@ export function useDailyBrief() {
     staleTime: 60_000,
     refetchInterval: focused ? 5 * 60_000 : false,
   });
-  const entries = index.data?.editions ?? [];
-  const entry = entries.find((item) => item.id === selectedId) ?? entries[0];
+  const entry = index.data?.editions[0];
   const edition = useQuery({
     queryKey: ['daily-brief', 'edition', entry?.id, entry?.title, entry?.generated],
     queryFn: ({ signal }) => {
@@ -27,8 +25,6 @@ export function useDailyBrief() {
     enabled: focused && Boolean(entry),
     staleTime: Infinity,
   });
-  // Pin the first edition so an index refresh never changes an active read.
-  if (!selectedId && entry) setSelectedId(entry.id);
 
   const { refetch: refreshIndex } = index;
   const { refetch: refreshEdition } = edition;
@@ -48,10 +44,6 @@ export function useDailyBrief() {
 
   return {
     brief: edition.data,
-    entries,
-    selectedId: entry?.id,
-    selectEdition: setSelectedId,
-    latestId: entries[0]?.id,
     loading: index.isPending || (Boolean(entry) && edition.isPending),
     refreshing: index.isRefetching || edition.isRefetching,
     error: index.error ?? edition.error,

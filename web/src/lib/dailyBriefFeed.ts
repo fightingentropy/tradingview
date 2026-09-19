@@ -14,7 +14,8 @@ export function parseBriefIndex(value: unknown): BriefIndex {
     ids.add(item.id);
     return { id: item.id, title: item.title, generated: item.generated };
   }).sort((a, b) => b.generated.localeCompare(a.generated));
-  return { version: 1, publishedAt: value.publishedAt, editions };
+  // Accept legacy indexes, but only expose the newest published edition.
+  return { version: 1, publishedAt: value.publishedAt, editions: editions.slice(0, 1) };
 }
 
 export function parseBriefPayload(value: unknown, expected?: BriefEntry): DailyBrief {

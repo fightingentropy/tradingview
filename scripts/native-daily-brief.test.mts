@@ -7,13 +7,14 @@ const entry = { id: '2026-09-16', title: 'The Fed restarts tightening; breadth w
 const markdown = readFileSync(new URL('../web/src/data/briefs/2026-09-16.md', import.meta.url), 'utf8');
 afterEach(() => mock.restoreAll());
 
-test('native reader receives the exact published Markdown, source links and cutoff', async () => {
+test('native reader selects only the latest report from a legacy archive and receives its exact content', async () => {
   const urls: string[] = [];
   mock.method(globalThis, 'fetch', async (url: string) => {
     urls.push(url);
-    return Response.json(url.endsWith(entry.id) ? { title: entry.title, markdown } : { version: 1, publishedAt: '2026-09-16T21:00:00Z', editions: [entry] });
+    return Response.json(url.endsWith(entry.id) ? { title: entry.title, markdown } : { version: 1, publishedAt: '2026-09-16T21:00:00Z', editions: [{ ...entry, id: '2026-09-15', generated: '2026-09-15 08:00' }, entry] });
   });
   const index = await loadBriefIndex();
+  assert.deepEqual(index.editions.map((item) => item.id), [entry.id]);
   const edition = await loadBriefEdition(index.editions[0]);
   assert.equal(edition.raw, markdown.trim());
   assert.equal(edition.sections.length, 8);

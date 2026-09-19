@@ -81,12 +81,14 @@ sign-in on the Mac mini. Never copy secrets into the repository or plist.
 The iPhone app opens **News → Daily brief** by default. It reads the same public
 index and dated editions as the website, so new publications need no app update.
 The native renderer uses the web reader's publication validation and safe
-Markdown parser; the content, timestamps, sources and archive dates stay identical.
+Markdown parser; the content, timestamps and sources stay identical. Both readers
+show only the latest edition, with no archive picker or bundled historical fallback.
+Each publication replaces the discovery index with its single current entry.
 
 The reader refreshes the index on focus, app foreground and every five minutes
-while open. Pull to refresh checks the index and the selected edition. A newer
-edition is offered without interrupting the current read. Previously loaded public
-editions use the app's existing 24-hour cache, with their original dates and a
+while open. Pull to refresh checks the index and current edition. A newer
+publication automatically replaces the previous one. The latest loaded public
+edition uses the app's existing 24-hour cache, with its original date and a
 refresh warning when the network fails. Private News feeds retain their separate
 cache policy.
 

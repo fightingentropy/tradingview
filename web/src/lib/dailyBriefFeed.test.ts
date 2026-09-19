@@ -25,11 +25,11 @@ describe('daily publishing validation', () => {
     expect(() => parseBriefPayload(payload, { ...briefEntry(brief), id: '2026-09-15' })).toThrow('match');
     expect(() => parseBriefPayload(payload, { ...briefEntry(brief), title: 'Different' })).toThrow('match');
   });
-  test('validates and sorts the publication index without silently losing bad entries', () => {
+  test('exposes only the newest legacy entry while still rejecting malformed indexes', () => {
     const latest = briefEntry(parseBriefPayload(payload));
     const previous = { ...latest, id: '2026-09-15', generated: '2026-09-15 08:00' };
     const index = { version: 1, publishedAt: now.toISOString(), editions: [previous, latest] };
-    expect(parseBriefIndex(index).editions.map((entry) => entry.id)).toEqual(['2026-09-16', '2026-09-15']);
+    expect(parseBriefIndex(index).editions.map((entry) => entry.id)).toEqual(['2026-09-16']);
     expect(() => parseBriefIndex({ ...index, editions: [latest, latest] })).toThrow('entry');
     expect(() => parseBriefIndex({ ...index, editions: [{ ...latest, id: '2026-02-30', generated: '2026-02-30 08:00' }] })).toThrow('date');
     expect(() => parseBriefIndex({ ...index, version: 2 })).toThrow('index');

@@ -11,8 +11,8 @@ import { DAILY_BRIEF_URL } from '@/providers/briefs/client';
 import { editionStatus, formatBriefDate } from '../../web/src/lib/dailyBrief';
 
 export function DailyBriefReader() {
-  const { brief, entries, selectedId, selectEdition, latestId, loading, refreshing, error, refresh, now } = useDailyBrief();
-  const [sheet, setSheet] = useState<'editions' | 'contents' | null>(null);
+  const { brief, loading, refreshing, error, refresh, now } = useDailyBrief();
+  const [contentsOpen, setContentsOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const scroller = useRef<ScrollView>(null);
   const sectionPositions = useRef<Record<string, number>>({});
@@ -21,7 +21,6 @@ export function DailyBriefReader() {
     scroller.current?.scrollTo({ y: 0, animated: false });
   }, [brief?.id]);
 
-  const chooseEdition = (id: string) => { setSheet(null); setSourcesOpen(false); selectEdition(id); };
   const share = async () => {
     if (!brief) return;
     try { await Share.share({ title: brief.title, message: `${brief.title}\n${formatBriefDate(brief.id)}\n\n${brief.raw}\n\n${DAILY_BRIEF_URL}` }); }
@@ -32,14 +31,10 @@ export function DailyBriefReader() {
     {loading ? <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading daily brief" /> : <Ionicons name="newspaper-outline" color={Colors.textMuted} size={32} />}
     {!loading && <AppText style={styles.emptyTitle}>Brief unavailable</AppText>}
     {!loading && <Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Try again</AppText></Pressable>}
-    {!loading && selectedId !== latestId && latestId && <Pressable accessibilityRole="button" onPress={() => chooseEdition(latestId)} style={styles.retry}><AppText style={styles.linkText}>Back to latest edition</AppText></Pressable>}
   </View>;
 
-  const status = editionStatus(brief, latestId ?? brief.id, now);
-  const selectedIndex = entries.findIndex((entry) => entry.id === brief.id);
-  const rows = sheet === 'editions'
-    ? entries.map((entry, index) => ({ id: entry.id, title: formatBriefDate(entry.id, 'short'), subtitle: entry.title, selected: entry.id === brief.id, latest: index === 0 }))
-    : brief.sections.map((section, index) => ({ id: section.id, title: section.title, subtitle: `Section ${String(index + 1).padStart(2, '0')}`, selected: false, latest: false }));
+  const status = editionStatus(brief, brief.id, now);
+  const rows = brief.sections.map((section, index) => ({ id: section.id, title: section.title, subtitle: `Section ${String(index + 1).padStart(2, '0')}` }));
 
   return <>
     <ScrollView ref={scroller} testID="daily-brief-reader" contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} tintColor={Colors.accent} />}>
@@ -53,26 +48,16 @@ export function DailyBriefReader() {
       </View>
 
       <View style={styles.editionBar}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Previous edition" disabled={selectedIndex < 0 || selectedIndex === entries.length - 1} onPress={() => chooseEdition(entries[selectedIndex + 1].id)} style={[styles.iconButton, (selectedIndex < 0 || selectedIndex === entries.length - 1) && styles.disabled]}>
-          <Ionicons name="chevron-back" size={17} color={Colors.textMuted} />
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Choose brief edition" onPress={() => setSheet('editions')} style={styles.dateButton}>
-          <AppText style={styles.dateText}>{formatBriefDate(brief.id, 'short')}</AppText>
-          <Ionicons name="chevron-down" size={14} color={Colors.textMuted} />
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Next edition" disabled={selectedIndex <= 0} onPress={() => chooseEdition(entries[selectedIndex - 1].id)} style={[styles.iconButton, selectedIndex <= 0 && styles.disabled]}>
-          <Ionicons name="chevron-forward" size={17} color={Colors.textMuted} />
-        </Pressable>
+        <AppText style={styles.dateText}>{formatBriefDate(brief.id, 'short')}</AppText>
         <AppText style={styles.readingTime}>{brief.readingMinutes} min read</AppText>
       </View>
 
       {error && <View style={styles.notice}><AppText style={styles.noticeText}>Couldn’t refresh · Showing saved edition</AppText><Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Retry</AppText></Pressable></View>}
-      {latestId && latestId !== brief.id && <Pressable accessibilityRole="button" onPress={() => chooseEdition(latestId)} style={styles.latest}><AppText style={styles.linkText}>Read latest edition · {formatBriefDate(latestId, 'short')}</AppText><Ionicons name="arrow-forward" size={16} color={Colors.accent} /></Pressable>}
 
       <View style={styles.articleHeader}>
-        <AppText style={styles.status}>{status === 'today' ? 'TODAY’S EDITION' : status === 'latest' ? 'LATEST AVAILABLE EDITION' : 'ARCHIVE EDITION'}</AppText>
+        <AppText style={styles.status}>{status === 'today' ? 'TODAY’S EDITION' : 'LATEST AVAILABLE EDITION'}</AppText>
         <AppText accessibilityRole="header" style={styles.headline}>{brief.title}</AppText>
-        {status !== 'today' && <AppText style={styles.archiveNote}>{status === 'latest' ? 'A newer brief has not been published yet. ' : ''}Analysis reflects this edition’s original cutoff.</AppText>}
+        {status !== 'today' && <AppText style={styles.cutoffNote}>A newer brief has not been published yet. Figures reflect the cutoff below.</AppText>}
         <View style={styles.metadata}>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>GENERATED</AppText><AppText style={styles.metadataValue}>{brief.generated.slice(11)} · Europe/London</AppText></View>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>MARKET STATE</AppText><AppText style={styles.metadataValue}>{brief.marketState}</AppText></View>
@@ -80,7 +65,7 @@ export function DailyBriefReader() {
         </View>
       </View>
 
-      <Pressable accessibilityRole="button" accessibilityLabel="Jump to a brief section" onPress={() => setSheet('contents')} style={styles.contentsButton}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Jump to a brief section" onPress={() => setContentsOpen(true)} style={styles.contentsButton}>
         <View style={styles.contentsLabel}><Ionicons name="list-outline" size={18} color={Colors.textMuted} /><AppText style={styles.contentsText}>In this brief</AppText></View>
         <AppText style={styles.sectionCount}>{brief.sections.length} sections</AppText><Ionicons name="chevron-down" size={15} color={Colors.textMuted} />
       </Pressable>
@@ -99,18 +84,17 @@ export function DailyBriefReader() {
       <View style={styles.footer}><AppText style={styles.footerLabel}>END OF BRIEF · {formatBriefDate(brief.id, 'short')}</AppText><Pressable accessibilityRole="button" onPress={() => scroller.current?.scrollTo({ y: 0, animated: true })} style={styles.retry}><AppText style={styles.linkText}>Back to top</AppText></Pressable></View>
     </ScrollView>
 
-    <Modal visible={sheet !== null} transparent animationType="slide" onRequestClose={() => setSheet(null)}>
+    <Modal visible={contentsOpen} transparent animationType="slide" onRequestClose={() => setContentsOpen(false)}>
       <View style={styles.modalBackdrop}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Close brief menu" style={StyleSheet.absoluteFill} onPress={() => setSheet(null)} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Close brief menu" style={StyleSheet.absoluteFill} onPress={() => setContentsOpen(false)} />
         <View accessibilityViewIsModal style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}><AppText accessibilityRole="header" style={styles.sheetTitle}>{sheet === 'editions' ? 'Editions' : 'In this brief'}</AppText><Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setSheet(null)} style={styles.iconButton}><Ionicons name="close" size={22} color={Colors.textMuted} /></Pressable></View>
-          <ScrollView>{rows.map((row) => <Pressable key={row.id} accessibilityRole="button" accessibilityState={{ selected: row.selected }} onPress={() => {
-            if (sheet === 'editions') chooseEdition(row.id);
-            else { setSheet(null); requestAnimationFrame(() => scroller.current?.scrollTo({ y: Math.max(0, (sectionPositions.current[row.id] ?? 0) - 16), animated: true })); }
+          <View style={styles.sheetHeader}><AppText accessibilityRole="header" style={styles.sheetTitle}>In this brief</AppText><Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setContentsOpen(false)} style={styles.iconButton}><Ionicons name="close" size={22} color={Colors.textMuted} /></Pressable></View>
+          <ScrollView>{rows.map((row) => <Pressable key={row.id} accessibilityRole="button" onPress={() => {
+            setContentsOpen(false); requestAnimationFrame(() => scroller.current?.scrollTo({ y: Math.max(0, (sectionPositions.current[row.id] ?? 0) - 16), animated: true }));
           }} style={styles.sheetRow}>
-            <View style={styles.sheetRowBody}><AppText style={[styles.sheetRowTitle, row.selected && styles.linkText]}>{row.title}{row.latest ? ' · Latest' : ''}</AppText><AppText style={styles.sheetRowSubtitle}>{row.subtitle}</AppText></View>
-            <Ionicons name={row.selected ? 'checkmark' : 'chevron-forward'} size={18} color={row.selected ? Colors.accent : Colors.textFaint} />
+            <View style={styles.sheetRowBody}><AppText style={styles.sheetRowTitle}>{row.title}</AppText><AppText style={styles.sheetRowSubtitle}>{row.subtitle}</AppText></View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textFaint} />
           </Pressable>)}</ScrollView>
         </View>
       </View>
@@ -125,15 +109,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 30, lineHeight: 36, letterSpacing: -1, fontWeight: '600' },
   titleDot: { fontSize: 30, lineHeight: 36, color: '#9BCABC' },
   iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  disabled: { opacity: 0.25 },
-  editionBar: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, marginBottom: 28, paddingVertical: 4 },
-  dateButton: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
+  editionBar: { flexDirection: 'row', alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, marginBottom: 28, paddingVertical: 16 },
   dateText: { fontSize: 13, fontWeight: '500' },
   readingTime: { flex: 1, textAlign: 'right', fontSize: 10, color: Colors.textMuted },
   articleHeader: { gap: 14 },
   status: { color: '#9BCABC', fontSize: 9, letterSpacing: 1, lineHeight: 15 },
   headline: { fontSize: 31, lineHeight: 37, fontWeight: '500', letterSpacing: -0.9 },
-  archiveNote: { color: Colors.textMuted, fontSize: 12, lineHeight: 19 },
+  cutoffNote: { color: Colors.textMuted, fontSize: 12, lineHeight: 19 },
   metadata: { gap: 12, paddingVertical: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
   metadataRow: { flexDirection: 'row', gap: 12 },
   metadataLabel: { width: 84, fontSize: 8, lineHeight: 18, letterSpacing: 0.4, color: Colors.textFaint },
@@ -160,7 +142,6 @@ const styles = StyleSheet.create({
   retry: { minHeight: 44, justifyContent: 'center' },
   notice: { paddingBottom: 16 },
   noticeText: { color: Colors.warning, fontSize: 12, lineHeight: 19 },
-  latest: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 24, gap: 12 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 36, gap: 14 },
   emptyTitle: { fontSize: 21, lineHeight: 28, fontWeight: '500', textAlign: 'center' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
