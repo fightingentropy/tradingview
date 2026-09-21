@@ -1,6 +1,8 @@
 import {
   For,
   Show,
+  batch,
+  createEffect,
   createMemo,
   createResource,
   createSignal,
@@ -12,6 +14,7 @@ import {
   addCalendarDays,
   calendarCategories,
   calendarCountries,
+  calendarImpacts,
   calendarDateKey,
   calendarTimeZoneLabel,
   calendarWeekDays,
@@ -24,8 +27,24 @@ import {
   type CalendarEvent,
   type CalendarFilters,
 } from "../data/economicCalendar";
+import {
+  defaultCalendarPreferences,
+  loadCalendarPreferences,
+  saveCalendarPreferences,
+} from "../data/calendarPreferences";
 import "./EconomicCalendar.css";
-import CalendarCountryFilter from "./CalendarCountryFilter";
+import CalendarFilter from "./CalendarFilter";
+
+const countryOptions = calendarCountries.map((country) => ({
+  value: country.code,
+  label: country.name,
+  shortLabel: country.code === "GB" ? "UK" : country.code,
+  icon: countryCodeToFlag(country.code),
+}));
+const categoryOptions = calendarCategories.map((category) => ({
+  value: category,
+  label: category,
+}));
 
 type IconName =
   | "calendar"
@@ -159,18 +178,24 @@ const EconomicCalendar: Component = () => {
   const currentWeek = createMemo(() => calendarWeekStart(today()));
   const [week, setWeek] = createSignal(currentWeek());
   const [day, setDay] = createSignal("week");
-  const [countries, setCountries] = createSignal<string[]>(
-    calendarCountries.map((country) => country.code),
-  );
-  const [category, setCategory] = createSignal("all");
-  const [impact, setImpact] =
-    createSignal<CalendarFilters["impact"]>("important");
+  const savedFilters = loadCalendarPreferences();
+  const [countries, setCountries] = createSignal(savedFilters.countries);
+  const [categories, setCategories] = createSignal(savedFilters.categories);
+  const [impacts, setImpacts] = createSignal(savedFilters.impacts);
   const [query, setQuery] = createSignal("");
   const [expandedId, setExpandedId] = createSignal<string>();
   const [filtersOpen, setFiltersOpen] = createSignal(false);
   const cache = new Map<string, WeekData>();
   let pending: AbortController | undefined;
   let eventsContainer: HTMLDivElement | undefined;
+
+  createEffect(() => {
+    saveCalendarPreferences({
+      countries: countries(),
+      categories: categories(),
+      impacts: impacts(),
+    });
+  });
 
   const [calendar, { refetch }] = createResource(
     week,
@@ -213,8 +238,8 @@ const EconomicCalendar: Component = () => {
   const filters = (): CalendarFilters => ({
     day: day(),
     countries: countries(),
-    category: category(),
-    impact: impact(),
+    categories: categories(),
+    impacts: impacts(),
     query: query(),
   });
   const weekEvents = createMemo(() =>
@@ -235,10 +260,21 @@ const EconomicCalendar: Component = () => {
   const hasFilters = createMemo(
     () =>
       countries().length !== calendarCountries.length ||
-      category() !== "all" ||
-      impact() !== "important" ||
+      categories().length !== calendarCategories.length ||
+      impacts().length !== 2 ||
+      !impacts().includes("high") ||
+      !impacts().includes("medium") ||
       query().trim() !== "" ||
       day() !== "week",
+  );
+  const emptySelection = createMemo(() =>
+    !countries().length
+      ? "countries"
+      : !categories().length
+        ? "categories"
+        : !impacts().length
+          ? "impact levels"
+          : undefined,
   );
 
   const chooseWeek = (date: string) => {
@@ -253,11 +289,14 @@ const EconomicCalendar: Component = () => {
     }
   };
   const resetFilters = () => {
-    setCountries(calendarCountries.map((country) => country.code));
-    setCategory("all");
-    setImpact("important");
-    setQuery("");
-    setDay("week");
+    const defaults = defaultCalendarPreferences();
+    batch(() => {
+      setCountries(defaults.countries);
+      setCategories(defaults.categories);
+      setImpacts(defaults.impacts);
+      setQuery("");
+      setDay("week");
+    });
   };
   const selectDay = (value: string) => {
     setDay(value);
@@ -354,39 +393,43 @@ const EconomicCalendar: Component = () => {
             class="calendar-filter-controls"
             classList={{ "is-open": filtersOpen() }}
           >
-            <CalendarCountryFilter
-              countries={countries()}
+            <CalendarFilter
+              id="countries"
+              label="Countries"
+              allLabel="All countries"
+              emptyLabel="No countries"
+              options={countryOptions}
+              values={countries()}
               onChange={setCountries}
+              summary={(selected) =>
+                selected.length === 1
+                  ? selected[0].label
+                  : selected.length === 2
+                    ? selected.map((option) => option.shortLabel).join(" + ")
+                    : `${selected.length} countries`
+              }
             />
-            <label>
-              <span class="sr-only">Category</span>
-              <select
-                aria-label="Category"
-                value={category()}
-                onChange={(event) => setCategory(event.currentTarget.value)}
-              >
-                <option value="all">All categories</option>
-                <For each={calendarCategories}>
-                  {(item) => <option>{item}</option>}
-                </For>
-              </select>
-            </label>
-            <label>
-              <span class="sr-only">Impact</span>
-              <select
-                aria-label="Impact"
-                value={impact()}
-                onChange={(event) =>
-                  setImpact(
-                    event.currentTarget.value as CalendarFilters["impact"],
-                  )
-                }
-              >
-                <option value="all">Any impact</option>
-                <option value="important">Medium + high</option>
-                <option value="high">High impact</option>
-              </select>
-            </label>
+            <CalendarFilter
+              id="categories"
+              label="Categories"
+              allLabel="All categories"
+              emptyLabel="No categories"
+              options={categoryOptions}
+              values={categories()}
+              onChange={setCategories}
+            />
+            <CalendarFilter
+              id="impacts"
+              label="Impact"
+              allLabel="Any impact"
+              emptyLabel="No impact"
+              options={calendarImpacts}
+              values={impacts()}
+              onChange={setImpacts}
+              summary={(selected) =>
+                selected.map((option) => option.label).join(" + ")
+              }
+            />
           </div>
           <label class="calendar-search">
             <Icon name="search" />
@@ -507,15 +550,15 @@ const EconomicCalendar: Component = () => {
                   <div class="calendar-empty">
                     <Icon name="calendar" size={28} />
                     <h2>
-                      {countries().length === 0
-                        ? "Choose your countries"
+                      {emptySelection()
+                        ? `Choose ${emptySelection()}`
                         : events().length > 0 || hasFilters()
                           ? "No matching events"
                           : "No releases published"}
                     </h2>
                     <p>
-                      {countries().length === 0
-                        ? "Select countries using the filter above."
+                      {emptySelection()
+                        ? `Select ${emptySelection()} using the filter above.`
                         : events().length > 0 || hasFilters()
                           ? "Try another day, country or impact level."
                           : "Check another week or come back later."}
@@ -525,11 +568,19 @@ const EconomicCalendar: Component = () => {
                         Reset filters
                       </button>
                     </Show>
-                    <Show when={impact() !== "all" && countries().length > 0}>
+                    <Show
+                      when={
+                        impacts().length < calendarImpacts.length &&
+                        countries().length > 0 &&
+                        categories().length > 0
+                      }
+                    >
                       <button
                         type="button"
                         onClick={() => {
-                          setImpact("all");
+                          setImpacts(
+                            calendarImpacts.map((impact) => impact.value),
+                          );
                           setDay("week");
                         }}
                       >

@@ -24,6 +24,12 @@ export const calendarCategories = [
   "Other",
 ] as const;
 export type CalendarCategory = (typeof calendarCategories)[number];
+export const calendarImpacts = [
+  { value: "high", label: "High", importance: 1 },
+  { value: "medium", label: "Medium", importance: 0 },
+  { value: "low", label: "Low", importance: -1 },
+] as const;
+export type CalendarImpact = (typeof calendarImpacts)[number]["value"];
 export type CalendarEvent = EconomicCalendarEvent & {
   day: string;
   time: string;
@@ -35,8 +41,8 @@ export type CalendarEvent = EconomicCalendarEvent & {
 export type CalendarFilters = {
   day: string;
   countries: readonly string[];
-  category: string;
-  impact: "all" | "important" | "high";
+  categories: readonly CalendarCategory[];
+  impacts: readonly CalendarImpact[];
   query: string;
 };
 
@@ -217,13 +223,17 @@ export function filterCalendarEvents(
 ): CalendarEvent[] {
   const query = filters.query.trim().toLowerCase();
   const countries = new Set(filters.countries);
+  const categories = new Set(filters.categories);
+  const importanceLevels = new Set<number>(
+    calendarImpacts
+      .filter((impact) => filters.impacts.includes(impact.value))
+      .map((impact) => impact.importance),
+  );
   return events.filter((event) => {
     if (filters.day !== "week" && event.day !== filters.day) return false;
     if (!countries.has(event.country)) return false;
-    if (filters.category !== "all" && event.category !== filters.category)
-      return false;
-    if (filters.impact === "high" && event.importance !== 1) return false;
-    if (filters.impact === "important" && event.importance < 0) return false;
+    if (!categories.has(event.category)) return false;
+    if (!importanceLevels.has(event.importance)) return false;
     const country =
       calendarCountries.find((item) => item.code === event.country)?.name ??
       event.country;

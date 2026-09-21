@@ -5,15 +5,28 @@ import {
   createMemo,
   createSignal,
   onCleanup,
-  type Component,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import { calendarCountries, countryCodeToFlag } from "../data/economicCalendar";
 
-const CalendarCountryFilter: Component<{
-  countries: readonly string[];
-  onChange: (countries: string[]) => void;
-}> = (props) => {
+export type CalendarFilterOption<T extends string> = {
+  value: T;
+  label: string;
+  icon?: string;
+  shortLabel?: string;
+};
+
+type CalendarFilterProps<T extends string> = {
+  id: string;
+  label: string;
+  allLabel: string;
+  emptyLabel: string;
+  options: readonly CalendarFilterOption<T>[];
+  values: readonly T[];
+  onChange: (values: T[]) => void;
+  summary?: (selected: readonly CalendarFilterOption<T>[]) => string;
+};
+
+function CalendarFilter<T extends string>(props: CalendarFilterProps<T>) {
   const [open, setOpen] = createSignal(false);
   const [position, setPosition] = createSignal({
     top: "0px",
@@ -22,21 +35,16 @@ const CalendarCountryFilter: Component<{
   });
   let trigger: HTMLButtonElement | undefined;
   let panel: HTMLDivElement | undefined;
-  const allSelected = () => props.countries.length === calendarCountries.length;
   const selected = createMemo(() =>
-    calendarCountries.filter((country) =>
-      props.countries.includes(country.code),
-    ),
+    props.options.filter((option) => props.values.includes(option.value)),
   );
+  const allSelected = () => selected().length === props.options.length;
   const label = createMemo(() => {
-    if (allSelected()) return "All countries";
-    if (!selected().length) return "Choose countries";
-    if (selected().length === 1) return selected()[0].name;
-    if (selected().length === 2)
-      return selected()
-        .map((country) => (country.code === "GB" ? "UK" : country.code))
-        .join(" + ");
-    return `${selected().length} countries`;
+    if (allSelected()) return props.allLabel;
+    if (!selected().length) return props.emptyLabel;
+    if (props.summary) return props.summary(selected());
+    if (selected().length === 1) return selected()[0].label;
+    return `${selected().length} ${props.label.toLowerCase()}`;
   });
   const close = (restoreFocus = false) => {
     setOpen(false);
@@ -46,7 +54,9 @@ const CalendarCountryFilter: Component<{
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
     const width = Math.min(280, window.innerWidth - 24);
-    const height = Math.min(390, window.innerHeight - 24);
+    const height =
+      panel?.getBoundingClientRect().height ??
+      Math.min(132 + props.options.length * 34, 390, window.innerHeight - 24);
     setPosition({
       top: `${Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - height - 12))}px`,
       left: `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`,
@@ -56,15 +66,16 @@ const CalendarCountryFilter: Component<{
   const openPanel = () => {
     placePanel();
     setOpen(true);
-    queueMicrotask(() =>
-      panel?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus(),
-    );
+    queueMicrotask(() => {
+      placePanel();
+      panel?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus();
+    });
   };
-  const toggleCountry = (code: string) => {
+  const toggle = (value: T) => {
     props.onChange(
-      props.countries.includes(code)
-        ? props.countries.filter((country) => country !== code)
-        : [...props.countries, code],
+      props.values.includes(value)
+        ? props.values.filter((item) => item !== value)
+        : [...props.values, value],
     );
   };
 
@@ -97,24 +108,24 @@ const CalendarCountryFilter: Component<{
   });
 
   return (
-    <div class="calendar-country-filter">
+    <div class="calendar-multi-filter" data-filter={props.id}>
       <button
         ref={trigger}
         type="button"
-        class="calendar-country-trigger"
+        class="calendar-filter-trigger"
         classList={{
-          "has-selection": !allSelected() && props.countries.length > 0,
+          "has-selection": !allSelected(),
         }}
-        aria-label={`Countries: ${
+        aria-label={`${props.label}: ${
           allSelected()
-            ? "All countries"
+            ? props.allLabel
             : selected()
-                .map((country) => country.name)
+                .map((option) => option.label)
                 .join(", ") || "None selected"
         }`}
         aria-haspopup="dialog"
         aria-expanded={open()}
-        aria-controls="calendar-country-picker"
+        aria-controls={`calendar-${props.id}-picker`}
         onClick={() => (open() ? close() : openPanel())}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") {
@@ -140,61 +151,63 @@ const CalendarCountryFilter: Component<{
         <Portal>
           <div
             ref={panel}
-            id="calendar-country-picker"
-            class="calendar-country-picker"
+            id={`calendar-${props.id}-picker`}
+            class="calendar-filter-picker"
             role="dialog"
-            aria-label="Select countries"
+            aria-label={`Select ${props.label.toLowerCase()}`}
             style={position()}
           >
-            <div class="calendar-country-picker-heading">
-              <strong>Countries</strong>
-              <span>{props.countries.length} selected</span>
+            <div class="calendar-filter-picker-heading">
+              <strong>{props.label}</strong>
+              <span>{selected().length} selected</span>
             </div>
-            <div class="calendar-country-actions">
+            <div class="calendar-filter-actions">
               <button
                 type="button"
-                aria-label="Select all countries"
+                aria-label={`Select all ${props.label.toLowerCase()}`}
                 disabled={allSelected()}
                 onClick={() =>
-                  props.onChange(
-                    calendarCountries.map((country) => country.code),
-                  )
+                  props.onChange(props.options.map((option) => option.value))
                 }
               >
                 Select all
               </button>
               <button
                 type="button"
-                aria-label="Clear countries"
-                disabled={props.countries.length === 0}
+                aria-label={`Clear ${props.label.toLowerCase()}`}
+                disabled={selected().length === 0}
                 onClick={() => props.onChange([])}
               >
                 Clear
               </button>
             </div>
             <div
-              class="calendar-country-options"
+              class="calendar-filter-options"
               role="group"
-              aria-label="Countries"
+              aria-label={props.label}
             >
-              <For each={calendarCountries}>
-                {(country) => (
+              <For each={props.options}>
+                {(option) => (
                   <label>
                     <input
                       type="checkbox"
-                      checked={props.countries.includes(country.code)}
-                      onChange={() => toggleCountry(country.code)}
+                      checked={props.values.includes(option.value)}
+                      onChange={() => toggle(option.value)}
                     />
-                    <span aria-hidden="true">
-                      {countryCodeToFlag(country.code)}
-                    </span>
-                    <span>{country.name}</span>
+                    <Show when={option.icon}>
+                      <span
+                        class="calendar-filter-option-icon"
+                        aria-hidden="true"
+                      >
+                        {option.icon}
+                      </span>
+                    </Show>
+                    <span>{option.label}</span>
                   </label>
                 )}
               </For>
             </div>
-            <div class="calendar-country-picker-footer">
-              <span>Choose any combination</span>
+            <div class="calendar-filter-picker-footer">
               <button type="button" onClick={() => close(true)}>
                 Done
               </button>
@@ -204,6 +217,6 @@ const CalendarCountryFilter: Component<{
       </Show>
     </div>
   );
-};
+}
 
-export default CalendarCountryFilter;
+export default CalendarFilter;

@@ -3,6 +3,8 @@ import {
   addCalendarDays,
   calendarDateKey,
   calendarCountries,
+  calendarCategories,
+  calendarImpacts,
   calendarTimeZoneLabel,
   calendarWeekDays,
   calendarWeekLabel,
@@ -31,8 +33,8 @@ const release = (id: string, date: string, extra = {}) => ({
 const defaults: CalendarFilters = {
   day: "week",
   countries: calendarCountries.map((country) => country.code),
-  category: "all",
-  impact: "important",
+  categories: [...calendarCategories],
+  impacts: ["high", "medium"],
   query: "",
 };
 
@@ -231,9 +233,9 @@ test("combines filters and searches country names without losing zero values", (
   expect(
     filterCalendarEvents(events, {
       ...defaults,
-      impact: "all",
+      impacts: calendarImpacts.map((impact) => impact.value),
       countries: ["GB"],
-      category: "Inflation",
+      categories: ["Inflation"],
       day: "2026-09-15",
     }),
   ).toHaveLength(2);
@@ -243,7 +245,7 @@ test("combines filters and searches country names without losing zero values", (
   expect(
     filterCalendarEvents(events, {
       ...defaults,
-      impact: "high",
+      impacts: ["high"],
       countries: ["GB"],
     })[0].actual,
   ).toBe(0);
@@ -284,7 +286,69 @@ test("supports country sets, clear selection, and select all without changing ot
     filterCalendarEvents(events, {
       ...defaults,
       countries: ["US", "GB"],
-      impact: "all",
+      impacts: calendarImpacts.map((impact) => impact.value),
     }),
   ).toHaveLength(3);
+});
+
+describe("independent impact and category selections", () => {
+  const events = parseCalendarWeek(
+    {
+      result: [
+        release("high-inflation", "2026-09-15T10:00:00Z", {
+          importance: 1,
+          category: "prce",
+        }),
+        release("medium-labour", "2026-09-15T11:00:00Z", {
+          importance: 0,
+          category: "lbr",
+        }),
+        release("low-growth", "2026-09-15T12:00:00Z", {
+          importance: -1,
+          category: "gdp",
+        }),
+        release("us-high", "2026-09-15T13:00:00Z", {
+          importance: 1,
+          category: "prce",
+          country: "US",
+        }),
+      ],
+    },
+    "2026-09-14",
+  );
+
+  test("each of the eight impact combinations includes exactly its checked levels", () => {
+    for (let mask = 0; mask < 8; mask++) {
+      const checked = calendarImpacts.filter((_, index) => mask & (1 << index));
+      expect(
+        filterCalendarEvents(events, {
+          ...defaults,
+          impacts: checked.map((impact) => impact.value),
+        }).map((event) => event.id),
+      ).toEqual(
+        events
+          .filter((event) =>
+            checked.some((impact) => impact.importance === event.importance),
+          )
+          .map((event) => event.id),
+      );
+    }
+  });
+
+  test("combines multiple categories with country and impact selections", () => {
+    expect(
+      filterCalendarEvents(events, {
+        ...defaults,
+        categories: ["Inflation", "Growth"],
+        impacts: ["high", "low"],
+        countries: ["GB"],
+      }).map((event) => event.id),
+    ).toEqual(["high-inflation", "low-growth"]);
+    expect(
+      filterCalendarEvents(events, {
+        ...defaults,
+        categories: [],
+      }),
+    ).toEqual([]);
+  });
 });
