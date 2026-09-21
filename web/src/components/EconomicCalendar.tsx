@@ -664,7 +664,11 @@ const EconomicCalendar: Component = () => {
                   }
                 >
                   <div class="calendar-table-heading" aria-hidden="true">
-                    <span>Time · {calendarTimeZoneLabel(week())}</span>
+                    <span
+                      title={`London time · ${calendarTimeZoneLabel(week())}`}
+                    >
+                      Time
+                    </span>
                     <span>Event</span>
                     <span>Impact</span>
                     <span>Actual</span>
