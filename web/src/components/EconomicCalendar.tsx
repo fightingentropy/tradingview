@@ -34,6 +34,7 @@ type IconName =
   | "down"
   | "search"
   | "refresh"
+  | "reset"
   | "filter"
   | "external";
 const Icon: Component<{ name: IconName; size?: number }> = (props) => (
@@ -67,6 +68,9 @@ const Icon: Component<{ name: IconName; size?: number }> = (props) => (
     </Show>
     <Show when={props.name === "refresh"}>
       <path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" />
+    </Show>
+    <Show when={props.name === "reset"}>
+      <path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6" />
     </Show>
     <Show when={props.name === "filter"}>
       <path d="M4 7h16M4 17h16" />
@@ -105,10 +109,7 @@ const EventDetails: Component<{ event: CalendarEvent }> = (props) => (
   <div class="calendar-event-details" id={`calendar-details-${props.event.id}`}>
     <div>
       <span class="calendar-detail-label">About this release</span>
-      <p>
-        {props.event.description ??
-          "No additional release notes are available from the calendar provider."}
-      </p>
+      <p>{props.event.description ?? "No release notes available."}</p>
       <Show when={props.event.source}>
         {(source) => (
           <a href={source().href} target="_blank" rel="noreferrer">
@@ -231,9 +232,6 @@ const EconomicCalendar: Component = () => {
       }))
       .filter((item) => item.events.length),
   );
-  const highImpactCount = createMemo(
-    () => visibleEvents().filter((event) => event.importance === 1).length,
-  );
   const hasFilters = createMemo(
     () =>
       countries().length !== calendarCountries.length ||
@@ -241,12 +239,6 @@ const EconomicCalendar: Component = () => {
       impact() !== "important" ||
       query().trim() !== "" ||
       day() !== "week",
-  );
-  const nextEvent = createMemo(() =>
-    weekEvents().find(
-      (event) =>
-        event.importance === 1 && Date.parse(event.date) > now().getTime(),
-    ),
   );
 
   const chooseWeek = (date: string) => {
@@ -296,26 +288,7 @@ const EconomicCalendar: Component = () => {
     >
       <div class="calendar-top">
         <header class="calendar-heading">
-          <div>
-            <h1>Economic calendar</h1>
-            <p>
-              <span class="calendar-description">
-                Releases and decisions that move markets.
-              </span>
-              <span class="calendar-mobile-timezone">
-                London time · {calendarTimeZoneLabel(week())}
-              </span>
-            </p>
-          </div>
-          <div class="calendar-heading-meta">
-            <span class="calendar-status-dot" />
-            18 economies
-            <span class="calendar-meta-divider" />
-            London time
-          </div>
-        </header>
-
-        <div class="calendar-week-toolbar">
+          <h1>Economic calendar</h1>
           <div class="calendar-week-navigation" aria-label="Week navigation">
             <button
               class="calendar-icon-button"
@@ -356,64 +329,15 @@ const EconomicCalendar: Component = () => {
               This week
             </button>
           </div>
-          <span class="calendar-timezone">
-            Europe/London <span>{calendarTimeZoneLabel(week())}</span>
-          </span>
-        </div>
-
-        <div class="calendar-days" role="group" aria-label="Filter by day">
-          <button
-            type="button"
-            class="calendar-week-day"
-            aria-pressed={day() === "week"}
-            onClick={() => selectDay("week")}
+          <span
+            class="calendar-timezone"
+            title="All event times are in Europe/London"
           >
-            <span>Full week</span>
-            <strong>
-              {weekEvents().length}
-              <small>{weekEvents().length === 1 ? "event" : "events"}</small>
-            </strong>
-          </button>
-          <For each={days()}>
-            {(item) => {
-              const daily = () =>
-                weekEvents().filter((event) => event.day === item.key);
-              return (
-                <button
-                  type="button"
-                  class="calendar-day"
-                  classList={{ "is-today": item.key === today() }}
-                  aria-label={`${item.label}${item.key === today() ? ", today" : ""}, ${eventCount(daily().length)}`}
-                  aria-pressed={day() === item.key}
-                  onClick={() => selectDay(item.key)}
-                >
-                  <span>
-                    {item.weekday}
-                    <Show when={item.key === today()}>
-                      <i class="calendar-today-dot" />
-                    </Show>
-                  </span>
-                  <strong>
-                    {item.day}
-                    <small>{daily().length}</small>
-                  </strong>
-                </button>
-              );
-            }}
-          </For>
-        </div>
+            London <span>{calendarTimeZoneLabel(week())}</span>
+          </span>
+        </header>
 
         <div class="calendar-filters">
-          <label class="calendar-search">
-            <Icon name="search" />
-            <input
-              type="search"
-              aria-label="Search events"
-              placeholder="Search events or countries"
-              value={query()}
-              onInput={(event) => setQuery(event.currentTarget.value)}
-            />
-          </label>
           <button
             type="button"
             class="calendar-mobile-filters"
@@ -458,12 +382,33 @@ const EconomicCalendar: Component = () => {
                   )
                 }
               >
-                <option value="all">All impact levels</option>
+                <option value="all">Any impact</option>
                 <option value="important">Medium + high</option>
-                <option value="high">High impact only</option>
+                <option value="high">High impact</option>
               </select>
             </label>
           </div>
+          <label class="calendar-search">
+            <Icon name="search" />
+            <input
+              type="search"
+              aria-label="Search events or countries"
+              placeholder="Search"
+              value={query()}
+              onInput={(event) => setQuery(event.currentTarget.value)}
+            />
+          </label>
+          <Show when={hasFilters()}>
+            <button
+              class="calendar-icon-button"
+              type="button"
+              aria-label="Reset filters"
+              title="Reset filters"
+              onClick={resetFilters}
+            >
+              <Icon name="reset" />
+            </button>
+          </Show>
           <button
             type="button"
             class="calendar-icon-button calendar-refresh"
@@ -472,41 +417,54 @@ const EconomicCalendar: Component = () => {
             disabled={calendar.loading}
             onClick={() => void refetch()}
           >
-            <Icon name="refresh" />
+            <Show when={calendar.loading} fallback={<Icon name="refresh" />}>
+              <span class="calendar-spinner" />
+            </Show>
           </button>
         </div>
 
-        <div class="calendar-results-meta" aria-live="polite">
-          <span>
-            {calendar.loading && !data()
-              ? "Loading this week…"
-              : eventCount(visibleEvents().length)}
-            <Show when={highImpactCount() > 0}>
-              <span class="calendar-meta-divider" />
-              <span class="calendar-high-count">
-                {highImpactCount()} high impact
-              </span>
-            </Show>
-            <Show when={hasFilters()}>
-              <button type="button" onClick={resetFilters}>
-                Reset filters
-              </button>
+        <div class="calendar-day-bar">
+          <div class="calendar-days" role="group" aria-label="Filter by day">
+            <button
+              type="button"
+              class="calendar-week-day"
+              aria-pressed={day() === "week"}
+              onClick={() => selectDay("week")}
+            >
+              All week
+            </button>
+            <For each={days()}>
+              {(item) => {
+                const count = () =>
+                  weekEvents().filter((event) => event.day === item.key).length;
+                return (
+                  <button
+                    type="button"
+                    class="calendar-day"
+                    classList={{ "is-today": item.key === today() }}
+                    aria-label={`${item.label}${item.key === today() ? ", today" : ""}, ${eventCount(count())}`}
+                    aria-pressed={day() === item.key}
+                    title={eventCount(count())}
+                    onClick={() => selectDay(item.key)}
+                  >
+                    <span>{item.weekday}</span>
+                    <strong>{item.day}</strong>
+                    <Show when={item.key === today()}>
+                      <i class="calendar-today-dot" />
+                    </Show>
+                  </button>
+                );
+              }}
+            </For>
+          </div>
+          <span class="calendar-result-count" aria-live="polite">
+            <Show
+              when={!(calendar.loading && !data())}
+              fallback={<span class="sr-only">Loading calendar</span>}
+            >
+              {eventCount(visibleEvents().length)}
             </Show>
           </span>
-          <Show when={week() === currentWeek() ? nextEvent() : undefined}>
-            {(event) => (
-              <span class="calendar-next-event">
-                Up next <strong>{event().title}</strong>
-                <span>
-                  {event().day === today()
-                    ? "Today"
-                    : days().find((item) => item.key === event().day)
-                        ?.weekday}{" "}
-                  {event().time}
-                </span>
-              </span>
-            )}
-          </Show>
         </div>
       </div>
 
@@ -557,10 +515,10 @@ const EconomicCalendar: Component = () => {
                     </h2>
                     <p>
                       {countries().length === 0
-                        ? "Select one or more countries in the filter above, or reset filters to show them all."
+                        ? "Select countries using the filter above."
                         : events().length > 0 || hasFilters()
                           ? "Try another day, country or impact level."
-                          : "The provider has not published events for this week yet. Browse another week or check back later."}
+                          : "Check another week or come back later."}
                     </p>
                     <Show when={hasFilters()}>
                       <button type="button" onClick={resetFilters}>
@@ -604,7 +562,6 @@ const EconomicCalendar: Component = () => {
                           <small>Today</small>
                         </Show>
                       </span>
-                      <span>{eventCount(group.events.length)}</span>
                     </h2>
                     <For each={group.events}>
                       {(event) => (
@@ -647,15 +604,14 @@ const EconomicCalendar: Component = () => {
                             </span>
                             <span class="calendar-event-name">
                               <Impact importance={event.importance} />
-                              <span>
+                              <span class="calendar-event-title">
                                 <strong>{event.title}</strong>
-                                <span class="calendar-event-caption">
-                                  {event.category}
-                                  <Show when={event.period}>
-                                    <span>·</span>
+                                <Show when={event.period}>
+                                  {" "}
+                                  <span class="calendar-event-period">
                                     {event.period}
-                                  </Show>
-                                </span>
+                                  </span>
+                                </Show>
                               </span>
                             </span>
                             <span
@@ -708,7 +664,7 @@ const EconomicCalendar: Component = () => {
       </div>
       <footer class="calendar-footer">
         <span>
-          Calendar data via{" "}
+          Source:{" "}
           <a
             href="https://www.tradingview.com/economic-calendar/"
             target="_blank"
@@ -717,15 +673,20 @@ const EconomicCalendar: Component = () => {
             TradingView
             <Icon name="external" size={11} />
           </a>
-          <span class="calendar-footer-note"> · Schedules may change.</span>
         </span>
-        <span>
-          {calendar.loading
-            ? "Updating…"
-            : data()?.updatedAt
-              ? `Updated ${new Date(data()!.updatedAt!).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London", timeZoneName: "short" })}`
-              : ""}
-        </span>
+        <Show when={data()?.updatedAt}>
+          {(updatedAt) => (
+            <span>
+              Updated{" "}
+              {new Date(updatedAt()).toLocaleTimeString("en-GB", {
+                hour: "2-digit",
+                minute: "2-digit",
+                timeZone: "Europe/London",
+                timeZoneName: "short",
+              })}
+            </span>
+          )}
+        </Show>
       </footer>
     </section>
   );
