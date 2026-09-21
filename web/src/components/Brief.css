@@ -20,7 +20,7 @@
 .brief-masthead h1 { margin: 0; color: #ecf0f2; font-size: 32px; font-weight: 600; letter-spacing: -.045em; line-height: 1.15; }
 .brief-masthead h1 > span { color: #86b5a7; }
 .brief-masthead p { margin: 10px 0 0; font-size: 12px; color: #87919d; }
-.brief-download { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #30363e; border-radius: 5px; font-size: 12px; color: #c1c9d0; text-decoration: none; transition: background .15s, border-color .15s; }
+.brief-download { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #30363e; border-radius: var(--radius-control); font-size: 12px; color: #c1c9d0; text-decoration: none; transition: background .15s, border-color .15s; }
 .brief-download:hover { background: #1b2126; border-color: #59636c; }
 .brief-edition-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid #30353d; border-bottom: 1px solid #30353d; }
 .brief-edition-date { color: #d8dee3; font-size: 12px; font-weight: 500; }
@@ -76,7 +76,7 @@
 .brief-prose em { color: #a3afba; }
 .brief-prose blockquote { margin: 20px 0; padding-left: 18px; border-left: 2px solid #547166; }
 .brief-prose code { font-family: 'JetBrains Mono', monospace; font-size: .84em; }
-.brief-prose pre { overflow: auto; padding: 12px; background: #191e24; border-radius: 4px; }
+.brief-prose pre { overflow: auto; padding: 12px; background: #191e24; border-radius: var(--radius-md); }
 .brief-prose hr { border: 0; border-top: 1px solid #30373e; margin: 25px 0; }
 .brief-verdict .brief-prose { font-size: 16px; line-height: 1.8; }
 .brief-verdict h3 { color: #98b7ab; font-size: 12px; letter-spacing: .09em; text-transform: uppercase; margin-bottom: 16px; }
@@ -136,7 +136,7 @@
   .brief-metadata dd > span { font-size: 12px; }
   .brief-mobile-contents { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 27px; }
   .brief-mobile-contents label { font-size: 12px; color: #81909c; white-space: nowrap; }
-  .brief-mobile-contents select { min-width: 0; max-width: 72%; background: #191f25; color: #b5c7bf; border: 1px solid #323c42; border-radius: 4px; padding: 8px; font-size: 12px; }
+  .brief-mobile-contents select { min-width: 0; max-width: 72%; background: #191f25; color: #b5c7bf; border: 1px solid #323c42; border-radius: var(--radius-md); padding: 8px; font-size: 12px; }
   .brief-prose { font-size: 15px; line-height: 1.85; }
   .brief-verdict .brief-prose { font-size: 17px; }
   .brief-section { margin-bottom: 23px; padding-bottom: 24px; }

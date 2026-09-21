@@ -20,7 +20,6 @@ import {
   calendarWeekDays,
   calendarWeekLabel,
   calendarWeekStart,
-  countryCodeToFlag,
   filterCalendarEvents,
   formatCalendarValue,
   loadCalendarWeek,
@@ -34,12 +33,8 @@ import {
 } from "../data/calendarPreferences";
 import "./EconomicCalendar.css";
 import CalendarFilter from "./CalendarFilter";
+import CountryFlag from "./CountryFlag";
 
-const countryOptions = calendarCountries.map((country) => ({
-  value: country.code,
-  label: country.name,
-  icon: countryCodeToFlag(country.code),
-}));
 const categoryOptions = calendarCategories.map((category) => ({
   value: category,
   label: category,
@@ -176,6 +171,11 @@ type WeekData = {
 };
 
 const EconomicCalendar: Component = () => {
+  const countryOptions = calendarCountries.map((country) => ({
+    value: country.code,
+    label: country.name,
+    icon: <CountryFlag code={country.code} />,
+  }));
   const [now, setNow] = createSignal(new Date());
   const today = createMemo(() => calendarDateKey(now()));
   const currentWeek = createMemo(() => calendarWeekStart(today()));
@@ -728,7 +728,7 @@ const EconomicCalendar: Component = () => {
                                       )?.name
                                     }
                                   >
-                                    {countryCodeToFlag(event.country)}
+                                    <CountryFlag code={event.country} />
                                   </span>
                                   <span class="calendar-event-title">
                                     <strong>{event.title}</strong>

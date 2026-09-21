@@ -336,7 +336,7 @@ const WatchlistPanel: Component = () => {
                 }
               }}
               placeholder="List name"
-              class="text-sm text-slate-100 bg-brand-slate-800 border border-brand-border rounded px-2 py-1 outline-none focus:border-brand-accent flex-1 min-w-0"
+              class="text-sm text-slate-100 bg-brand-slate-800 border border-brand-border rounded-md px-3 py-1 outline-none focus:border-brand-accent flex-1 min-w-0"
               autofocus
             />
             <button
@@ -553,13 +553,13 @@ const WatchlistPanel: Component = () => {
             }
           }}
           placeholder="Add symbol (e.g. BTC, TSLA, NVDA)"
-          class="flex-1 text-xs text-slate-100 bg-brand-slate-800 border border-brand-border rounded px-2 py-1.5 outline-none focus:border-brand-accent placeholder:text-brand-slate-500"
+          class="flex-1 text-xs text-slate-100 bg-brand-slate-800 border border-brand-border rounded-md px-3 py-1.5 outline-none focus:border-brand-accent placeholder:text-brand-slate-500"
         />
         <button
           type="button"
           onClick={handleAddSymbolDirect}
           disabled={!addSymbolInput().trim()}
-          class="px-3 py-1.5 text-xs font-medium text-slate-100 bg-brand-accent hover:bg-brand-accent/80 disabled:bg-brand-slate-700 disabled:text-brand-slate-500 disabled:cursor-not-allowed rounded transition-colors flex-shrink-0"
+          class="px-3 py-1.5 text-xs font-medium text-slate-100 bg-brand-accent hover:bg-brand-accent/80 disabled:bg-brand-slate-700 disabled:text-brand-slate-500 disabled:cursor-not-allowed rounded-full transition-colors flex-shrink-0"
           title="Add symbol to watchlist"
         >
           Add

@@ -106,7 +106,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
               apiWalletVaultUnlockPending() ||
               hyperliquidConnectionStatus() === "connecting"
             }
-            class={`rounded-lg border px-3 py-1.5 font-semibold transition-colors disabled:cursor-wait disabled:opacity-70 ${
+            class={`rounded-full border px-4 py-1.5 font-semibold transition-colors disabled:cursor-wait disabled:opacity-70 ${
               props.compact ? "text-[11px]" : "text-sm"
             } ${
               isHyperliquidConnected()
@@ -140,7 +140,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
         </div>
       }
     >
-      <div class="flex h-9 items-stretch overflow-hidden rounded-lg border border-brand-border bg-brand-surface">
+      <div class="flex h-9 items-stretch overflow-hidden rounded-full border border-brand-border bg-brand-surface">
         <button
           type="button"
           aria-label={`Manage ${networkLabel()} ${hyperliquidConnection()?.masterAddress}`}

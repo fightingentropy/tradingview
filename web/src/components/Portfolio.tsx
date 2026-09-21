@@ -454,7 +454,7 @@ const Portfolio: Component = () => {
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class="rounded-md border border-brand-border bg-brand-surface px-3.5 py-2 text-sm font-medium text-slate-200 hover:border-brand-slate-500"
+              class="rounded-full border border-brand-border bg-brand-surface px-3.5 py-2 text-sm font-medium text-slate-200 hover:border-brand-slate-500"
               onClick={openSettings}
             >
               Account Type
@@ -467,7 +467,7 @@ const Portfolio: Component = () => {
                     target="_blank"
                     rel="noreferrer"
                     title="Opens Hyperliquid"
-                    class="rounded-md border border-brand-border bg-brand-surface px-3.5 py-2 text-sm font-medium text-slate-200 hover:border-brand-slate-500"
+                    class="rounded-full border border-brand-border bg-brand-surface px-3.5 py-2 text-sm font-medium text-slate-200 hover:border-brand-slate-500"
                   >
                     {label}
                   </a>
@@ -478,7 +478,7 @@ const Portfolio: Component = () => {
                 target="_blank"
                 rel="noreferrer"
                 title="Opens Hyperliquid"
-                class="rounded-md border border-brand-accent bg-brand-accent px-4 py-2 text-sm font-semibold text-brand-screen hover:bg-brand-accent/90"
+                class="rounded-full border border-brand-accent bg-brand-accent px-4 py-2 text-sm font-semibold text-brand-screen hover:bg-brand-accent/90"
               >
                 Deposit
               </a>

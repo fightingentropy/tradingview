@@ -560,9 +560,9 @@ const SettingsModal: Component = () => {
   const savedConnectionSupported = () =>
     apiWalletVaultMetadata()?.network === "mainnet";
   const primaryButton =
-    "min-h-11 w-full rounded-lg bg-brand-accent px-4 text-sm font-semibold text-brand-screen transition-colors hover:bg-brand-accent/90 disabled:cursor-not-allowed disabled:opacity-45";
+    "min-h-11 w-full rounded-full bg-brand-accent px-4 text-sm font-semibold text-brand-screen transition-colors hover:bg-brand-accent/90 disabled:cursor-not-allowed disabled:opacity-45";
   const secondaryButton =
-    "min-h-10 rounded-lg border border-brand-border px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-50";
+    "min-h-10 rounded-full border border-brand-border px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-50";
   const summaryClass =
     "cursor-pointer py-4 text-sm font-medium text-slate-300 marker:text-brand-slate-500";
 
@@ -595,7 +595,7 @@ const SettingsModal: Component = () => {
                   ref={closeButtonRef}
                   type="button"
                   aria-label="Close settings"
-                  class="flex h-10 w-10 items-center justify-center rounded-lg text-brand-slate-400 hover:bg-white/5 hover:text-slate-100"
+                  class="flex h-10 w-10 items-center justify-center rounded-full text-brand-slate-400 hover:bg-white/5 hover:text-slate-100"
                   onClick={closeSettings}
                 >
                   <svg
@@ -612,11 +612,14 @@ const SettingsModal: Component = () => {
                   </svg>
                 </button>
               </div>
-              <nav aria-label="Settings sections" class="mt-4 flex gap-6">
+              <nav
+                aria-label="Settings sections"
+                class="my-4 flex w-fit gap-1 rounded-full bg-brand-screen p-1"
+              >
                 <button
                   type="button"
                   aria-pressed={section() === "account"}
-                  class={`border-b-2 pb-3 text-sm font-medium ${section() === "account" ? "border-brand-accent text-slate-100" : "border-transparent text-brand-slate-500"}`}
+                  class={`rounded-full px-4 py-2 text-sm font-medium ${section() === "account" ? "bg-brand-border text-slate-100" : "text-brand-slate-400"}`}
                   onClick={() => setSection("account")}
                 >
                   Account
@@ -624,7 +627,7 @@ const SettingsModal: Component = () => {
                 <button
                   type="button"
                   aria-pressed={section() === "appearance"}
-                  class={`border-b-2 pb-3 text-sm font-medium ${section() === "appearance" ? "border-brand-accent text-slate-100" : "border-transparent text-brand-slate-500"}`}
+                  class={`rounded-full px-4 py-2 text-sm font-medium ${section() === "appearance" ? "bg-brand-border text-slate-100" : "text-brand-slate-400"}`}
                   onClick={() => setSection("appearance")}
                 >
                   Appearance

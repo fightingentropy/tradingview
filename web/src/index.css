@@ -16,6 +16,12 @@
   --font-mono:
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     monospace;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+  --radius-control: 999px;
 }
 
 html {
@@ -92,34 +98,33 @@ input[type="checkbox"] {
 }
 .primary-nav {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   height: 100%;
-  gap: 24px;
+  gap: 4px;
 }
 .nav-link {
   position: relative;
+  padding: 9px 14px;
+  border-radius: var(--radius-control);
   color: var(--color-brand-slate-400);
   font-size: 13px;
   font-weight: 500;
-  transition: color 120ms ease;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
 }
-.nav-link:hover,
-.nav-link[aria-current="page"] {
+.nav-link:hover {
+  background: #ffffff05;
   color: var(--color-brand-slate-100);
 }
-.nav-link[aria-current="page"]::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--color-brand-accent);
+.nav-link[aria-current="page"] {
+  background: #252b31;
+  color: var(--color-brand-slate-100);
 }
 .app-header button[aria-controls="connect-dialog"],
 .mobile-header button[aria-controls="connect-dialog"] {
   font-size: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
 }
 .market-overview {
   display: flex;
@@ -275,8 +280,8 @@ input[type="checkbox"] {
 }
 .execution-mode {
   border: 1px solid #353b44;
-  border-radius: 4px;
-  padding: 3px 6px;
+  border-radius: var(--radius-control);
+  padding: 3px 8px;
   font-size: 10px;
   color: #a4acb7;
 }
@@ -288,6 +293,7 @@ input[type="checkbox"] {
 }
 .ticket-side-switch {
   border: 1px solid var(--color-brand-border);
+  border-radius: var(--radius-control);
   background: var(--color-brand-screen);
 }
 .order-ticket .text-sm {
@@ -313,19 +319,19 @@ input[type="checkbox"] {
 }
 .mobile-trade-tabs {
   align-items: center;
-  padding: 0 16px;
+  padding: 7px 16px;
   border-bottom: 1px solid var(--color-brand-border);
-  gap: 24px;
+  gap: 4px;
 }
 .mobile-trade-tabs button {
-  padding: 12px 0;
+  padding: 8px 14px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   color: var(--color-brand-slate-400);
-  border-bottom: 2px solid transparent;
 }
 .mobile-trade-tabs button[aria-pressed="true"] {
   color: #e8ebef;
-  border-bottom-color: var(--color-brand-accent);
+  background: #282f37;
 }
 .mobile-nav {
   padding: 10px 4px max(10px, env(safe-area-inset-bottom));
@@ -357,7 +363,10 @@ input[type="checkbox"] {
     width: 286px;
   }
   .primary-nav {
-    gap: 18px;
+    gap: 2px;
+  }
+  .nav-link {
+    padding: 8px 10px;
   }
   .app-header {
     padding: 0 16px;
@@ -527,7 +536,7 @@ html[data-reduce-motion="true"] .animate-spin {
   max-height: min(650px, calc(100vh - 108px));
   background: #111418;
   border: 1px solid #2a2f35;
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
   display: flex;
   flex-direction: column;
@@ -547,7 +556,7 @@ html[data-reduce-motion="true"] .animate-spin {
   gap: 12px;
   background: #0d1013;
   border: 1px solid #2a2f35;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   padding: 12px 14px;
   transition: border-color 120ms ease;
 }
@@ -618,7 +627,7 @@ html[data-reduce-motion="true"] .animate-spin {
   align-items: center;
   gap: 6px;
   padding: 7px 11px;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.5);
@@ -652,7 +661,7 @@ html[data-reduce-motion="true"] .animate-spin {
   font-size: 9px;
   font-weight: 700;
   padding: 2px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   letter-spacing: 0.03em;
 }
 
@@ -668,7 +677,7 @@ html[data-reduce-motion="true"] .animate-spin {
   position: relative;
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 3px;
 }
 
@@ -681,7 +690,7 @@ html[data-reduce-motion="true"] .animate-spin {
   color: rgba(255, 255, 255, 0.45);
   background: transparent;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   transition: color 0.2s ease;
 }
@@ -697,7 +706,7 @@ html[data-reduce-motion="true"] .animate-spin {
   width: calc(50% - 3px);
   height: calc(100% - 6px);
   background: #43c6a1;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -832,7 +841,7 @@ html[data-reduce-motion="true"] .animate-spin {
 .market-icon {
   width: 40px;
   height: 40px;
-  border-radius: 6px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -880,7 +889,7 @@ html[data-reduce-motion="true"] .animate-spin {
   font-size: 10px;
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-control);
 }
 
 .xyz-badge {
@@ -890,7 +899,7 @@ html[data-reduce-motion="true"] .animate-spin {
   font-size: 9px;
   font-weight: 700;
   padding: 2px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   letter-spacing: 0.03em;
 }
 
@@ -911,7 +920,7 @@ html[data-reduce-motion="true"] .animate-spin {
   width: 28px;
   height: 28px;
   border: 1px solid #2b3036;
-  border-radius: 4px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1000,7 +1009,7 @@ html[data-reduce-motion="true"] .animate-spin {
   justify-content: center;
   padding: 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 50%;
   background: transparent;
   color: #5f6670;
   cursor: pointer;

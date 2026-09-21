@@ -1045,10 +1045,10 @@ const TradingViewChart: Component = () => {
         onContextMenu={handleContextMenu}
         onClick={handleClick}
       >
-        <div class="absolute left-3 top-3 z-20 flex items-center gap-1 rounded-lg border border-brand-border/70 bg-brand-surface/80 px-2 py-1.5 shadow-sm backdrop-blur">
+        <div class="absolute left-3 top-3 z-20 flex items-center gap-1 rounded-full border border-brand-border/70 bg-brand-surface/80 px-2 py-1.5 shadow-sm backdrop-blur">
           <div class="group flex items-center gap-1">
             <button
-              class="px-2.5 py-1 text-xs font-medium rounded transition-colors bg-brand-border text-slate-100"
+              class="px-2.5 py-1 text-xs font-medium rounded-full transition-colors bg-brand-border text-slate-100"
               onClick={() => setResolution(resolution())}
             >
               {RESOLUTION_LABELS[resolution()]}
@@ -1057,7 +1057,7 @@ const TradingViewChart: Component = () => {
               <For each={inactiveResolutions()}>
                 {(res) => (
                   <button
-                    class="px-2.5 py-1 text-xs font-medium rounded transition-colors text-brand-slate-400 hover:text-slate-200 hover:bg-brand-border/50"
+                    class="px-2.5 py-1 text-xs font-medium rounded-full transition-colors text-brand-slate-400 hover:text-slate-200 hover:bg-brand-border/50"
                     onClick={() => setResolution(res)}
                   >
                     {RESOLUTION_LABELS[res]}
@@ -1069,7 +1069,7 @@ const TradingViewChart: Component = () => {
           <div class="mx-1 h-4 w-px bg-brand-border/70" />
           <div class="relative">
             <button
-              class={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+              class={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
                 hasMa()
                   ? "bg-brand-border text-slate-200"
                   : "text-brand-slate-400 hover:text-slate-200 hover:bg-brand-border/50"
@@ -1117,7 +1117,7 @@ const TradingViewChart: Component = () => {
       {/* Context menu */}
       {contextMenu() && (
         <div
-          class="fixed z-50 bg-brand-surface border border-brand-border rounded shadow-lg py-1 min-w-35"
+          class="fixed z-50 bg-brand-surface border border-brand-border rounded-lg shadow-lg py-1 min-w-35"
           style={{
             left: `${contextMenu()!.x}px`,
             top: `${contextMenu()!.y}px`,

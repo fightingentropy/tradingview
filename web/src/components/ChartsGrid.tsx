@@ -212,7 +212,7 @@ const ChartsGrid: Component = () => {
     <div class="relative h-full w-full bg-brand-screen">
       <div class="absolute right-4 top-4 z-20">
         <button
-          class="flex items-center gap-2 rounded-lg border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand-slate-200 shadow-lg hover:bg-brand-border/60"
+          class="flex items-center gap-2 rounded-full border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand-slate-200 shadow-lg hover:bg-brand-border/60"
           onClick={() => setMenuOpen(!menuOpen())}
         >
           <span>Charts</span>
@@ -246,7 +246,7 @@ const ChartsGrid: Component = () => {
                 <div class="flex items-center justify-between gap-2 text-xs text-brand-slate-300">
                   <span>Charts</span>
                   <select
-                    class="rounded border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
+                    class="rounded-md border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
                     value={chartCount()}
                     onChange={(event) =>
                       setChartCount(
@@ -262,7 +262,7 @@ const ChartsGrid: Component = () => {
                 <div class="flex items-center justify-between gap-2 text-xs text-brand-slate-300">
                   <span>Resolution</span>
                   <select
-                    class="rounded border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
+                    class="rounded-md border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
                     value={resolution()}
                     onChange={(event) =>
                       setResolution(event.currentTarget.value as Resolution)
@@ -279,7 +279,7 @@ const ChartsGrid: Component = () => {
                   <label class="flex items-center justify-between gap-2 text-xs text-brand-slate-300">
                     <span>Chart {index + 1}</span>
                     <select
-                      class="rounded border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
+                      class="rounded-md border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
                       value={symbol}
                       onChange={(event) =>
                         updateSymbol(index, event.currentTarget.value)

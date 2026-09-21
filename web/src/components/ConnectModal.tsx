@@ -169,7 +169,7 @@ const ConnectModal: Component = () => {
                 ref={closeButtonRef}
                 type="button"
                 aria-label="Close connection chooser"
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-brand-border text-brand-slate-400 transition-colors hover:border-brand-slate-600 hover:text-slate-100"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border text-brand-slate-400 transition-colors hover:border-brand-slate-600 hover:text-slate-100"
                 onClick={closeConnect}
               >
                 <svg

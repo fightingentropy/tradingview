@@ -988,7 +988,7 @@ const OrderForm: Component = () => {
             <div class="space-y-2">
               <div class="grid grid-cols-3 gap-2">
                 <button
-                  class="rounded-md border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  class="rounded-full border border-brand-border py-2 text-xs font-medium text-slate-200"
                   onClick={() =>
                     setMarginType(
                       marginType() === "isolated" ? "cross" : "isolated",
@@ -998,7 +998,7 @@ const OrderForm: Component = () => {
                   {marginType() === "isolated" ? "Isolated" : "Cross"}
                 </button>
                 <button
-                  class="rounded-md border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  class="rounded-full border border-brand-border py-2 text-xs font-medium text-slate-200"
                   onClick={() => setLeverageMenuOpen(!leverageMenuOpen())}
                 >
                   {leverage()}x
@@ -1007,7 +1007,7 @@ const OrderForm: Component = () => {
                   type="button"
                   aria-label={marginModeButtonDescription()}
                   title={marginModeButtonDescription()}
-                  class="rounded-md border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  class="rounded-full border border-brand-border py-2 text-xs font-medium text-slate-200"
                   onClick={() => {
                     if (isHyperliquidExecution()) {
                       openSettings();
@@ -1024,7 +1024,7 @@ const OrderForm: Component = () => {
                   <div class="grid grid-cols-5 gap-2">
                     {leverageOptions().map((option) => (
                       <button
-                        class={`rounded-md border px-2 py-1 text-xs ${
+                        class={`rounded-full border px-2 py-1 text-xs ${
                           leverage() === option
                             ? "border-brand-accent text-brand-accent bg-brand-accent/10"
                             : "border-brand-border text-brand-slate-400 hover:text-slate-200"
@@ -1155,22 +1155,28 @@ const OrderForm: Component = () => {
           </Show>
 
           {/* Order Type */}
-          <div class="flex items-center gap-6 border-b border-brand-border/70">
+          <div
+            class="flex w-fit items-center gap-1 rounded-full bg-brand-screen p-1"
+            role="group"
+            aria-label="Order type"
+          >
             <button
-              class={`relative pb-3 text-sm font-semibold transition-colors after:content-[''] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full ${
+              aria-pressed={orderType() === "market"}
+              class={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                 orderType() === "market"
-                  ? "text-slate-100 after:bg-brand-accent"
-                  : "text-brand-slate-400 hover:text-slate-200 after:bg-transparent"
+                  ? "bg-brand-border text-slate-100"
+                  : "text-brand-slate-400 hover:text-slate-200"
               }`}
               onClick={() => setOrderType("market")}
             >
               Market
             </button>
             <button
-              class={`relative pb-3 text-sm font-semibold transition-colors after:content-[''] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full ${
+              aria-pressed={orderType() === "limit"}
+              class={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                 orderType() === "limit"
-                  ? "text-slate-100 after:bg-brand-accent"
-                  : "text-brand-slate-400 hover:text-slate-200 after:bg-transparent"
+                  ? "bg-brand-border text-slate-100"
+                  : "text-brand-slate-400 hover:text-slate-200"
               }`}
               onClick={() => {
                 setOrderType("limit");
@@ -1184,14 +1190,13 @@ const OrderForm: Component = () => {
             >
               Limit
             </button>
-            <div class="flex-1" />
           </div>
 
           {/* Long/Short Toggle */}
-          <div class="ticket-side-switch rounded-md p-1">
+          <div class="ticket-side-switch rounded-full p-1">
             <div class="flex">
               <button
-                class={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+                class={`flex-1 rounded-full py-2 text-sm font-semibold transition-colors ${
                   isLong()
                     ? "bg-brand-green-400/12 text-brand-green-400"
                     : "text-brand-slate-400 hover:text-slate-200"
@@ -1202,7 +1207,7 @@ const OrderForm: Component = () => {
                 {longLabel()}
               </button>
               <button
-                class={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+                class={`flex-1 rounded-full py-2 text-sm font-semibold transition-colors ${
                   !isLong()
                     ? "bg-brand-red-400/12 text-brand-red-400"
                     : "text-brand-slate-400 hover:text-slate-200"
@@ -1483,7 +1488,7 @@ const OrderForm: Component = () => {
           <Show when={!isHyperliquidExecution() && canAdminDeposit()}>
             <div class="flex gap-3">
               <button
-                class={`flex-1 rounded-md py-2.5 text-sm font-semibold transition-colors ${depositButtonClass()}`}
+                class={`flex-1 rounded-full py-2.5 text-sm font-semibold transition-colors ${depositButtonClass()}`}
                 onClick={handleDepositClick}
                 disabled={depositButtonDisabled()}
               >
@@ -1604,7 +1609,7 @@ const OrderForm: Component = () => {
       </div>
       <div class="ticket-submit">
         <button
-          class={`w-full rounded-md py-3 text-sm font-semibold transition-colors ${
+          class={`w-full rounded-full py-3 text-sm font-semibold transition-colors ${
             (!isAuthenticated() && !isHyperliquidExecution()) ||
             (canSubmitOrder() && !isSubmitting())
               ? "bg-brand-accent text-brand-screen hover:brightness-105"

@@ -20,7 +20,7 @@ const Header: Component = () => {
 
   return (
     <header class="app-header hidden md:flex">
-      <div class="flex h-full items-center gap-8">
+      <div class="flex h-full items-center gap-5 lg:gap-8">
         <button onClick={() => setCurrentPage("trade")} class="app-wordmark">
           <svg
             aria-hidden="true"
@@ -77,7 +77,7 @@ const Header: Component = () => {
         <Show when={isAuthenticated()}>
           <div class="relative">
             <button
-              class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-slate-100 border border-brand-border rounded-lg hover:border-brand-accent hover:text-brand-accent transition-colors"
+              class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-slate-100 border border-brand-border rounded-full hover:border-brand-accent hover:text-brand-accent transition-colors"
               onClick={toggleProfileMenu}
             >
               <svg
@@ -154,7 +154,7 @@ const Header: Component = () => {
           aria-haspopup="dialog"
           aria-expanded={settingsOpen()}
           aria-controls="settings-dialog"
-          class="flex h-9 w-9 items-center justify-center rounded-lg border border-brand-border bg-brand-surface text-brand-slate-400 transition-colors hover:text-brand-slate-100"
+          class="flex h-9 w-9 items-center justify-center rounded-full border border-brand-border bg-brand-surface text-brand-slate-400 transition-colors hover:text-brand-slate-100"
           onClick={handleOpenSettings}
         >
           <svg
