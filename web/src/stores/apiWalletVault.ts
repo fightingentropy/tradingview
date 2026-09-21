@@ -7,7 +7,6 @@ import {
   clearApiWalletSessionsForVault,
   revokeApiWalletSessionsForVault,
   restoreApiWalletSession,
-  setPasskeyRequirement,
 } from "./apiWalletSession";
 
 const VAULT_DATABASE_NAME = "trade-xyz-api-wallet-vault";
@@ -1045,7 +1044,6 @@ const forgetApiWalletVault = async (): Promise<VaultActionResult> => {
       clearApiWalletSession();
     }
     await deleteVaultRecord();
-    setPasskeyRequirement("every-refresh");
     setApiWalletVaultHasRecord(false);
     setApiWalletVaultMetadata(undefined);
     setApiWalletVaultError(undefined);

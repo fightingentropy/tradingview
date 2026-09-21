@@ -47,7 +47,7 @@ const SHARED_WORKER_NAME = "trade-xyz-api-wallet-session-v1";
 const REQUEST_TIMEOUT_MS = 2_500;
 const SESSION_ID_PATTERN = /^[0-9a-f]{64}$/u;
 const HANDOFF_TOKEN_PATTERN = /^[0-9a-f]{64}$/u;
-const DEFAULT_PASSKEY_REQUIREMENT: PasskeyRequirement = "five-minutes";
+const DEFAULT_PASSKEY_REQUIREMENT: PasskeyRequirement = "one-hour";
 
 const PASSKEY_REQUIREMENT_DURATIONS: Record<PasskeyRequirement, number> = {
   "every-refresh": 0,

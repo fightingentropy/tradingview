@@ -261,11 +261,8 @@ const SettingsModal: Component = () => {
         passkeyRequirement() !== "every-refresh" &&
         vaultResult.reloadGraceReady !== true
       ) {
-        const preferenceSaved = setPasskeyRequirement("every-refresh");
         setPasskeyNameNotice(
-          preferenceSaved
-            ? "This browser will ask you to unlock after each refresh."
-            : "Unlock is required after refresh. Your browser could not save this preference.",
+          "Your unlock interval is unchanged. This browser couldn’t keep the session, so refreshing may ask you to unlock again.",
         );
       }
     } else {
@@ -307,11 +304,8 @@ const SettingsModal: Component = () => {
       passkeyRequirement() !== "every-refresh" &&
       !unlocked.reloadGraceReady
     ) {
-      const preferenceSaved = setPasskeyRequirement("every-refresh");
       setPasskeyNameNotice(
-        preferenceSaved
-          ? "This browser will ask you to unlock after each refresh."
-          : "Unlock is required after refresh. Your browser could not save this preference.",
+        "Your unlock interval is unchanged. This browser couldn’t keep the session, so refreshing may ask you to unlock again.",
       );
     }
     const connectionPromise = connectHyperliquid({
@@ -437,16 +431,22 @@ const SettingsModal: Component = () => {
     );
     payload.apiWalletPrivateKey = "0x";
     if (
-      !reloadGraceReady ||
       hyperliquidConnectionStatus() !== "connected" ||
       passkeyRequirement() !== next ||
       apiWalletVaultRevocationEpoch() !== revocationEpoch
     ) {
       clearApiWalletSession();
-      setPasskeyRequirement("every-refresh");
       setVaultAction(undefined);
       setExecutionActionError(
-        "This browser still needs you to unlock after each refresh.",
+        "Your connection changed. Please check your unlock preference again.",
+      );
+      return;
+    }
+    if (!reloadGraceReady) {
+      clearApiWalletSession();
+      setVaultAction(undefined);
+      setExecutionActionError(
+        "Your unlock interval is saved. This browser couldn’t keep the session, so refreshing may ask you to unlock again.",
       );
       return;
     }
@@ -917,11 +917,11 @@ const SettingsModal: Component = () => {
                             )
                           }
                         >
+                          <option value="one-hour">After 1 hour</option>
                           <option value="five-minutes">After 5 minutes</option>
                           <option value="every-refresh">
                             Every time I refresh
                           </option>
-                          <option value="one-hour">After 1 hour</option>
                         </select>
                         <span class="mt-2 block text-xs leading-5 text-brand-slate-500">
                           {passkeyRequirementDescription()}

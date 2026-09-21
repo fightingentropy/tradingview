@@ -14,9 +14,9 @@ const createPayload = (privateKeyByte = "1"): SessionVaultPayload => ({
 });
 
 describe("API-wallet passkey requirement", () => {
-  test("defaults missing settings to five minutes and fails closed for malformed values", () => {
-    expect(__test.defaultRequirement).toBe("five-minutes");
-    expect(__test.parseStoredPasskeyRequirement(null)).toBe("five-minutes");
+  test("defaults missing settings to one hour and fails closed for malformed values", () => {
+    expect(__test.defaultRequirement).toBe("one-hour");
+    expect(__test.parseStoredPasskeyRequirement(null)).toBe("one-hour");
     expect(__test.parseStoredPasskeyRequirement("")).toBe("every-refresh");
     expect(__test.parseStoredPasskeyRequirement("not-json")).toBe(
       "every-refresh",
@@ -353,6 +353,46 @@ describe("API-wallet reload handoff boundary", () => {
     expect(payload.apiWalletPrivateKey).toBe("0x");
   });
 
+  test("one-hour sessions survive reloads after five minutes but end at the original hour", () => {
+    let now = 0;
+    const broker = new ApiWalletSessionBroker<object>(() => now);
+    let owner = {};
+    const payload = createPayload();
+    const saved = JSON.stringify({ version: 1, requirement: "one-hour" });
+    const requirement = __test.readPasskeyRequirement({ getItem: () => saved });
+    broker.cache({
+      sessionId: "one-hour-session",
+      vaultId: "vault-a",
+      durationMs: __test.durations[requirement],
+      provisionalLifetimeMs: 15_000,
+      payload,
+      owner,
+    });
+    expect(broker.commit("one-hour-session", owner)).toBe(true);
+
+    for (now of [300_001, 1_800_000, 3_599_999]) {
+      const nextOwner = {};
+      expect(broker.prepareHandoff({
+        sessionId: "one-hour-session", handoffToken: `reload-${now}`,
+        handoffLifetimeMs: 15_000, owner,
+      })).toBe(true);
+      expect(broker.restore({
+        sessionId: "one-hour-session", handoffToken: `reload-${now}`,
+        vaultId: "vault-a", owner: nextOwner,
+      })).toBe(payload);
+      expect(broker.nextDeadline()).toBe(3_600_000);
+      owner = nextOwner;
+    }
+
+    now = 3_600_000;
+    expect(broker.prepareHandoff({
+      sessionId: "one-hour-session", handoffToken: "expired",
+      handoffLifetimeMs: 15_000, owner,
+    })).toBe(false);
+    expect(payload.apiWalletPrivateKey).toBe("0x");
+    expect(broker.nextDeadline()).toBeUndefined();
+  });
+
   test("expires on wall time after system sleep even if the monotonic clock pauses", () => {
     let wallNow = 1_000;
     let monotonicNow = 500;
@@ -574,27 +614,27 @@ describe("API-wallet reload handoff boundary", () => {
     expect(replacementBroker.nextDeadline()).toBeUndefined();
   });
 
-  test("renders the five-minute default first in Settings", async () => {
+  test("renders the one-hour default first in Settings", async () => {
     const source = await Bun.file(
       new URL("../components/SettingsModal.tsx", import.meta.url),
     ).text();
     const firstRequirementSelect = source.indexOf(
       "value={passkeyRequirement()}",
     );
-    const fiveMinutes = source.indexOf(
-      '<option value="five-minutes">',
+    const oneHour = source.indexOf(
+      '<option value="one-hour">',
       firstRequirementSelect,
     );
+    const fiveMinutes = source.indexOf('<option value="five-minutes">', oneHour);
     const everyRefresh = source.indexOf(
       '<option value="every-refresh">',
       fiveMinutes,
     );
-    const oneHour = source.indexOf('<option value="one-hour">', everyRefresh);
 
     expect(firstRequirementSelect).toBeGreaterThan(-1);
     expect(source).toContain("Ask me to unlock again");
-    expect(fiveMinutes).toBeGreaterThan(-1);
+    expect(oneHour).toBeGreaterThan(-1);
+    expect(fiveMinutes).toBeGreaterThan(oneHour);
     expect(everyRefresh).toBeGreaterThan(fiveMinutes);
-    expect(oneHour).toBeGreaterThan(everyRefresh);
   });
 });

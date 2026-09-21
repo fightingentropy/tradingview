@@ -12,11 +12,7 @@ import {
   restoreApiWalletVaultSession,
   unlockApiWalletVault,
 } from "./apiWalletVault";
-import {
-  clearApiWalletSession,
-  passkeyRequirement,
-  setPasskeyRequirement,
-} from "./apiWalletSession";
+import { clearApiWalletSession } from "./apiWalletSession";
 
 export type SavedApiWalletConnectionResult =
   { ok: true } | { ok: false; error: string };
@@ -86,12 +82,8 @@ export const unlockSavedApiWallet =
     const revocationEpoch = apiWalletVaultRevocationEpoch();
     const unlocked = await unlockApiWalletVault();
     if (!unlocked.ok) return unlocked;
-    if (
-      passkeyRequirement() !== "every-refresh" &&
-      !unlocked.reloadGraceReady
-    ) {
-      setPasskeyRequirement("every-refresh");
-    }
+    // An unavailable reload session must require verification again, without
+    // replacing the user's saved interval with a permanent stricter choice.
     return await connectRecoveredApiWallet(unlocked.payload, revocationEpoch);
   };
 
