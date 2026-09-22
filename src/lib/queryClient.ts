@@ -1,4 +1,4 @@
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import type { Persister } from '@tanstack/react-query-persist-client';
 import { QueryClient } from '@tanstack/react-query';
 
 import { mmkvStorage } from '@/lib/mmkv';
@@ -24,8 +24,13 @@ export const queryClient = new QueryClient({
  * start can paint the last-known tickers instantly, then refresh in the
  * background. MMKV is synchronous, so restore happens within a tick.
  */
-export const queryPersister = createSyncStoragePersister({
-  storage: mmkvStorage,
-  key: 'tradingview.rq-cache',
-  throttleTime: 1000,
-});
+const CACHE_KEY = 'tradingview.rq-cache';
+// QueryPersistence schedules snapshots before doing any synchronous work here.
+export const queryPersister: Persister = {
+  persistClient: client => { mmkvStorage.setItem(CACHE_KEY, JSON.stringify(client)); },
+  restoreClient: () => {
+    const saved = mmkvStorage.getItem(CACHE_KEY);
+    return saved ? JSON.parse(saved) : undefined;
+  },
+  removeClient: () => { mmkvStorage.removeItem(CACHE_KEY); },
+};

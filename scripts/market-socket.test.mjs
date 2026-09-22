@@ -8,6 +8,9 @@ const source = readFileSync(new URL('../src/providers/hyperliquid/ws.ts', import
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
+const cacheCompiled = ts.transpileModule(readFileSync(new URL('../src/lib/hyperliquid/displayReadCache.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
 
 /** Execute the production socket with deterministic time and a local transport. */
 function harness() {
@@ -15,7 +18,7 @@ function harness() {
   let nextTimer = 0;
   const timers = new Map();
   const sockets = [];
-  let onAppState;
+  const appStateHandlers = [];
   const schedule = (fn, delay, interval) => {
     const id = ++nextTimer;
     timers.set(id, { fn, at: now + delay, interval });
@@ -24,21 +27,24 @@ function harness() {
   class FakeSocket {
     static CONNECTING = 0;
     static OPEN = 1;
-    constructor() { this.readyState = 0; this.sent = []; sockets.push(this); }
+    constructor(url) { this.url = url; this.readyState = 0; this.sent = []; sockets.push(this); }
     open() { this.readyState = 1; this.onopen?.(); }
     send(message) { this.sent.push(JSON.parse(message)); }
     close() { this.readyState = 3; this.onclose?.(); }
     receive(message) { this.onmessage?.({ data: JSON.stringify(message) }); }
   }
   const exports = {};
+  const cacheExports = {};
+  vm.runInNewContext(cacheCompiled, { exports: cacheExports, Date: { now: () => now } });
   vm.runInNewContext(compiled, {
     exports, WebSocket: FakeSocket, Date: { now: () => now },
     setTimeout: (fn, delay) => schedule(fn, delay, 0),
     setInterval: (fn, delay) => schedule(fn, delay, delay),
     clearTimeout: (id) => timers.delete(id), clearInterval: (id) => timers.delete(id),
     require: (name) => {
-      if (name === 'react-native') return { AppState: { addEventListener: (_, fn) => { onAppState = fn; } } };
+      if (name === 'react-native') return { AppState: { addEventListener: (_, fn) => { appStateHandlers.push(fn); } } };
       if (name === './rest') return { HL_WS_URL: 'wss://local.test' };
+      if (name === '@/lib/hyperliquid/displayReadCache') return cacheExports;
       throw new Error(`Unexpected dependency: ${name}`);
     },
   });
@@ -55,7 +61,7 @@ function harness() {
     }
     now = target;
   };
-  return { ...exports, sockets, advance, appState: (state) => onAppState(state) };
+  return { ...exports, cache: cacheExports.displayReadCache, sockets, advance, appState: (state) => appStateHandlers.forEach(handler => handler(state)) };
 }
 
 test('a silent open connection is replaced and subscriptions recover', () => {
@@ -121,4 +127,27 @@ test('late callbacks from a retired socket cannot close its replacement', () => 
   assert.equal(h.sockets[1].readyState, 1);
   h.advance(10_000);
   assert.equal(h.sockets.length, 2);
+});
+
+test('account views share the market socket, separate networks and release their subscriptions', async () => {
+  const h = harness();
+  const market = h.subscribeCandle('BTC', '1m', () => {});
+  const a = h.subscribeAccountDisplay('mainnet', '0xabc');
+  const b = h.subscribeAccountDisplay('mainnet', '0xABC');
+  assert.equal(h.sockets.length, 1);
+  h.sockets[0].open();
+  assert.equal(h.sockets[0].sent.length, 3, 'one candle and two account channels');
+  h.sockets[0].receive({ channel: 'spotState', data: { user: '0xabc', spotState: { balances: [{ coin: 'WS' }] } } });
+  const req = { type: 'spotClearinghouseState', user: '0xabc' };
+  assert.equal((await h.cache.read('mainnet', req, async () => null)).balances[0].coin, 'WS');
+  const testnet = h.subscribeAccountDisplay('testnet', '0xabc');
+  assert.equal(h.sockets.length, 2);
+  assert.equal(h.sockets[1].url, 'wss://api.hyperliquid-testnet.xyz/ws');
+  assert.equal(await h.cache.read('testnet', req, async () => null), null);
+  a(); assert.equal(h.sockets[0].sent.length, 3);
+  b(); assert.equal(h.sockets[0].sent.length, 5);
+  assert.equal(h.sockets[0].readyState, 1, 'remaining chart keeps its connection');
+  assert.equal(await h.cache.read('mainnet', req, async () => null), null, 'leaving the account drops display snapshots');
+  market(); testnet();
+  assert.equal(h.sockets.every(socket => socket.readyState === 3), true);
 });

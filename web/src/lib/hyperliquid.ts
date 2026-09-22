@@ -5,75 +5,21 @@ import {
   formatPercent as sharedFormatPercent,
 } from "./format";
 import type { OrderBookLevel, L2Book } from "./format";
+import { InfoScheduler } from "./infoScheduler";
+import { SharedRead } from "./sharedRead";
 import {
-  hyperliquidDataNetwork,
   hyperliquidInfoUrl,
 } from "./hyperliquidNetwork";
 
-const INFO_MIN_INTERVAL_MS = 300;
+const infoScheduler = new InfoScheduler();
 const INFO_RATE_LIMIT_COOLDOWN_MS = 2500;
-const INFO_MAX_QUEUE = 200;
 const INFO_MAX_RETRY_AFTER_MS = 60_000;
 const INFO_MAX_RESPONSE_ROWS = 2_000;
 const INFO_MAX_RESPONSE_BYTES = 2_000_000;
 const INFO_FETCH_TIMEOUT_MS = 10_000;
-let infoLastRequestAt = 0;
 let infoRateLimitedUntil = 0;
 
 type InfoPriority = "high" | "low";
-
-type InfoQueueTask = {
-  run: () => Promise<Response | null>;
-  resolve: (value: Response | null) => void;
-  reject: (reason?: unknown) => void;
-  priority: InfoPriority;
-};
-
-const infoQueue: InfoQueueTask[] = [];
-let infoQueueRunning = false;
-
-const drainInfoQueue = async () => {
-  if (infoQueueRunning) return;
-  infoQueueRunning = true;
-  while (infoQueue.length > 0) {
-    const highIndex = infoQueue.findIndex(
-      (task) => task.priority === "high",
-    );
-    const task =
-      highIndex >= 0
-        ? infoQueue.splice(highIndex, 1)[0]
-        : infoQueue.shift();
-    if (!task) break;
-    try {
-      const result = await task.run();
-      task.resolve(result);
-    } catch (error) {
-      task.reject(error);
-    }
-  }
-  infoQueueRunning = false;
-};
-
-const delayWithAbort = (ms: number, signal?: AbortSignal): Promise<void> => {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => {
-    const finish = () => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    };
-    const timer = setTimeout(finish, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      finish();
-    };
-    if (!signal) return;
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-};
 
 const readBoundedJson = async (response: Response): Promise<unknown | null> => {
   const contentLength = Number(response.headers.get("content-length"));
@@ -95,50 +41,26 @@ const readBoundedJson = async (response: Response): Promise<unknown | null> => {
 const postHyperliquidInfo = (
   payload: Record<string, unknown>,
   signal?: AbortSignal,
-  options?: { priority?: InfoPriority },
+  options?: { priority?: InfoPriority; url?: string },
 ): Promise<Response | null> => {
   if (signal?.aborted) return Promise.resolve(null);
-  if (infoQueue.length >= INFO_MAX_QUEUE) return Promise.resolve(null);
-  const priority = options?.priority ?? "low";
-  const requestUrl = hyperliquidInfoUrl();
-
-  return new Promise<Response | null>((resolve, reject) => {
-    const run = async () => {
-      if (signal?.aborted) return null;
-      const now = Date.now();
-      if (now < infoRateLimitedUntil) return null;
-      const waitMs = Math.max(
-        0,
-        infoLastRequestAt + INFO_MIN_INTERVAL_MS - now,
-      );
-      if (waitMs > 0) {
-        await delayWithAbort(waitMs, signal);
-        if (signal?.aborted) return null;
-      }
-      infoLastRequestAt = Date.now();
-      const timeoutSignal = AbortSignal.timeout(INFO_FETCH_TIMEOUT_MS);
-      const response = await fetch(requestUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: signal
-          ? AbortSignal.any([signal, timeoutSignal])
-          : timeoutSignal,
-      });
-      if (response.status === 429) {
-        const retryAfter = response.headers.get("retry-after");
-        const retryMs = retryAfter ? Number(retryAfter) * 1000 : NaN;
-        const cooldownMs = Number.isFinite(retryMs) && retryMs >= 0
-          ? Math.min(retryMs, INFO_MAX_RETRY_AFTER_MS)
-          : INFO_RATE_LIMIT_COOLDOWN_MS;
-        infoRateLimitedUntil = Date.now() + cooldownMs;
-      }
-      return response;
-    };
-
-    infoQueue.push({ run, resolve, reject, priority });
-    void drainInfoQueue();
-  });
+  const requestUrl = options?.url ?? hyperliquidInfoUrl();
+  return infoScheduler.schedule(async () => {
+    if (signal?.aborted || Date.now() < infoRateLimitedUntil) return null;
+    const timeoutSignal = AbortSignal.timeout(INFO_FETCH_TIMEOUT_MS);
+    const response = await fetch(requestUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
+    });
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? NaN) * 1000;
+      infoRateLimitedUntil = Date.now() + (Number.isFinite(retryAfter) && retryAfter >= 0
+        ? Math.min(retryAfter, INFO_MAX_RETRY_AFTER_MS) : INFO_RATE_LIMIT_COOLDOWN_MS);
+    }
+    return response;
+  }, { priority: options?.priority, signal, weight: payload.type === "candleSnapshot" ? 54 : 20 });
 };
 
 export interface AssetMeta {
@@ -468,9 +390,9 @@ export const toHyperliquidInterval = (resolution: string): string =>
 /**
  * Fetch metadata and asset contexts (funding, OI, volume, etc.)
  */
-export const fetchMetaAndAssetCtxs = async (
+const readMetaAndAssetCtxs = async (
   signal?: AbortSignal,
-  options?: { dex?: string },
+  options?: { dex?: string; url?: string },
 ): Promise<MetaAndAssetCtxs | null> => {
   try {
     if (
@@ -482,7 +404,7 @@ export const fetchMetaAndAssetCtxs = async (
     const payload = options?.dex
       ? { type: "metaAndAssetCtxs", dex: options.dex }
       : { type: "metaAndAssetCtxs" };
-    const response = await postHyperliquidInfo(payload, signal);
+    const response = await postHyperliquidInfo(payload, signal, { url: options?.url });
 
     if (!response || !response.ok) return null;
     return parseMetaAndAssetCtxsResponse(await readBoundedJson(response));
@@ -498,13 +420,15 @@ export const fetchMetaAndAssetCtxs = async (
 /**
  * Fetch spot metadata and asset contexts
  */
-export const fetchSpotMetaAndAssetCtxs = async (
+const readSpotMetaAndAssetCtxs = async (
   signal?: AbortSignal,
+  url?: string,
 ): Promise<SpotMetaAndAssetCtxs | null> => {
   try {
     const response = await postHyperliquidInfo(
       { type: "spotMetaAndAssetCtxs" },
       signal,
+      { url },
     );
 
     if (!response || !response.ok) return null;
@@ -520,32 +444,19 @@ export const fetchSpotMetaAndAssetCtxs = async (
 
 export type HyperliquidMarketType = "perps" | "spot" | "equities";
 
-const SPOT_PAIR_METADATA_TTL_MS = 60_000;
-const spotPairMetadataCache = new Map<
-  string,
-  {
-    expiresAt: number;
-    promise: Promise<SpotMetaAndAssetCtxs | null>;
-  }
->();
+// Expire before the 60-second refresh, allowing for request latency.
+const metadataReads = new SharedRead<MetaAndAssetCtxs>(45_000);
+const spotMetadataReads = new SharedRead<SpotMetaAndAssetCtxs>(45_000);
 
-const getSpotPairMetadata = () => {
-  const network = hyperliquidDataNetwork();
-  const cached = spotPairMetadataCache.get(network);
-  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+export const fetchMetaAndAssetCtxs = (signal?: AbortSignal, options?: { dex?: string }) => {
+  const url = hyperliquidInfoUrl();
+  return metadataReads.read(`${url}:${options?.dex ?? ""}`, sharedSignal =>
+    readMetaAndAssetCtxs(sharedSignal, { ...options, url }), signal);
+};
 
-  const promise = fetchSpotMetaAndAssetCtxs();
-  spotPairMetadataCache.set(network, {
-    expiresAt: Date.now() + SPOT_PAIR_METADATA_TTL_MS,
-    promise,
-  });
-  void promise.then((data) => {
-    const current = spotPairMetadataCache.get(network);
-    if (!data && current?.promise === promise) {
-      spotPairMetadataCache.delete(network);
-    }
-  });
-  return promise;
+export const fetchSpotMetaAndAssetCtxs = (signal?: AbortSignal) => {
+  const url = hyperliquidInfoUrl();
+  return spotMetadataReads.read(url, sharedSignal => readSpotMetaAndAssetCtxs(sharedSignal, url), signal);
 };
 
 export const resolveHyperliquidMarketCoin = async ({
@@ -562,7 +473,7 @@ export const resolveHyperliquidMarketCoin = async ({
     const normalized = normalizeSymbol(symbol);
     return isHyperliquidSymbol(normalized) ? normalized : null;
   }
-  const spotData = await getSpotPairMetadata();
+  const spotData = await fetchSpotMetaAndAssetCtxs(signal);
   if (!spotData || signal?.aborted) return null;
   return resolveHyperliquidSpotPairId(symbol, spotData);
 };
@@ -591,13 +502,14 @@ export const formatPrice = sharedFormatPrice;
 export const formatVolume = sharedFormatVolume;
 export const formatPercent = sharedFormatPercent;
 
-export const fetchHyperliquidCandles = async ({
+const readHyperliquidCandles = async ({
   coin,
   resolution,
   fromMs,
   toMs,
   signal,
   priority,
+  url,
 }: {
   coin: string;
   resolution: string;
@@ -605,6 +517,7 @@ export const fetchHyperliquidCandles = async ({
   toMs: number;
   signal?: AbortSignal;
   priority?: InfoPriority;
+  url?: string;
 }): Promise<
   {
     time: number;
@@ -643,7 +556,7 @@ export const fetchHyperliquidCandles = async ({
   };
 
   try {
-    const response = await postHyperliquidInfo(payload, signal, { priority });
+    const response = await postHyperliquidInfo(payload, signal, { priority, url });
 
     if (!response) return [];
     if (!response.ok) {
@@ -707,4 +620,20 @@ export const fetchHyperliquidCandles = async ({
     console.error("Failed to fetch hyperliquid candles:", error);
     return [];
   }
+};
+
+type CandleReadArgs = Parameters<typeof readHyperliquidCandles>[0];
+const candleReads = new SharedRead<Awaited<ReturnType<typeof readHyperliquidCandles>>>(1_000);
+
+export const fetchHyperliquidCandles = async (args: Omit<CandleReadArgs, "url">) => {
+  if (!Number.isSafeInteger(args.fromMs) || !Number.isSafeInteger(args.toMs) ||
+    args.fromMs < 0 || args.toMs <= args.fromMs) return [];
+  const url = hyperliquidInfoUrl();
+  // Requests started by sibling chart panels differ by milliseconds. Candle
+  // windows use minute boundaries, so identical panels can share one response.
+  const fromMs = Math.floor(args.fromMs / 60_000) * 60_000;
+  const toMs = Math.ceil(args.toMs / 60_000) * 60_000;
+  const key = JSON.stringify([url, args.coin, args.resolution, fromMs, toMs]);
+  return await candleReads.read(key, signal =>
+    readHyperliquidCandles({ ...args, fromMs, toMs, url, signal }), args.signal) ?? [];
 };

@@ -1,3 +1,6 @@
+import { useEffect } from 'react';
+import { queryClient } from '@/lib/queryClient';
+import { subscribeAccountDisplay } from '@/providers/hyperliquid/ws';
 import { useQuery } from '@tanstack/react-query';
 import { useIsFocused } from 'expo-router';
 
@@ -12,6 +15,7 @@ import {
   fetchOpenOrders,
   fetchUserFills,
   type HlAccount,
+  type HlNetwork,
   type HlAccountFees,
   type HlEarnBalance,
   type HlFill,
@@ -94,6 +98,12 @@ export function useHlLegalCheck() {
   });
 }
 
+function useAccountDisplayFeed(network: HlNetwork, account: string | undefined, enabled: boolean) {
+  useEffect(() => {
+    if (enabled && account) return subscribeAccountDisplay(network, account);
+  }, [network, account, enabled]);
+}
+
 /**
  * Live Hyperliquid account state for the resolved master account. Read-only (the
  * address is public), refreshed every few seconds so marks + unrealized PnL stay
@@ -104,11 +114,12 @@ export function useHlAccount(enabled = true) {
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
 
+  useAccountDisplayFeed(network, account, enabled && focused);
   return useQuery<HlAccount>({
     queryKey: queryKeys.hlAccount(network, account ?? ''),
     // Guarded value rather than a non-null assertion: the query is enabled-gated on
     // `account`, but resolve the address inside the closure so TS stays sound.
-    queryFn: () => fetchHlAccount(account as string, network),
+    queryFn: ({ queryKey }) => fetchHlAccount(account as string, network, !queryClient.getQueryState(queryKey)?.isInvalidated),
     enabled: enabled && focused && !!account,
     refetchInterval: 5_000,
     staleTime: 4_000,
@@ -120,9 +131,10 @@ export function useHlAccountOverview(mode: HlAccountMode, enabled = true) {
   const focused = useIsFocused();
   const network = useHlConnection((s) => s.network);
   const { data: account } = useTradingAddress();
+  useAccountDisplayFeed(network, account, enabled && focused);
   return useQuery({
     queryKey: queryKeys.hlAccountOverview(network, account ?? '', mode),
-    queryFn: () => fetchHlAccountOverview(account as string, mode, network),
+    queryFn: ({ queryKey }) => fetchHlAccountOverview(account as string, mode, network, !queryClient.getQueryState(queryKey)?.isInvalidated),
     enabled: enabled && focused && !!account,
     staleTime: 10_000,
     refetchInterval: 15_000,

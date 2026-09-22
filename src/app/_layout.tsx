@@ -1,4 +1,4 @@
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { DarkTheme, Stack, ThemeProvider, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AlertHost } from '@/components/AlertHost';
+import { QueryPersistence } from '@/components/QueryPersistence';
 import { TradeFeedbackHost } from '@/components/TradeFeedbackHost';
 import { SymbolMenuProvider } from '@/components/SymbolMenu';
 import { Colors } from '@/constants/theme';
@@ -13,7 +14,7 @@ import { QueryLifecycle } from '@/hooks/QueryLifecycle';
 import { AlertWatcher } from '@/hooks/useAlertWatcher';
 import { NewsPushRegistration } from '@/hooks/useNewsPushRegistration';
 import { PriceAlertRegistration } from '@/hooks/usePriceAlertRegistration';
-import { PERSIST_MAX_AGE, queryClient, queryPersister } from '@/lib/queryClient';
+import { queryClient } from '@/lib/queryClient';
 
 // Victory Native's candlestick paths emit Skia path deprecation warnings; harmless and noisy.
 LogBox.ignoreLogs([/SkPath\..*is deprecated/, '[react-native-skia]']);
@@ -56,57 +57,48 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.background }}>
       <SafeAreaProvider>
-        <PersistQueryClientProvider
-          client={queryClient}
-          persistOptions={{
-            persister: queryPersister,
-            maxAge: PERSIST_MAX_AGE,
-            buster: '3',
-            // A connected News feed may contain posts from private Telegram
-            // channels. Keep that cache in memory only, never in MMKV.
-            dehydrateOptions: {
-              shouldDehydrateQuery: (query) => query.queryKey[0] !== 'news-feed',
-            },
-          }}>
-          <ThemeProvider value={navTheme}>
-            <QueryLifecycle />
-            <StatusBar style="light" />
-            <SymbolMenuProvider>
-              <Stack
-                screenOptions={{
-                  headerStyle: { backgroundColor: Colors.background },
-                  headerTintColor: Colors.text,
-                  headerTitleStyle: { fontSize: 18, fontWeight: '600', color: Colors.text },
-                  headerShadowVisible: false,
-                  headerBackButtonDisplayMode: 'minimal',
-                  contentStyle: { backgroundColor: Colors.background },
-                }}>
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="symbol/[id]" options={{ headerShown: false }} />
-                <Stack.Screen name="lists" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="add-symbols"
-                  options={{ headerShown: false, presentation: 'modal' }}
-                />
-                <Stack.Screen
-                  name="economic-calendar"
-                  options={{
-                    headerShown: false,
-                    presentation: 'modal',
-                    animation: 'slide_from_bottom',
-                    gestureEnabled: true,
-                    gestureDirection: 'vertical',
-                  }}
-                />
-              </Stack>
-            </SymbolMenuProvider>
-            <AlertWatcher />
-            <NewsPushRegistration />
-            <PriceAlertRegistration />
-            <AlertHost />
-            <TradeFeedbackHost />
-          </ThemeProvider>
-        </PersistQueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          <QueryPersistence>
+            <ThemeProvider value={navTheme}>
+              <QueryLifecycle />
+              <StatusBar style="light" />
+              <SymbolMenuProvider>
+                <Stack
+                  screenOptions={{
+                    headerStyle: { backgroundColor: Colors.background },
+                    headerTintColor: Colors.text,
+                    headerTitleStyle: { fontSize: 18, fontWeight: '600', color: Colors.text },
+                    headerShadowVisible: false,
+                    headerBackButtonDisplayMode: 'minimal',
+                    contentStyle: { backgroundColor: Colors.background },
+                  }}>
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="symbol/[id]" options={{ headerShown: false }} />
+                  <Stack.Screen name="lists" options={{ headerShown: false }} />
+                  <Stack.Screen
+                    name="add-symbols"
+                    options={{ headerShown: false, presentation: 'modal' }}
+                  />
+                  <Stack.Screen
+                    name="economic-calendar"
+                    options={{
+                      headerShown: false,
+                      presentation: 'modal',
+                      animation: 'slide_from_bottom',
+                      gestureEnabled: true,
+                      gestureDirection: 'vertical',
+                    }}
+                  />
+                </Stack>
+              </SymbolMenuProvider>
+              <AlertWatcher />
+              <NewsPushRegistration />
+              <PriceAlertRegistration />
+              <AlertHost />
+              <TradeFeedbackHost />
+            </ThemeProvider>
+          </QueryPersistence>
+        </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

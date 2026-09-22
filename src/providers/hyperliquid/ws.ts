@@ -1,3 +1,5 @@
+import type { HlNetwork } from '@/lib/hyperliquid/info';
+import { acceptAccountSnapshot, displayReadCache } from '@/lib/hyperliquid/displayReadCache';
 /**
  * Single multiplexed Hyperliquid websocket shared across the app.
  * Handles auto-reconnect, periodic ping, AppState pause/resume, and routing of
@@ -48,7 +50,7 @@ class HyperliquidSocket {
     this.statusHandlers.forEach((handler) => handler(status));
   }
 
-  constructor() {
+  constructor(private url = HL_WS_URL) {
     AppState.addEventListener('change', this.onAppState);
   }
 
@@ -65,6 +67,7 @@ class HyperliquidSocket {
 
   private subKey(sub: Record<string, unknown>): string {
     if (sub.type === 'allMids') return `allMids:${(sub.dex as string) ?? ''}`;
+    if (sub.type === 'spotState' || sub.type === 'allDexsClearinghouseState') return `${sub.type}:${String(sub.user).toLowerCase()}`;
     if (sub.type === 'candle') return `candle:${sub.coin}:${sub.interval}`;
     return JSON.stringify(sub);
   }
@@ -101,7 +104,7 @@ class HyperliquidSocket {
       return;
     }
     this.setStatus(this.attempts > 0 ? 'reconnecting' : 'connecting');
-    const ws = new WebSocket(HL_WS_URL);
+    const ws = new WebSocket(this.url);
     this.ws = ws;
     this.connectTimer = setTimeout(() => this.reconnect(ws), CONNECT_TIMEOUT);
 
@@ -146,7 +149,11 @@ class HyperliquidSocket {
 
   private route(msg: { channel?: string; data?: unknown }) {
     if (!msg || !msg.channel) return;
-    if (msg.channel === 'allMids') {
+    if (msg.channel === 'spotState' || msg.channel === 'allDexsClearinghouseState') {
+      const user = (msg.data as { user?: unknown })?.user;
+      if (typeof user !== 'string') return;
+      this.entries.get(`${msg.channel}:${user.toLowerCase()}`)?.handlers.forEach(h => h(msg.data));
+    } else if (msg.channel === 'allMids') {
       const mids = (msg.data as { mids?: Record<string, string> })?.mids;
       if (!mids) return;
       this.entries.forEach((entry, key) => {
@@ -232,4 +239,35 @@ export function subscribeCandle(
   onCandle: CandleHandler,
 ): () => void {
   return hlSocket.subscribe({ type: 'candle', coin, interval }, (data) => onCandle(data as HlCandle));
+}
+
+let testnetSocket: HyperliquidSocket | undefined;
+const accountFeeds = new Map<string, { users: number; stop: () => void }>();
+
+/** Reuse the market socket while an account screen or order ticket is visible. */
+export function subscribeAccountDisplay(network: HlNetwork, user: string): () => void {
+  const address = user.toLowerCase();
+  const key = `${network}:${address}`;
+  let feed = accountFeeds.get(key);
+  if (!feed) {
+    const socket = network === 'mainnet' ? hlSocket
+      : testnetSocket ??= new HyperliquidSocket('wss://api.hyperliquid-testnet.xyz/ws');
+    const status = socket.subscribeConnection(value => {
+      if (value !== 'connected') displayReadCache.invalidateAccount(network, address);
+    });
+    const subscriptions = ['allDexsClearinghouseState', 'spotState'].map(type =>
+      socket.subscribe({ type, user: address }, data => acceptAccountSnapshot(network, address, type, data)));
+    feed = { users: 0, stop: () => {
+      status(); subscriptions.forEach(unsubscribe => unsubscribe());
+      displayReadCache.invalidateAccount(network, address);
+    } };
+    accountFeeds.set(key, feed);
+  }
+  feed.users++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--feed.users === 0) { feed.stop(); accountFeeds.delete(key); }
+  };
 }

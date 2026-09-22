@@ -1,3 +1,4 @@
+import { displayReadCache } from './displayReadCache';
 /**
  * Hyperliquid account reads (public `info` endpoint — no auth, just an address).
  * Powers the Account tab: margin summary + open perp positions with live marks.
@@ -179,6 +180,12 @@ async function infoRequest<T>(network: HlNetwork, body: object): Promise<T> {
   });
   if (!res.ok) throw new Error(`Hyperliquid info ${res.status}`);
   return (await res.json()) as T;
+}
+
+// Display consumers share overlapping reads; signing/preflight callers retain
+// the original fresh path by default.
+function displayRequest<T>(network: HlNetwork, body: { type: string; user?: string; dex?: string | null }): Promise<T> {
+  return displayReadCache.read(network, body, () => infoRequest<T>(network, body));
 }
 
 /**
@@ -476,9 +483,9 @@ interface SpotPrices {
 class SpotBalanceReadError extends Error {}
 
 /** Preserve request diagnostics without exposing response text, URLs or account values. */
-async function spotRead<T>(network: HlNetwork, body: object, source: 'Balance request' | 'Price request'): Promise<T> {
+async function spotRead<T>(network: HlNetwork, body: object, source: 'Balance request' | 'Price request', forDisplay = false): Promise<T> {
   try {
-    return await infoRequest<T>(network, body);
+    return await (forDisplay ? displayRequest : infoRequest)<T>(network, body as { type: string; user?: string });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     const status = /^Hyperliquid info ([1-5][0-9]{2})$/.exec(message)?.[1];
@@ -533,13 +540,15 @@ export async function fetchHlAccountOverview(
   address: string,
   mode: HlAccountMode,
   network: HlNetwork = 'mainnet',
+  forDisplay = false,
 ): Promise<HlAccountOverview> {
+  const read = forDisplay ? displayRequest : infoRequest;
   const [spot, prices, perps] = await Promise.allSettled([
-    infoRequest<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }),
-    infoRequest<[SpotMeta, SpotCtx[]]>(network, { type: 'spotMetaAndAssetCtxs' }).then(spotPrices),
+    read<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }),
+    read<[SpotMeta, SpotCtx[]]>(network, { type: 'spotMetaAndAssetCtxs' }).then(spotPrices),
     fetchPerpDexCollaterals(network).then((dexes) => Promise.all(dexes.map(async ({ dex, collateralToken }) => ({
       collateralToken,
-      state: await infoRequest<RawClearinghouse>(network, {
+      state: await read<RawClearinghouse>(network, {
         type: 'clearinghouseState', user: address, ...(dex ? { dex } : {}),
       }),
     })))),
@@ -561,6 +570,7 @@ export async function fetchHlAccountOverview(
 async function fetchSpotBalances(
   address: string,
   network: HlNetwork,
+  forDisplay = false,
 ): Promise<{
   balances: HlSpotBalance[];
   collateralBalances: HlCollateralBalance[];
@@ -572,8 +582,8 @@ async function fetchSpotBalances(
 }> {
   try {
     const [state, metaCtxs] = await Promise.all([
-      spotRead<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }, 'Balance request'),
-      spotRead<[SpotMeta, SpotCtx[]]>(network, { type: 'spotMetaAndAssetCtxs' }, 'Price request'),
+      spotRead<RawSpotState>(network, { type: 'spotClearinghouseState', user: address }, 'Balance request', forDisplay),
+      spotRead<[SpotMeta, SpotCtx[]]>(network, { type: 'spotMetaAndAssetCtxs' }, 'Price request', forDisplay),
     ]);
     if (!Array.isArray(state?.balances)) throw new SpotBalanceReadError('Balance data: invalid balances list.');
     for (const balance of state.balances) {
@@ -652,9 +662,9 @@ interface RawVaultEquity {
 }
 
 /** Total USD equity the address has deposited across vaults. Tolerant of failure. */
-async function fetchVaultEquity(address: string, network: HlNetwork): Promise<{ value: number; loaded: boolean }> {
+async function fetchVaultEquity(address: string, network: HlNetwork, forDisplay = false): Promise<{ value: number; loaded: boolean }> {
   try {
-    const rows = await infoRequest<RawVaultEquity[]>(network, {
+    const rows = await (forDisplay ? displayRequest : infoRequest)<RawVaultEquity[]>(network, {
       type: 'userVaultEquities',
       user: address,
     });
@@ -678,15 +688,17 @@ async function fetchVaultEquity(address: string, network: HlNetwork): Promise<{ 
  * discovered USDC-backed perp DEX, even when that venue is not displayed in this app.
  * Read-only (the address is public, works for any account, no key).
  */
-export async function fetchHlAccount(address: string, network: HlNetwork = 'mainnet'): Promise<HlAccount> {
+export async function fetchHlAccount(address: string, network: HlNetwork = 'mainnet', forDisplay = false): Promise<HlAccount> {
+  if (!forDisplay) displayReadCache.invalidateAccount(network, address);
+  const read = forDisplay ? displayRequest : infoRequest;
   const dexes: HlPosition['dex'][] = ['default', 'xyz'];
   const [rawAbstraction, collateralTokens, defState, xyzState, spot, vault] = await Promise.all([
-    infoRequest<RawUserAbstraction>(network, { type: 'userAbstraction', user: address }),
+    read<RawUserAbstraction>(network, { type: 'userAbstraction', user: address }),
     fetchSupportedCollateralTokens(network),
-    infoRequest<RawClearinghouse>(network, { type: 'clearinghouseState', user: address }),
-    infoRequest<RawClearinghouse>(network, { type: 'clearinghouseState', user: address, dex: XYZ_DEX }),
-    fetchSpotBalances(address, network),
-    fetchVaultEquity(address, network),
+    read<RawClearinghouse>(network, { type: 'clearinghouseState', user: address }),
+    read<RawClearinghouse>(network, { type: 'clearinghouseState', user: address, dex: XYZ_DEX }),
+    fetchSpotBalances(address, network, forDisplay),
+    fetchVaultEquity(address, network, forDisplay),
   ]);
   const states = [defState, xyzState];
   const vaultValue = vault.value;
@@ -757,7 +769,7 @@ export async function fetchHlAccount(address: string, network: HlNetwork = 'main
       );
       const extraResults = await Promise.allSettled(
         extraUsdcDexes.map(({ dex }) =>
-          infoRequest<RawClearinghouse>(network, {
+          read<RawClearinghouse>(network, {
             type: 'clearinghouseState',
             user: address,
             dex,

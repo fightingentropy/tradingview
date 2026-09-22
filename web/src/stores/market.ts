@@ -1,3 +1,4 @@
+import { subscribeHyperliquid } from "../lib/hyperliquidStreams";
 import {
   batch,
   createEffect,
@@ -14,6 +15,8 @@ import {
   fetchMetaAndAssetCtxs,
   fetchSpotMetaAndAssetCtxs,
   getAssetContext,
+  resolveHyperliquidMarketCoin,
+  type AssetCtx,
   formatPrice,
   formatVolume,
   normalizeHyperliquidSpotUiSymbol,
@@ -35,6 +38,7 @@ export interface Market {
   name: string;
   price: string;
   change24h: number;
+  prevDayPrice?: number;
   volume24h: number;
   openInterest: number;
   funding: number;
@@ -1201,8 +1205,10 @@ const updateCurrentSymbolPrices = (
   const assetData = getAssetContext(coin, metaAndCtxs);
   if (!assetData) return;
 
-  const { ctx } = assetData;
+  updateCurrentContext(assetData.ctx);
+};
 
+const updateCurrentContext = (ctx: AssetCtx) => {
   // Mark price
   const markSource = ctx.markPx ?? ctx.midPx;
   const markNumber = markSource ? Number(markSource) : NaN;
@@ -1360,7 +1366,9 @@ const applyLivePriceUpdates = (updates: Map<string, number>) => {
       const formatted = formatPriceValue(price);
       if (market.price === formatted) return market;
       changed = true;
-      return { ...market, price: formatted };
+      const change = market.prevDayPrice && market.prevDayPrice > 0
+        ? (price / market.prevDayPrice - 1) * 100 : market.change24h;
+      return { ...market, price: formatted, change24h: change };
     });
     return changed ? next : prev;
   });
@@ -1434,6 +1442,7 @@ const buildHyperliquidMarkets = async (
         name: formatMarketName(asset.name, "perps"),
         price: formatPriceValue(markPriceVal),
         change24h: change24hVal,
+        prevDayPrice,
         volume24h: volume24hVal,
         openInterest: openInterestVal,
         funding: fundingVal,
@@ -1486,6 +1495,7 @@ const buildHyperliquidMarkets = async (
         name: formatMarketName(uiBaseToken, "spot"),
         price: formatPriceValue(markPriceVal),
         change24h: change24hVal,
+        prevDayPrice,
         volume24h: volume24hVal,
         openInterest: 0,
         funding: 0,
@@ -1525,6 +1535,7 @@ const buildHyperliquidMarkets = async (
         name: formatMarketName(asset.name, "equities"),
         price: formatPriceValue(markPriceVal),
         change24h: change24hVal,
+        prevDayPrice,
         volume24h: volume24hVal,
         openInterest: openInterestVal,
         funding: fundingVal,
@@ -1605,26 +1616,20 @@ const fetchAndUpdateMarkets = async (
   }
 };
 
-const MARKETS_POLL_MS = 15000;
-const LIVE_MIDS_HEARTBEAT_MS = 30_000;
-const LIVE_MIDS_RECONNECT_MAX_MS = 30_000;
+const MARKETS_POLL_MS = 60_000;
 const LIVE_MIDS_DEXES = ["", "xyz"] as const;
 
 /**
  * Live market-data hook.
  * - Full metadata refreshes on a slower interval.
- * - One all-mids websocket per relevant perp dex replaces per-symbol candle
- *   snapshot polling for live prices.
+ * - Mids and the selected asset context share the public market socket.
  * - Price writes are batched to one reactive update per animation frame.
  */
 export const useLivePrices = (options?: { enabled?: () => boolean }) => {
   let marketsTimer: number | undefined;
   let marketsController: AbortController | undefined;
-  let midsGeneration = 0;
   let midsFrame: number | undefined;
-  const midsSockets = new Map<string, WebSocket>();
-  const midsReconnectTimers = new Map<string, number>();
-  const midsHeartbeatTimers = new Map<string, number>();
+  let midsSubscriptions: (() => void)[] = [];
   const pendingMidUpdates = new Map<string, number>();
   const isEnabled = options?.enabled ?? (() => true);
 
@@ -1658,104 +1663,48 @@ export const useLivePrices = (options?: { enabled?: () => boolean }) => {
     }
   };
 
-  const clearDexTimer = (timers: Map<string, number>, dex: string) => {
-    const timer = timers.get(dex);
-    if (timer !== undefined) window.clearTimeout(timer);
-    timers.delete(dex);
-  };
-
   const stopLiveMids = () => {
-    midsGeneration += 1;
     if (midsFrame !== undefined) cancelAnimationFrame(midsFrame);
     midsFrame = undefined;
     pendingMidUpdates.clear();
-    for (const timer of midsReconnectTimers.values()) clearTimeout(timer);
-    for (const timer of midsHeartbeatTimers.values()) clearInterval(timer);
-    midsReconnectTimers.clear();
-    midsHeartbeatTimers.clear();
-    for (const socket of midsSockets.values()) {
-      socket.onclose = null;
-      socket.close();
-    }
-    midsSockets.clear();
+    midsSubscriptions.forEach(unsubscribe => unsubscribe());
+    midsSubscriptions = [];
   };
 
   const startLiveMids = () => {
     stopLiveMids();
-    const generation = midsGeneration;
-
-    const connectDex = (dex: string, attempt = 0) => {
-      if (generation !== midsGeneration || !isEnabled()) return;
-      clearDexTimer(midsReconnectTimers, dex);
-      const socket = new WebSocket(hyperliquidWsUrl());
-      midsSockets.set(dex, socket);
-
-      socket.onopen = () => {
-        if (generation !== midsGeneration || midsSockets.get(dex) !== socket) {
-          socket.close();
-          return;
-        }
-        attempt = 0;
-        socket.send(
-          JSON.stringify({
-            method: "subscribe",
-            subscription: dex
-              ? { type: "allMids", dex }
-              : { type: "allMids" },
-          }),
-        );
-        clearDexTimer(midsHeartbeatTimers, dex);
-        midsHeartbeatTimers.set(
-          dex,
-          window.setInterval(() => {
-            if (socket.readyState === WebSocket.OPEN) {
-              socket.send(JSON.stringify({ method: "ping" }));
-            }
-          }, LIVE_MIDS_HEARTBEAT_MS),
-        );
-      };
-
-      socket.onmessage = (event) => {
-        if (generation !== midsGeneration || midsSockets.get(dex) !== socket) {
-          return;
-        }
-        try {
-          const payload = JSON.parse(event.data) as {
-            channel?: unknown;
-            data?: { mids?: unknown };
-          };
-          if (payload.channel !== "allMids") return;
-          const updates = mapHyperliquidMidsToMarkets({
-            dex,
-            markets: untrack(() => markets()),
-            mids: parseHyperliquidMids(payload.data?.mids),
-            spotMidKeyBySymbol: spotMidKeyByUiSymbol,
-          });
-          queueMidUpdates(updates);
-        } catch {
-          // Ignore malformed websocket frames.
-        }
-      };
-
-      socket.onerror = () => socket.close();
-      socket.onclose = () => {
-        if (midsSockets.get(dex) === socket) midsSockets.delete(dex);
-        clearDexTimer(midsHeartbeatTimers, dex);
-        if (generation !== midsGeneration || !isEnabled()) return;
-        const base = Math.min(
-          LIVE_MIDS_RECONNECT_MAX_MS,
-          1_000 * 2 ** attempt,
-        );
-        const delay = base / 2 + Math.random() * (base / 2);
-        midsReconnectTimers.set(
-          dex,
-          window.setTimeout(() => connectDex(dex, attempt + 1), delay),
-        );
-      };
-    };
-
-    for (const dex of LIVE_MIDS_DEXES) connectDex(dex);
+    midsSubscriptions = LIVE_MIDS_DEXES.map(dex => subscribeHyperliquid(
+      hyperliquidWsUrl(), dex ? { type: "allMids", dex } : { type: "allMids" }, data => {
+        queueMidUpdates(mapHyperliquidMidsToMarkets({
+          dex, markets: untrack(markets), mids: parseHyperliquidMids(data.mids),
+          spotMidKeyBySymbol: spotMidKeyByUiSymbol,
+        }));
+      },
+    ));
   };
+
+  // Only the selected instrument needs live funding, volume and open interest.
+  createEffect(() => {
+    const enabled = isEnabled();
+    const symbol = currentSymbol();
+    const marketType = currentMarketType();
+    const url = hyperliquidWsUrl();
+    if (!enabled) return;
+    const controller = new AbortController();
+    let unsubscribe: (() => void) | undefined;
+    void resolveHyperliquidMarketCoin({ symbol, marketType, signal: controller.signal }).then(coin => {
+      if (!coin || controller.signal.aborted) return;
+      unsubscribe = subscribeHyperliquid(url, { type: "activeAssetCtx", coin }, data => {
+        const ctx = data.ctx;
+        if (!ctx || ![ctx.markPx, ctx.prevDayPx, ctx.dayNtlVlm].every(value =>
+          typeof value === "string" && Number.isFinite(Number(value)))) return;
+        if (Number(ctx.markPx) <= 0) return;
+        updateCurrentContext({ ...ctx, oraclePx: ctx.oraclePx ?? ctx.markPx,
+          funding: ctx.funding ?? "0", openInterest: ctx.openInterest ?? "0" });
+      });
+    });
+    onCleanup(() => { controller.abort(); unsubscribe?.(); });
+  });
 
   createEffect(() => {
     const enabled = isEnabled();

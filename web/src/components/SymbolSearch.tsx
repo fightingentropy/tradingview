@@ -343,10 +343,6 @@ const SymbolSearch: Component = () => {
   };
 
   const handleGlobalKeyDown = (e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-      e.preventDefault();
-      setSearchOpen(true);
-    }
     if ((e.metaKey || e.ctrlKey) && e.key === "f" && searchOpen()) {
       e.preventDefault();
       inputRef?.focus();

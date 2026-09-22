@@ -1,3 +1,4 @@
+import { subscribeHyperliquid } from "../lib/hyperliquidStreams";
 import {
   createEffect,
   createMemo,
@@ -822,33 +823,24 @@ const buildBookSide = (
 // Subscribe to the live Hyperliquid L2 order book for the active symbol and
 // populate the orderBooks store. Nothing else writes this store, so without
 // this the OrderBook component renders empty.
-createRoot(() => {
+export const useOrderBookFeed = (enabled: () => boolean) => {
   createEffect(() => {
     const network = hyperliquidDataNetwork();
     const marketType = currentMarketType();
     const symbol = currentSymbol();
-    if (!symbol) return;
+    if (!symbol || !enabled()) return;
 
     const subscriptionEpoch = ++orderBookSubscriptionEpoch;
     const bookKey = orderBookKey(network, marketType, symbol);
     setOrderBooks(bookKey, { bids: [], asks: [] });
 
     const abortController = new AbortController();
-    let socket: WebSocket | null = null;
+    let unsubscribe: (() => void) | undefined;
     let closed = false;
-    let reconnectTimer: number | undefined;
-    let reconnectAttempts = 0;
     let pendingLevels: [HyperliquidL2Level[], HyperliquidL2Level[]] | null =
       null;
     let renderTimer: number | undefined;
     let renderFrame: number | undefined;
-
-    const clearReconnect = () => {
-      if (reconnectTimer !== undefined) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = undefined;
-      }
-    };
 
     const flushBook = () => {
       renderFrame = undefined;
@@ -879,92 +871,14 @@ createRoot(() => {
       }, ORDER_BOOK_RENDER_INTERVAL_MS);
     };
 
+    const url = hyperliquidWsUrl();
     const connect = (coin: string) => {
-      if (closed || subscriptionEpoch !== orderBookSubscriptionEpoch) return;
-      const ws = new WebSocket(hyperliquidWsUrl());
-      socket = ws;
-
-      ws.onopen = () => {
-        if (
-          closed ||
-          subscriptionEpoch !== orderBookSubscriptionEpoch ||
-          socket !== ws
-        ) {
-          ws.close();
-          return;
+      unsubscribe = subscribeHyperliquid(url, { type: "l2Book", coin }, data => {
+        const levels = data.levels;
+        if (!closed && Array.isArray(levels) && Array.isArray(levels[0]) && Array.isArray(levels[1])) {
+          scheduleBookRender([levels[0], levels[1]]);
         }
-        reconnectAttempts = 0;
-        ws.send(
-          JSON.stringify({
-            method: "subscribe",
-            subscription: { type: "l2Book", coin },
-          }),
-        );
-      };
-
-      ws.onmessage = (event) => {
-        if (
-          closed ||
-          subscriptionEpoch !== orderBookSubscriptionEpoch ||
-          socket !== ws
-        ) {
-          return;
-        }
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload?.channel !== "l2Book") return;
-          const data = payload?.data;
-          if (
-            !data ||
-            String(data.coin ?? "")
-              .trim()
-              .toLowerCase() !== coin.toLowerCase()
-          ) {
-            return;
-          }
-          const levels = data.levels;
-          if (
-            !Array.isArray(levels) ||
-            !Array.isArray(levels[0]) ||
-            !Array.isArray(levels[1])
-          ) {
-            return;
-          }
-          scheduleBookRender([
-            levels[0] as HyperliquidL2Level[],
-            levels[1] as HyperliquidL2Level[],
-          ]);
-        } catch {
-          // ignore malformed frames
-        }
-      };
-
-      ws.onclose = () => {
-        if (
-          closed ||
-          subscriptionEpoch !== orderBookSubscriptionEpoch ||
-          socket !== ws
-        ) {
-          return;
-        }
-        // Exponential backoff with cap + jitter; reset on successful open.
-        reconnectAttempts += 1;
-        const base = Math.min(1000 * 2 ** (reconnectAttempts - 1), 30000);
-        const jitter = Math.random() * 0.3 * base;
-        clearReconnect();
-        reconnectTimer = setTimeout(
-          () => connect(coin),
-          base + jitter,
-        ) as unknown as number;
-      };
-
-      ws.onerror = () => {
-        try {
-          ws.close();
-        } catch {
-          // no-op
-        }
-      };
+      });
     };
 
     void resolveHyperliquidMarketCoin({
@@ -981,25 +895,13 @@ createRoot(() => {
     onCleanup(() => {
       closed = true;
       abortController.abort();
-      clearReconnect();
+      unsubscribe?.();
       if (renderTimer !== undefined) clearTimeout(renderTimer);
       if (renderFrame !== undefined) cancelAnimationFrame(renderFrame);
       pendingLevels = null;
-      if (socket) {
-        try {
-          socket.onopen = null;
-          socket.onmessage = null;
-          socket.onclose = null;
-          socket.onerror = null;
-          socket.close();
-        } catch {
-          // no-op
-        }
-        socket = null;
-      }
     });
   });
-});
+};
 
 export const getOrderBook = (symbol: string) => {
   return (

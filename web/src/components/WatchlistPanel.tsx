@@ -111,6 +111,8 @@ const WatchlistPanel: Component = () => {
       }),
   );
 
+  const watchlistByKey = createMemo(() => new Map(watchlistMarkets().map(market => [`${market.type}:${market.symbol}`, market])));
+
   const [columnWidths, setColumnWidths] = createSignal<ColumnWidths>(loadColumnWidths());
   const [showCreateInput, setShowCreateInput] = createSignal(false);
   const [newListName, setNewListName] = createSignal("");
@@ -468,10 +470,11 @@ const WatchlistPanel: Component = () => {
               </div>
             }
           >
-            <For each={watchlistMarkets()}>
-              {(market) => {
-                const change = formatPriceChange(market);
-                const isActive = () => market.symbol === currentSymbol();
+            <For each={watchlistMarkets().map(market => `${market.type}:${market.symbol}`)}>
+              {(key) => {
+                const market = createMemo(() => watchlistByKey().get(key)!);
+                const change = createMemo(() => formatPriceChange(market()));
+                const isActive = () => market().symbol === currentSymbol();
 
                 return (
                   <div
@@ -482,37 +485,37 @@ const WatchlistPanel: Component = () => {
                     <button
                       type="button"
                       class="flex flex-1 min-w-0"
-                      onClick={() => selectMarket(market)}
+                      onClick={() => selectMarket(market())}
                     >
                       <div
                         class="px-3 py-1.5 text-xs text-slate-200 truncate flex-shrink-0"
                         style={{ width: `${widths().symbol}px` }}
                       >
-                        {getUrlSymbol(market.symbol)}
+                        {getUrlSymbol(market().symbol)}
                       </div>
                       <div
                         class="px-3 py-1.5 text-xs text-right font-mono tabular-nums text-slate-200 flex-shrink-0"
                         style={{ width: `${widths().last}px` }}
                       >
-                        {market.price}
+                        {market().price}
                       </div>
                       <div
-                        class={`px-3 py-1.5 text-xs text-right font-mono tabular-nums flex-shrink-0 ${changeClass(market.change24h)}`}
+                        class={`px-3 py-1.5 text-xs text-right font-mono tabular-nums flex-shrink-0 ${changeClass(market().change24h)}`}
                         style={{ width: `${widths().chg}px` }}
                       >
-                        {change.change}
+                        {change().change}
                       </div>
                       <div
-                        class={`px-3 py-1.5 text-xs text-right font-mono tabular-nums flex-shrink-0 ${changeClass(market.change24h)}`}
+                        class={`px-3 py-1.5 text-xs text-right font-mono tabular-nums flex-shrink-0 ${changeClass(market().change24h)}`}
                         style={{ width: `${widths().chgPercent}px` }}
                       >
-                        {change.percent}
+                        {change().percent}
                       </div>
                       <div class="flex-1" />
                     </button>
                     <button
                       type="button"
-                      onClick={(e) => handleRemoveSymbol(market.symbol, e)}
+                      onClick={(e) => handleRemoveSymbol(market().symbol, e)}
                       class="px-2 py-1.5 text-brand-slate-500 hover:text-brand-red-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
                       title="Remove from watchlist"
                     >

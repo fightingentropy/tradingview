@@ -1,3 +1,4 @@
+import { subscribeHyperliquid } from "../lib/hyperliquidStreams";
 import type {
   IChartApi,
   IPriceLine,
@@ -114,7 +115,7 @@ const normalizeTickerOrderSymbol = (entry: string): string => {
 };
 
 const MAX_LOCAL_CANDLES = 1000;
-const CANDLE_LOAD_DEBOUNCE_MS = 400;
+const CANDLE_LOAD_DEBOUNCE_MS = 0;
 
 const formatExposure = (size: number) => {
   if (!Number.isFinite(size) || size === 0) return "";
@@ -152,9 +153,7 @@ const TradingViewChart: Component = () => {
   let chart: IChartApi | undefined;
   let candleSeries: ISeriesApi<"Candlestick"> | undefined;
   let volumeSeries: ISeriesApi<"Histogram"> | undefined;
-  let streamSocket: WebSocket | undefined;
-  let reconnectTimer: number | undefined;
-  let streamTimer: number | undefined;
+  let unsubscribeStream: (() => void) | undefined;
   let streamGeneration = 0;
   let loadController: AbortController | undefined;
   let loadTimer: number | undefined;
@@ -556,23 +555,8 @@ const TradingViewChart: Component = () => {
   const stopStreaming = () => {
     streamGeneration += 1;
     streamCandleBatcher.cancel();
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = undefined;
-    }
-    if (streamTimer) {
-      clearInterval(streamTimer);
-      streamTimer = undefined;
-    }
-    if (streamSocket) {
-      const socket = streamSocket;
-      streamSocket = undefined;
-      if (socket.readyState === WebSocket.CONNECTING) {
-        socket.addEventListener("open", () => socket.close(), { once: true });
-      } else {
-        socket.close();
-      }
-    }
+    unsubscribeStream?.();
+    unsubscribeStream = undefined;
   };
 
   // Stream updates with cache integration
@@ -592,91 +576,15 @@ const TradingViewChart: Component = () => {
 
     const generation = streamGeneration;
     const interval = toHyperliquidInterval(res);
-    const streamUrl = hyperliquidWsUrl();
-    let reconnectAttempt = 0;
-
-    const scheduleReconnect = () => {
+    if (provider !== "hyperliquid") return;
+    unsubscribeStream = subscribeHyperliquid(hyperliquidWsUrl(), { type: "candle", coin: resolvedCoin, interval }, data => {
       if (generation !== streamGeneration) return;
-      const base = Math.min(30000, 1500 * 2 ** reconnectAttempt);
-      const delay = base / 2 + Math.random() * (base / 2);
-      reconnectAttempt += 1;
-      reconnectTimer = setTimeout(connect, delay) as unknown as number;
-    };
-
-    const connect = () => {
-      if (generation !== streamGeneration) return;
-
-      const socket = new WebSocket(streamUrl);
-      streamSocket = socket;
-
-      socket.onopen = () => {
-        if (generation !== streamGeneration) {
-          socket.close();
-          return;
-        }
-        reconnectAttempt = 0;
-        if (provider === "hyperliquid") {
-          socket.send(
-            JSON.stringify({
-              method: "subscribe",
-              subscription: {
-                type: "candle",
-                coin: resolvedCoin,
-                interval,
-              },
-            }),
-          );
-        }
-      };
-
-      socket.onmessage = (event) => {
-        if (generation !== streamGeneration) return;
-
-        try {
-          const payload = JSON.parse(event.data);
-          let candle: Candle | null = null;
-          if (payload?.channel === "error") {
-            socket.close();
-            return;
-          }
-          if (payload?.channel !== "candle") return;
-          const data = payload?.data;
-          if (!data) return;
-          candle = {
-            time: Number(data.t),
-            open: Number(data.o),
-            high: Number(data.h),
-            low: Number(data.l),
-            close: Number(data.c),
-            volume: Number(data.v),
-          };
-          if (!candle || !Number.isFinite(candle.time)) return;
-
-          streamCandleBatcher.push({
-            candle,
-            marketType,
-            provider,
-            res,
-            symbol,
-          });
-        } catch (error) {
-          // Ignore malformed updates
-        }
-      };
-
-      socket.onerror = () => {
-        if (generation !== streamGeneration) return;
-        if (socket.readyState === WebSocket.CONNECTING) return;
-        socket.close();
-      };
-
-      socket.onclose = () => {
-        if (generation !== streamGeneration) return;
-        scheduleReconnect();
-      };
-    };
-
-    connect();
+      const candle: Candle = { time: Number(data.t), open: Number(data.o), high: Number(data.h),
+        low: Number(data.l), close: Number(data.c), volume: Number(data.v) };
+      if (!Object.values(candle).every(Number.isFinite) || candle.time < 0 || candle.low <= 0 ||
+        candle.high < Math.max(candle.open, candle.close) || candle.low > Math.min(candle.open, candle.close) || candle.volume < 0) return;
+      streamCandleBatcher.push({ candle, marketType, provider, res, symbol });
+    });
   };
 
   // Reset chart view

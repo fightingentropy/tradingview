@@ -1,3 +1,4 @@
+import { reconcileInBackground } from "../lib/backgroundReconcile";
 import type {
   HttpTransport,
   InfoClient,
@@ -1441,6 +1442,11 @@ const directionalMarketLimitPrice = (
   return referencePrice * (side === "buy" ? 1 + slippage : 1 - slippage);
 };
 
+const reconcileAccountAfterAcknowledgement = () => {
+  const epoch = refreshEpoch;
+  reconcileInBackground(refreshInFlight?.promise, () => epoch === refreshEpoch, refreshHyperliquidAccount);
+};
+
 const reconcileSubmittedOrder = async (
   cloid: `0x${string}`,
   submissionError: unknown,
@@ -1470,7 +1476,7 @@ const reconcileSubmittedOrder = async (
         orderState === "filled" ||
         orderState === "triggered"
       ) {
-        await refreshHyperliquidAccount();
+        reconcileAccountAfterAcknowledgement();
         return {
           ok: true,
           message: `The submit response was interrupted, but Hyperliquid confirmed the order as ${orderState}.`,
@@ -1602,7 +1608,7 @@ export const placeHyperliquidOrder = async (
     }
     const statusError = orderStatusError(response);
     if (statusError) return { ok: false, error: statusError };
-    await refreshHyperliquidAccount();
+    reconcileAccountAfterAcknowledgement();
     return input.type === "market"
       ? {
           ok: true,
@@ -1639,7 +1645,7 @@ export const cancelHyperliquidOrder = async (
     if (typeof failure?.error === "string") {
       return { ok: false, error: failure.error };
     }
-    await refreshHyperliquidAccount();
+    reconcileAccountAfterAcknowledgement();
     return { ok: true };
   } catch (error) {
     return {
@@ -1736,7 +1742,7 @@ export const updateHyperliquidPositionTpsl = async ({
     }
 
     if (triggers.length === 0) {
-      await refreshHyperliquidAccount();
+      reconcileAccountAfterAcknowledgement();
       return { ok: true };
     }
 
@@ -1779,7 +1785,7 @@ export const updateHyperliquidPositionTpsl = async ({
     }
     const statusError = orderStatusError(response);
     if (statusError) return { ok: false, error: statusError };
-    await refreshHyperliquidAccount();
+    reconcileAccountAfterAcknowledgement();
     return {
       ok: true,
       message: `Hyperliquid accepted ${orders.length} position TP/SL order${orders.length === 1 ? "" : "s"}.`,

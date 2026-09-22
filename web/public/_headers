@@ -4,3 +4,6 @@
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: publickey-credentials-create=(self), publickey-credentials-get=(self)
+
+/assets/static/*
+  Cache-Control: public, max-age=31536000, immutable

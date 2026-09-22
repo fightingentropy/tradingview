@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo } from "solid-js";
+import { Component, Index, Show, createMemo } from "solid-js";
 import { getOrderBook } from "../stores/clob";
 import { currentSymbol, markPrice } from "../stores/market";
 import Spinner from "./Spinner";
@@ -77,29 +77,29 @@ const OrderBook: Component = () => {
       >
         {/* Asks */}
         <div class="flex-1 overflow-hidden flex flex-col justify-end">
-          <For each={asksForDisplay()}>
+          <Index each={asksForDisplay()}>
             {(level) => (
               <div class="book-level grid grid-cols-3 gap-2 px-3 text-xs relative">
                 <div
                   class="absolute inset-0 bg-brand-red-400/7"
                   style={{
-                    width: `${(level.total / maxTotal()) * 100}%`,
+                    width: `${(level().total / maxTotal()) * 100}%`,
                     right: 0,
                     left: "auto",
                   }}
                 />
                 <div class="text-brand-red-400 font-mono relative z-10">
-                  {level.price.toFixed(priceDecimals())}
+                  {level().price.toFixed(priceDecimals())}
                 </div>
                 <div class="text-right text-slate-300 font-mono relative z-10">
-                  {formatSize(level.size)}
+                  {formatSize(level().size)}
                 </div>
                 <div class="text-right text-brand-slate-400 font-mono relative z-10">
-                  {formatSize(level.total)}
+                  {formatSize(level().total)}
                 </div>
               </div>
             )}
-          </For>
+          </Index>
         </div>
 
         {/* Spread */}
@@ -116,29 +116,29 @@ const OrderBook: Component = () => {
 
         {/* Bids */}
         <div class="flex-1 overflow-hidden">
-          <For each={bids()}>
+          <Index each={bids()}>
             {(level) => (
               <div class="book-level grid grid-cols-3 gap-2 px-3 text-xs relative">
                 <div
                   class="absolute inset-0 bg-brand-green-400/7"
                   style={{
-                    width: `${(level.total / maxTotal()) * 100}%`,
+                    width: `${(level().total / maxTotal()) * 100}%`,
                     right: 0,
                     left: "auto",
                   }}
                 />
                 <div class="text-brand-green-400 font-mono relative z-10">
-                  {level.price.toFixed(priceDecimals())}
+                  {level().price.toFixed(priceDecimals())}
                 </div>
                 <div class="text-right text-slate-300 font-mono relative z-10">
-                  {formatSize(level.size)}
+                  {formatSize(level().size)}
                 </div>
                 <div class="text-right text-brand-slate-400 font-mono relative z-10">
-                  {formatSize(level.total)}
+                  {formatSize(level().total)}
                 </div>
               </div>
             )}
-          </For>
+          </Index>
         </div>
       </Show>
     </div>
