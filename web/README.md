@@ -55,8 +55,10 @@ Storage, IndexedDB, Convex, URLs, logs, or environment files.
 
 The saved vault is scoped to the exact site origin and must be re-enrolled on a
 different hostname. A reload checks the previously verified session window first, then requests
-device verification if another unlock is needed. The default reload window is one hour;
-five minutes and verification on every refresh remain optional. Explicit choices persist
+device verification if another unlock is needed. The default reload window is one hour.
+Older saved intervals are upgraded to one hour once; the next verification starts
+the new window. Five minutes and verification on every refresh remain optional.
+Explicit choices made after this upgrade persist
 through connection replacement and temporary browser-session failures. A new tab,
 browser restart, or loss of worker memory still requires verification. WebAuthn can
 use Touch ID, Apple Watch, or the Mac login password, so the website cannot

@@ -4,7 +4,7 @@ import type { VaultPayload } from "./apiWalletVault";
 type PasskeyRequirement = "every-refresh" | "five-minutes" | "one-hour";
 
 type StoredPasskeyRequirement = {
-  version: 1;
+  version: 2;
   requirement: PasskeyRequirement;
 };
 
@@ -63,10 +63,15 @@ const parseStoredPasskeyRequirement = (
 ): PasskeyRequirement => {
   if (raw === null) return DEFAULT_PASSKEY_REQUIREMENT;
   try {
-    const value = JSON.parse(raw) as Partial<StoredPasskeyRequirement>;
-    return value.version === 1 && isPasskeyRequirement(value.requirement)
-      ? value.requirement
-      : "every-refresh";
+    const value = JSON.parse(raw) as {
+      version?: number;
+      requirement?: unknown;
+    };
+    if (!isPasskeyRequirement(value.requirement)) return "every-refresh";
+    // Version 1 includes both the old five-minute default and values silently
+    // downgraded to every refresh when an in-memory session could not be kept.
+    if (value.version === 1) return DEFAULT_PASSKEY_REQUIREMENT;
+    return value.version === 2 ? value.requirement : "every-refresh";
   } catch {
     return "every-refresh";
   }
@@ -78,7 +83,7 @@ const persistPasskeyRequirement = (
 ): boolean => {
   try {
     const stored: StoredPasskeyRequirement = {
-      version: 1,
+      version: 2,
       requirement: value,
     };
     storage.setItem(PASSKEY_REQUIREMENT_STORAGE_KEY, JSON.stringify(stored));
@@ -89,12 +94,20 @@ const persistPasskeyRequirement = (
 };
 
 const readPasskeyRequirement = (
-  storage: Pick<Storage, "getItem">,
+  storage: Pick<Storage, "getItem" | "setItem">,
+  onMigration?: () => void,
 ): PasskeyRequirement => {
   try {
-    return parseStoredPasskeyRequirement(
-      storage.getItem(PASSKEY_REQUIREMENT_STORAGE_KEY),
-    );
+    const raw = storage.getItem(PASSKEY_REQUIREMENT_STORAGE_KEY);
+    const requirement = parseStoredPasskeyRequirement(raw);
+    const stored = raw === null ? null : JSON.parse(raw);
+    if (stored?.version === 1 && isPasskeyRequirement(stored.requirement)) {
+      if (!persistPasskeyRequirement(storage, requirement)) {
+        return "every-refresh";
+      }
+      onMigration?.();
+    }
+    return requirement;
   } catch {
     return "every-refresh";
   }
@@ -103,7 +116,12 @@ const readPasskeyRequirement = (
 const loadPasskeyRequirement = (): PasskeyRequirement => {
   if (typeof window === "undefined") return DEFAULT_PASSKEY_REQUIREMENT;
   try {
-    return readPasskeyRequirement(window.localStorage);
+    return readPasskeyRequirement(window.localStorage, () => {
+      // Start the upgraded hour with a fresh verification rather than restore
+      // an older session that may still expire after five minutes.
+      window.sessionStorage.removeItem(SESSION_HANDLE_STORAGE_KEY);
+      window.sessionStorage.removeItem(HANDOFF_STORAGE_KEY);
+    });
   } catch {
     return "every-refresh";
   }

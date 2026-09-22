@@ -28,7 +28,7 @@ describe("API-wallet passkey requirement", () => {
     ).toBe("every-refresh");
     expect(
       __test.parseStoredPasskeyRequirement(
-        JSON.stringify({ version: 2, requirement: "one-hour" }),
+        JSON.stringify({ version: 3, requirement: "one-hour" }),
       ),
     ).toBe("every-refresh");
   });
@@ -41,7 +41,7 @@ describe("API-wallet passkey requirement", () => {
     ] as const) {
       expect(
         __test.parseStoredPasskeyRequirement(
-          JSON.stringify({ version: 1, requirement }),
+          JSON.stringify({ version: 2, requirement }),
         ),
       ).toBe(requirement);
     }
@@ -50,6 +50,39 @@ describe("API-wallet passkey requirement", () => {
       "five-minutes": 300_000,
       "one-hour": 3_600_000,
     });
+  });
+
+  test("upgrades old five-minute and forced-refresh settings once, then keeps explicit choices", () => {
+    for (const previous of ["five-minutes", "every-refresh", "one-hour"]) {
+      let stored = JSON.stringify({ version: 1, requirement: previous });
+      let migrations = 0;
+      const storage = {
+        getItem: () => stored,
+        setItem: (_key: string, value: string) => { stored = value; },
+      };
+      const onMigration = () => { migrations += 1; };
+
+      expect(__test.readPasskeyRequirement(storage, onMigration)).toBe("one-hour");
+      expect(JSON.parse(stored)).toEqual({ version: 2, requirement: "one-hour" });
+      expect(migrations).toBe(1);
+      expect(__test.readPasskeyRequirement(storage, onMigration)).toBe("one-hour");
+      expect(migrations).toBe(1);
+
+      __test.persistPasskeyRequirement(storage, "five-minutes");
+      expect(__test.readPasskeyRequirement(storage, onMigration)).toBe("five-minutes");
+      __test.persistPasskeyRequirement(storage, "every-refresh");
+      expect(__test.readPasskeyRequirement(storage, onMigration)).toBe("every-refresh");
+      expect(migrations).toBe(1);
+    }
+  });
+
+  test("requires verification if the one-hour upgrade cannot be saved", () => {
+    let migrated = false;
+    expect(__test.readPasskeyRequirement({
+      getItem: () => JSON.stringify({ version: 1, requirement: "five-minutes" }),
+      setItem: () => { throw new DOMException("blocked", "SecurityError"); },
+    }, () => { migrated = true; })).toBe("every-refresh");
+    expect(migrated).toBe(false);
   });
 
   test("requires durable storage for timed choices and fails closed on reads", () => {
@@ -80,6 +113,7 @@ describe("API-wallet passkey requirement", () => {
         getItem: () => {
           throw new DOMException("blocked", "SecurityError");
         },
+        setItem: () => {},
       }),
     ).toBe("every-refresh");
   });
@@ -358,8 +392,11 @@ describe("API-wallet reload handoff boundary", () => {
     const broker = new ApiWalletSessionBroker<object>(() => now);
     let owner = {};
     const payload = createPayload();
-    const saved = JSON.stringify({ version: 1, requirement: "one-hour" });
-    const requirement = __test.readPasskeyRequirement({ getItem: () => saved });
+    let saved = JSON.stringify({ version: 1, requirement: "five-minutes" });
+    const requirement = __test.readPasskeyRequirement({
+      getItem: () => saved,
+      setItem: (_key, value) => { saved = value; },
+    });
     broker.cache({
       sessionId: "one-hour-session",
       vaultId: "vault-a",
