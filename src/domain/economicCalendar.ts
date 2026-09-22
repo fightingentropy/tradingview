@@ -9,6 +9,7 @@ export const ECONOMIC_CALENDAR_COUNTRIES = [
   { code: 'DE', name: 'Germany' },
   { code: 'FR', name: 'France' },
   { code: 'IT', name: 'Italy' },
+  { code: 'GR', name: 'Greece' },
   { code: 'CH', name: 'Switzerland' },
   { code: 'NZ', name: 'New Zealand' },
   { code: 'BR', name: 'Brazil' },

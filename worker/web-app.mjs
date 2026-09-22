@@ -3,7 +3,7 @@ const ECONOMIC_CALENDAR_UPSTREAM = 'https://economic-calendar.tradingview.com/ev
 const MAX_CALENDAR_RANGE_MS = 45 * 24 * 60 * 60 * 1000;
 const ALLOWED_COUNTRIES = new Set([
   'US', 'GB', 'EU', 'CA', 'AU', 'JP', 'CN', 'DE', 'FR',
-  'IT', 'CH', 'NZ', 'BR', 'MX', 'IN', 'KR', 'ZA', 'TR',
+  'IT', 'GR', 'CH', 'NZ', 'BR', 'MX', 'IN', 'KR', 'ZA', 'TR',
 ]);
 
 const LEGACY_ROUTES = new Map([

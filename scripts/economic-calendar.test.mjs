@@ -133,8 +133,8 @@ test('filters events by both country and severity', () => {
 
 test('normalizes persisted country and severity filters', () => {
   assert.deepEqual(
-    normalizeEconomicCalendarCountries(['gb', 'US', 'GB', 'invalid']),
-    ['GB', 'US'],
+    normalizeEconomicCalendarCountries(['gb', 'US', 'GB', 'gr', 'invalid']),
+    ['GB', 'US', 'GR'],
   );
   assert.deepEqual(
     normalizeEconomicCalendarCountries([]),

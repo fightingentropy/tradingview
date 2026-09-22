@@ -194,7 +194,8 @@ describe("calendar feed boundaries", () => {
     expect(url.pathname).toBe("/api/economic-calendar");
     expect(url.searchParams.get("from")).toBe("2026-11-08T00:00:00.000Z");
     expect(url.searchParams.get("to")).toBe("2026-11-16T00:00:00.000Z");
-    expect(url.searchParams.get("countries")?.split(",")).toHaveLength(18);
+    expect(url.searchParams.get("countries")?.split(",")).toHaveLength(19);
+    expect(url.searchParams.get("countries")?.split(",")).toContain("GR");
     expect(events[0].id).toBe("november");
   });
 

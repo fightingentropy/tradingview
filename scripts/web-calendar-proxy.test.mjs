@@ -9,7 +9,7 @@ import {
 const VALID_QUERY = new URLSearchParams({
   from: '2026-08-24T00:00:00.000Z',
   to: '2026-08-31T00:00:00.000Z',
-  countries: 'US,GB,EU',
+  countries: 'US,GB,EU,GR',
   minImportance: '-1',
 });
 
@@ -19,7 +19,7 @@ test('builds a bounded allowlisted TradingView calendar request', () => {
   );
   assert.equal(upstream.origin, 'https://economic-calendar.tradingview.com');
   assert.equal(upstream.pathname, '/events');
-  assert.equal(upstream.searchParams.get('countries'), 'US,GB,EU');
+  assert.equal(upstream.searchParams.get('countries'), 'US,GB,EU,GR');
   assert.equal(upstream.searchParams.get('minImportance'), '-1');
 });
 

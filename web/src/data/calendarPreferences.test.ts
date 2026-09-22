@@ -25,7 +25,7 @@ describe("saved calendar selections", () => {
   test("restores every selected filter on the next visit", () => {
     const storage = memoryStorage();
     const selected: CalendarPreferences = {
-      countries: ["US", "GB"],
+      countries: ["US", "GB", "GR"],
       categories: ["Inflation", "Labour"],
       impacts: ["high", "low"],
     };
