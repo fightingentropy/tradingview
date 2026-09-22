@@ -58,6 +58,9 @@ different hostname. A reload checks the previously verified session window first
 device verification if another unlock is needed. The default reload window is one hour.
 Older saved intervals are upgraded to one hour once; the next verification starts
 the new window. Five minutes and verification on every refresh remain optional.
+Reloads claim their one-time worker handoff before waiting for vault storage or
+account setup. Slow startup and failed exchange requests do not discard device
+verification or extend its original deadline.
 Explicit choices made after this upgrade persist
 through connection replacement and temporary browser-session failures. A new tab,
 browser restart, or loss of worker memory still requires verification. WebAuthn can

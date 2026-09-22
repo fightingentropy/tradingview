@@ -17,6 +17,7 @@ type SessionEntry<Owner extends object> = {
   provisionalExpiresAtWall?: number;
   provisionalExpiresAtMonotonic?: number;
   handoffToken?: string;
+  claimedHandoffToken?: string;
   handoffExpiresAtWall?: number;
   handoffExpiresAtMonotonic?: number;
 };
@@ -93,6 +94,7 @@ class ApiWalletSessionBroker<Owner extends object> {
     }
     const wallNow = this.#clock.wallNow();
     const monotonicNow = this.#clock.monotonicNow();
+    entry.claimedHandoffToken = undefined;
     entry.handoffToken = input.handoffToken;
     entry.handoffExpiresAtWall = Math.min(
       entry.expiresAtWall,
@@ -113,11 +115,26 @@ class ApiWalletSessionBroker<Owner extends object> {
   }): SessionVaultPayload | null {
     this.clearExpired();
     const entry = this.#sessions.get(input.sessionId);
+    if (!entry || entry.vaultId !== input.vaultId) return null;
+    if (!this.claimHandoff(input)) return null;
+    return this.restoreOwned(input);
+  }
+
+  /** Claim the reload immediately; vault loading must not race the handoff timer. */
+  claimHandoff(input: {
+    sessionId: string;
+    handoffToken: string;
+    owner: Owner;
+  }): boolean {
+    this.clearExpired();
+    const entry = this.#sessions.get(input.sessionId);
+    // Retrying an acknowledgement on this exact port is safe. A second port
+    // still cannot replay the consumed handoff, even with a copied token.
+    if (entry?.owner === input.owner && entry.claimedHandoffToken === input.handoffToken) return true;
     const wallNow = this.#clock.wallNow();
     const monotonicNow = this.#clock.monotonicNow();
     if (
       !entry ||
-      entry.vaultId !== input.vaultId ||
       entry.handoffToken !== input.handoffToken ||
       entry.handoffExpiresAtWall === undefined ||
       entry.handoffExpiresAtMonotonic === undefined ||
@@ -134,12 +151,28 @@ class ApiWalletSessionBroker<Owner extends object> {
         monotonicNow,
       )
     ) {
-      return null;
+      return false;
     }
     entry.handoffToken = undefined;
+    entry.claimedHandoffToken = input.handoffToken;
     entry.handoffExpiresAtWall = undefined;
     entry.handoffExpiresAtMonotonic = undefined;
     entry.owner = input.owner;
+    return true;
+  }
+
+  /** Only the port that claimed the reload can read the still-unexpired session. */
+  restoreOwned(input: {
+    sessionId: string;
+    vaultId: string;
+    owner: Owner;
+  }): SessionVaultPayload | null {
+    this.clearExpired();
+    const entry = this.#sessions.get(input.sessionId);
+    if (
+      !entry || entry.owner !== input.owner || entry.vaultId !== input.vaultId ||
+      entry.provisionalExpiresAtWall !== undefined || entry.handoffToken !== undefined
+    ) return null;
     return entry.payload;
   }
 
@@ -268,6 +301,7 @@ class ApiWalletSessionBroker<Owner extends object> {
     entry.provisionalExpiresAtWall = undefined;
     entry.provisionalExpiresAtMonotonic = undefined;
     entry.handoffToken = undefined;
+    entry.claimedHandoffToken = undefined;
     entry.handoffExpiresAtWall = undefined;
     entry.handoffExpiresAtMonotonic = undefined;
     this.#sessions.delete(sessionId);

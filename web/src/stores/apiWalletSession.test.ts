@@ -430,6 +430,50 @@ describe("API-wallet reload handoff boundary", () => {
     expect(broker.nextDeadline()).toBeUndefined();
   });
 
+  test("claims a reload before slow vault loading without extending the original hour", () => {
+    let now = 0;
+    const broker = new ApiWalletSessionBroker<object>(() => now);
+    const firstOwner = {};
+    const reloadedOwner = {};
+    const payload = createPayload();
+    broker.cache({ sessionId: "session-a", vaultId: "vault-a", durationMs: 3_600_000,
+      provisionalLifetimeMs: 15_000, payload, owner: firstOwner });
+    expect(broker.commit("session-a", firstOwner)).toBe(true);
+    expect(broker.prepareHandoff({ sessionId: "session-a", handoffToken: "reload-token",
+      handoffLifetimeMs: 15_000, owner: firstOwner })).toBe(true);
+
+    now = 100;
+    expect(broker.claimHandoff({ sessionId: "session-a", handoffToken: "reload-token", owner: reloadedOwner })).toBe(true);
+    // A late worker acknowledgement may cause the page to retry the same claim.
+    expect(broker.claimHandoff({ sessionId: "session-a", handoffToken: "reload-token", owner: reloadedOwner })).toBe(true);
+    expect(broker.nextDeadline()).toBe(3_600_000);
+    now = 20_000; // IndexedDB or page startup took longer than the handoff window.
+    expect(broker.restoreOwned({ sessionId: "session-a", vaultId: "vault-a", owner: reloadedOwner })).toBe(payload);
+    expect(broker.restoreOwned({ sessionId: "session-a", vaultId: "vault-a", owner: firstOwner })).toBeNull();
+    expect(broker.restoreOwned({ sessionId: "session-a", vaultId: "another-vault", owner: reloadedOwner })).toBeNull();
+    expect(broker.claimHandoff({ sessionId: "session-a", handoffToken: "reload-token", owner: {} })).toBe(false);
+
+    now = 3_600_000;
+    expect(broker.restoreOwned({ sessionId: "session-a", vaultId: "vault-a", owner: reloadedOwner })).toBeNull();
+    expect(payload.apiWalletPrivateKey).toBe("0x");
+  });
+
+  test("forgetting the vault between reload claim and restoration still revokes it", () => {
+    const broker = new ApiWalletSessionBroker<object>(() => 0);
+    const firstOwner = {};
+    const reloadedOwner = {};
+    const payload = createPayload();
+    broker.cache({ sessionId: "session-a", vaultId: "vault-a", durationMs: 3_600_000,
+      provisionalLifetimeMs: 15_000, payload, owner: firstOwner });
+    expect(broker.restoreOwned({ sessionId: "session-a", vaultId: "vault-a", owner: firstOwner })).toBeNull();
+    broker.commit("session-a", firstOwner);
+    broker.prepareHandoff({ sessionId: "session-a", handoffToken: "reload-token", handoffLifetimeMs: 15_000, owner: firstOwner });
+    broker.claimHandoff({ sessionId: "session-a", handoffToken: "reload-token", owner: reloadedOwner });
+    broker.revokeVault("vault-a");
+    expect(broker.restoreOwned({ sessionId: "session-a", vaultId: "vault-a", owner: reloadedOwner })).toBeNull();
+    expect(payload.apiWalletPrivateKey).toBe("0x");
+  });
+
   test("expires on wall time after system sleep even if the monotonic clock pauses", () => {
     let wallNow = 1_000;
     let monotonicNow = 500;

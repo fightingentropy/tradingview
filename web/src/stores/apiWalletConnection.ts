@@ -21,16 +21,17 @@ const connectRecoveredApiWallet = async (
   payload: VaultPayload,
   revocationEpoch: number,
 ): Promise<SavedApiWalletConnectionResult> => {
-  if (
-    apiWalletVaultRevocationEpoch() !== revocationEpoch ||
-    hyperliquidConnectionStatus() !== "disconnected"
-  ) {
+  if (apiWalletVaultRevocationEpoch() !== revocationEpoch) {
     payload.apiWalletPrivateKey = "0x";
     clearApiWalletSession();
     return {
       ok: false,
       error: "Your connection changed. Please try connecting again.",
     };
+  }
+  if (hyperliquidConnectionStatus() !== "disconnected") {
+    payload.apiWalletPrivateKey = "0x";
+    return { ok: false, error: "Your account is already connecting or connected." };
   }
 
   const connectionPromise = connectHyperliquid({
@@ -41,16 +42,16 @@ const connectRecoveredApiWallet = async (
   payload.apiWalletPrivateKey = "0x";
   const result = await connectionPromise;
 
-  if (!result.ok || apiWalletVaultRevocationEpoch() !== revocationEpoch) {
+  if (apiWalletVaultRevocationEpoch() !== revocationEpoch) {
     clearApiWalletSession();
-    if (apiWalletVaultRevocationEpoch() !== revocationEpoch) {
-      disconnectHyperliquid();
-      return {
-        ok: false,
-        error: "The saved connection was removed. Please reconnect.",
-      };
-    }
+    disconnectHyperliquid();
+    return {
+      ok: false,
+      error: "The saved connection was removed. Please reconnect.",
+    };
   }
+  // A slow or failed exchange read does not undo successful device verification.
+  // Trading remains disconnected; a reload can retry within the original window.
   return result.ok ? { ok: true } : result;
 };
 

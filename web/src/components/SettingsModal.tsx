@@ -325,7 +325,6 @@ const SettingsModal: Component = () => {
       return;
     }
     if (!result.ok) {
-      clearApiWalletSession();
       setExecutionActionError(result.error);
       return;
     }

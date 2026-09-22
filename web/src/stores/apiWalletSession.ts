@@ -23,6 +23,7 @@ type WorkerResponse = {
   type:
     | "cache-result"
     | "commit-result"
+    | "claim-result"
     | "restore-result"
     | "revoke-vault-result";
   requestId: string;
@@ -43,8 +44,9 @@ const PASSKEY_REQUIREMENT_STORAGE_KEY =
   "trade-xyz-api-wallet-passkey-requirement";
 const SESSION_HANDLE_STORAGE_KEY = "trade-xyz-api-wallet-session-v1";
 const HANDOFF_STORAGE_KEY = "trade-xyz-api-wallet-handoff-v1";
-const SHARED_WORKER_NAME = "trade-xyz-api-wallet-session-v1";
-const REQUEST_TIMEOUT_MS = 2_500;
+// A new protocol needs its own worker; an open older tab can retain v1 in memory.
+const SHARED_WORKER_NAME = "trade-xyz-api-wallet-session-v2";
+const REQUEST_TIMEOUT_MS = 10_000;
 const SESSION_ID_PATTERN = /^[0-9a-f]{64}$/u;
 const HANDOFF_TOKEN_PATTERN = /^[0-9a-f]{64}$/u;
 const DEFAULT_PASSKEY_REQUIREMENT: PasskeyRequirement = "one-hour";
@@ -134,6 +136,7 @@ let sharedWorker: SharedWorker | null | undefined;
 let sharedWorkerUnavailableReason: "unsupported" | "failed" | null = null;
 let requestSequence = 0;
 let activeSessionId: string | null = null;
+let sessionGeneration = 0;
 const pendingRequests = new Map<string, PendingRequest>();
 
 const randomCapability = () => {
@@ -177,6 +180,7 @@ const getSharedWorker = (): SharedWorker | null => {
         typeof response.requestId !== "string" ||
         (response.type !== "cache-result" &&
           response.type !== "commit-result" &&
+          response.type !== "claim-result" &&
           response.type !== "restore-result" &&
           response.type !== "revoke-vault-result")
       ) {
@@ -305,6 +309,7 @@ const postClearSession = (sessionId: string) => {
 };
 
 const clearApiWalletSession = () => {
+  sessionGeneration += 1;
   const handle = readSessionHandle();
   const sessionId = handle?.sessionId ?? activeSessionId;
   removeSessionStorage();
@@ -358,6 +363,7 @@ const cacheApiWalletSession = async (
     clearApiWalletSession();
     return false;
   }
+  sessionGeneration += 1;
 
   const sessionId = randomCapability();
   const response = await requestWorker({
@@ -425,9 +431,7 @@ const isApiWalletReloadNavigation = () => {
 const waitForHandoff = (delayMs: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 
-const restoreApiWalletSession = async (
-  vaultId: string,
-): Promise<VaultPayload | null> => {
+const claimApiWalletReload = async (): Promise<StoredSessionHandle | null> => {
   const handoff = readAndRemoveHandoff();
   if (
     passkeyRequirement() === "every-refresh" ||
@@ -442,17 +446,19 @@ const restoreApiWalletSession = async (
     clearApiWalletSession();
     return null;
   }
+  const generation = sessionGeneration;
 
   for (const delayMs of [0, 50, 150]) {
     if (delayMs > 0) await waitForHandoff(delayMs);
+    if (generation !== sessionGeneration) return null;
     const response = await requestWorker({
-      type: "restore",
+      type: "claim",
       sessionId: handle.sessionId,
       handoffToken: handoff.handoffToken,
-      vaultId,
     });
-    if (response?.type === "restore-result" && response.payload) {
-      return response.payload;
+    if (generation !== sessionGeneration) return null;
+    if (response?.type === "claim-result" && response.ok) {
+      return handle;
     }
   }
   postClearSession(handle.sessionId);
@@ -461,7 +467,38 @@ const restoreApiWalletSession = async (
   return null;
 };
 
+let reloadClaim: Promise<StoredSessionHandle | null> | undefined;
+const restoreApiWalletSession = async (
+  vaultId: string,
+): Promise<VaultPayload | null> => {
+  const handle = await (reloadClaim ??= claimApiWalletReload());
+  if (
+    !handle || activeSessionId !== handle.sessionId ||
+    passkeyRequirement() === "every-refresh"
+  ) return null;
+  const generation = sessionGeneration;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await requestWorker({ type: "restore-owned", sessionId: handle.sessionId, vaultId });
+    if (generation !== sessionGeneration) {
+      if (response?.payload) response.payload.apiWalletPrivateKey = "0x";
+      return null;
+    }
+    if (response?.type === "restore-result") {
+      if (response.payload) return response.payload;
+      break; // A rejected/expired session cannot be recovered by waiting.
+    }
+  }
+  clearApiWalletSession();
+  return null;
+};
+
 if (typeof window !== "undefined") {
+  // Reattach before IndexedDB, passkey support checks or lazy SDK imports. The
+  // one-time handoff expires quickly; the claimed session keeps its original
+  // one-hour deadline. No wallet material leaves the worker until vault checks.
+  if (isApiWalletReloadNavigation() && readSessionHandle()) {
+    reloadClaim = claimApiWalletReload();
+  }
   window.addEventListener("pagehide", (event) => {
     if (!event.persisted) prepareApiWalletReloadHandoff();
   });

@@ -32,6 +32,20 @@ type RestoreMessage = {
   vaultId: string;
 };
 
+type ClaimMessage = {
+  type: "claim";
+  requestId: string;
+  sessionId: string;
+  handoffToken: string;
+};
+
+type RestoreOwnedMessage = {
+  type: "restore-owned";
+  requestId: string;
+  sessionId: string;
+  vaultId: string;
+};
+
 type ClearMessage = {
   type: "clear";
   sessionId: string;
@@ -53,6 +67,8 @@ type SessionMessage =
   | CommitMessage
   | PrepareHandoffMessage
   | RestoreMessage
+  | ClaimMessage
+  | RestoreOwnedMessage
   | ClearMessage
   | ClearVaultMessage
   | RevokeVaultMessage;
@@ -196,6 +212,26 @@ const handleMessage = (port: MessagePort, value: unknown) => {
       payload,
     });
     scheduleCleanup();
+    return;
+  }
+
+  if (
+    message.type === "claim" && typeof message.requestId === "string" &&
+    SESSION_ID_PATTERN.test(message.sessionId) && HANDOFF_TOKEN_PATTERN.test(message.handoffToken)
+  ) {
+    const ok = broker.claimHandoff({ ...message, owner: port });
+    scheduleCleanup();
+    port.postMessage({ type: "claim-result", requestId: message.requestId, ok });
+    return;
+  }
+
+  if (
+    message.type === "restore-owned" && typeof message.requestId === "string" &&
+    SESSION_ID_PATTERN.test(message.sessionId) && VAULT_ID_PATTERN.test(message.vaultId)
+  ) {
+    const payload = broker.restoreOwned({ ...message, owner: port });
+    scheduleCleanup();
+    port.postMessage({ type: "restore-result", requestId: message.requestId, payload });
     return;
   }
 
