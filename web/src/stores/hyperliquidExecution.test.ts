@@ -461,10 +461,10 @@ describe("Hyperliquid execution capability boundary", () => {
     ).text();
 
     expect(source).not.toContain("Manage funds on Hyperliquid");
-    expect(source).toContain("Portfolio Value");
-    expect(source).toContain("Borrow Cap Used");
-    expect(source).toContain("Perps Maintenance Margin");
-    expect(source).toContain("Portfolio Account Leverage");
+    expect(source).toContain("Portfolio value");
+    expect(source).toContain("Borrow cap used");
+    expect(source).toContain("Maintenance margin");
+    expect(source).toContain("Account leverage");
 
     const balancesSource = await Bun.file(
       new URL("../components/BalancesPanel.tsx", import.meta.url),

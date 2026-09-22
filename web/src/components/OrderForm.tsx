@@ -35,7 +35,9 @@ import {
   resolveSpotAssetAlias,
 } from "../stores/wallet";
 import AdminDepositModal from "./AdminDepositModal";
+import Spinner from "./Spinner";
 import {
+  HYPERLIQUID_MARKET_SLIPPAGE_PERCENT,
   hyperliquidAccountMode,
   hyperliquidAccountModeLabel,
   hyperliquidPortfolioMarginSummary,
@@ -684,7 +686,7 @@ const OrderForm: Component = () => {
   };
 
   const availableLabel = createMemo(() => {
-    if (!isSpot()) return "Available to Trade";
+    if (!isSpot()) return "Available";
     if (isLong()) return "Available USDC";
     const asset = spotAsset();
     return `Available ${asset ?? displaySymbol()}`;
@@ -692,9 +694,9 @@ const OrderForm: Component = () => {
 
   const availableDisplay = createMemo(() => {
     if (!isSpot()) {
-      return `${formatUsd(availableBalance())} ${collateral()}`;
+      return formatUsd(availableBalance());
     }
-    if (isLong()) return `${formatUsd(availableBalance())} USDC`;
+    if (isLong()) return formatUsd(availableBalance());
     const asset = spotAsset();
     return `${formatAmount(
       availableBalance(),
@@ -703,7 +705,7 @@ const OrderForm: Component = () => {
   });
 
   const positionLabel = createMemo(() =>
-    isSpot() ? "Spot Balance" : "Current Position",
+    isSpot() ? "Spot balance" : "Position",
   );
 
   const positionDisplay = createMemo(() => {
@@ -715,7 +717,7 @@ const OrderForm: Component = () => {
       }`;
     }
     return currentPosition()
-      ? `${currentPosition()!.size.toFixed(4)} ${displaySymbol()}`
+      ? `${currentPosition()!.size.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${displaySymbol()}`
       : `0 ${displaySymbol()}`;
   });
   const positionValueClass = createMemo(() => {
@@ -749,10 +751,10 @@ const OrderForm: Component = () => {
     return (marginUsed() / equity) * 100;
   });
   const orderValueDisplay = createMemo(() =>
-    orderValue() > 0 ? formatUsd(orderValue()) : "N/A",
+    orderValue() > 0 ? formatUsd(orderValue()) : "—",
   );
   const marginRequiredDisplay = createMemo(() =>
-    marginRequired() > 0 ? formatUsd(marginRequired()) : "N/A",
+    marginRequired() > 0 ? formatUsd(marginRequired()) : "—",
   );
 
   const clampPercent = (value: number) =>
@@ -977,11 +979,9 @@ const OrderForm: Component = () => {
       <div class="ticket-scroll">
         <div class="ticket-heading">
           <h2>Order</h2>
-          <span class="execution-mode">
-            {isHyperliquidExecution()
-              ? "Live trading"
-              : "Practice trading"}
-          </span>
+          <Show when={!isHyperliquidExecution()}>
+            <span class="execution-mode">Practice</span>
+          </Show>
         </div>
         <div class="ticket-controls border-b border-brand-border p-4 space-y-4">
           <Show when={!isSpot()}>
@@ -1125,17 +1125,8 @@ const OrderForm: Component = () => {
                       </button>
 
                       <Show when={marginModeLoading()}>
-                        <div class="flex items-center justify-center gap-2 text-sm text-brand-slate-400">
-                          <svg
-                            class="w-4 h-4 animate-spin"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                          >
-                            <path d="M12 2v4m0 12v4m-8-10h4m12 0h4" />
-                          </svg>
-                          Updating margin mode...
+                        <div class="flex items-center justify-center">
+                          <Spinner label="Updating margin mode" />
                         </div>
                       </Show>
                     </div>
@@ -1341,7 +1332,7 @@ const OrderForm: Component = () => {
                   onChange={(e) => setReduceOnly(e.currentTarget.checked)}
                   class="h-3.5 w-3.5 rounded border border-brand-border bg-brand-screen accent-brand-accent"
                 />
-                <span class="text-sm text-slate-100">Reduce Only</span>
+                <span class="text-sm text-slate-100">Reduce only</span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
@@ -1358,14 +1349,12 @@ const OrderForm: Component = () => {
                       : "text-slate-100"
                   }`}
                 >
-                  Take Profit / Stop Loss
+                  Take profit / Stop loss
                 </span>
               </label>
               <Show when={liveLimitTpslUnavailable()}>
                 <p class="text-xs leading-5 text-brand-slate-500">
-                  Live TP/SL is available for market orders after their fill. A
-                  limit ticket may remain unfilled, so it will not change
-                  protection on an existing position.
+                  Add TP/SL after the limit order fills.
                 </p>
               </Show>
             </div>
@@ -1428,55 +1417,57 @@ const OrderForm: Component = () => {
           <Show
             when={!isSpot()}
             fallback={
-              <div class="space-y-2 text-sm">
+              <div class="ticket-details space-y-2 text-sm">
                 <div class="flex justify-between gap-4">
-                  <span class="text-brand-slate-500">Order Value</span>
+                  <span class="text-brand-slate-500">Order value</span>
                   <span class="text-slate-100 font-mono">
                     {orderValueDisplay()}
                   </span>
                 </div>
                 <div class="flex justify-between gap-4">
-                  <span class="text-brand-slate-500">Estimated Fee</span>
+                  <span class="text-brand-slate-500">Est. fee</span>
                   <span class="text-slate-100 font-mono">
-                    {isHyperliquidExecution() ? "Hyperliquid tier" : "0.10%"}
+                    {isHyperliquidExecution() ? "—" : "0.10%"}
                   </span>
                 </div>
               </div>
             }
           >
-            <div class="space-y-2 text-sm">
+            <div class="ticket-details space-y-2 text-sm">
               <div class="flex justify-between gap-4">
-                <span class="text-brand-slate-500">Liquidation Price</span>
+                <span class="text-brand-slate-500">Liq. price</span>
                 <span class="font-mono text-slate-100">
                   {isHyperliquidExecution()
-                    ? "Exchange calculated"
+                    ? "—"
                     : liquidationPreview()}
                 </span>
               </div>
               <div class="flex justify-between gap-4">
-                <span class="text-brand-slate-500">Order Value</span>
+                <span class="text-brand-slate-500">Order value</span>
                 <span class="text-slate-100 font-mono">
                   {orderValueDisplay()}
                 </span>
               </div>
               <div class="flex justify-between gap-4">
-                <span class="text-brand-slate-500">Margin Required</span>
+                <span class="text-brand-slate-500">Margin required</span>
                 <span class="text-slate-100 font-mono">
                   {isHyperliquidExecution()
-                    ? "Exchange checks"
+                    ? "—"
                     : marginRequiredDisplay()}
                 </span>
               </div>
-              <div class="flex justify-between gap-4">
-                <span class="text-brand-slate-500">Slippage</span>
-                <span class="font-mono text-brand-accent">
-                  {orderType() === "market" ? "1.00% max" : "Limit price"}
-                </span>
-              </div>
+              <Show when={orderType() === "market"}>
+                <div class="flex justify-between gap-4">
+                  <span class="text-brand-slate-500">Max. slippage</span>
+                  <span class="font-mono text-slate-100">
+                    {HYPERLIQUID_MARKET_SLIPPAGE_PERCENT.toFixed(2)}%
+                  </span>
+                </div>
+              </Show>
               <div class="flex justify-between gap-4">
                 <span class="text-brand-slate-500">Fees</span>
-                <span class="font-mono text-brand-accent">
-                  {isHyperliquidExecution() ? "Hyperliquid tier" : "0% / 0%"}
+                <span class="font-mono text-slate-100">
+                  {isHyperliquidExecution() ? "—" : "0%"}
                 </span>
               </div>
             </div>
@@ -1503,8 +1494,8 @@ const OrderForm: Component = () => {
               hyperliquidAccountMode() === "portfolioMargin"
             }
             fallback={
-              <div class="space-y-2 border-t border-brand-border/70 pt-3">
-                <div class="text-sm text-brand-slate-500">Account Overview</div>
+              <div class="space-y-2">
+                <div class="ticket-section-title">Account</div>
                 <div class="flex justify-between gap-4 text-sm">
                   <span class="text-brand-slate-500">
                     {isHyperliquidExecution() ? "Available USDC" : "Balance"}
@@ -1539,12 +1530,10 @@ const OrderForm: Component = () => {
             }
           >
             <div class="space-y-3">
-              <div class="text-sm font-semibold text-slate-100">
-                Portfolio Margin Summary
-              </div>
+              <div class="ticket-section-title">Portfolio margin</div>
               <div class="flex items-center justify-between gap-3 text-sm">
-                <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
-                  Portfolio Margin Ratio
+                <span class="text-brand-slate-400">
+                  Margin ratio
                 </span>
                 <span class="flex items-center gap-2 font-mono text-brand-accent">
                   <PortfolioMarginGauge
@@ -1554,7 +1543,7 @@ const OrderForm: Component = () => {
                 </span>
               </div>
               <div class="flex justify-between gap-3 text-sm">
-                <span class="text-brand-slate-400">Portfolio Value</span>
+                <span class="text-brand-slate-400">Portfolio value</span>
                 <span class="font-mono text-slate-100">
                   {formatOptionalUsd(livePortfolioSummary()?.portfolioValue)}
                 </span>
@@ -1576,16 +1565,16 @@ const OrderForm: Component = () => {
                 </span>
               </div>
               <div class="flex justify-between gap-3 text-sm">
-                <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
-                  Borrow Cap Used
+                <span class="text-brand-slate-400">
+                  Borrow cap used
                 </span>
                 <span class="font-mono text-slate-100">
                   {formatOptionalPercent(livePortfolioSummary()?.borrowCapUsed)}
                 </span>
               </div>
               <div class="flex justify-between gap-3 text-sm">
-                <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
-                  Perps Maintenance Margin
+                <span class="text-brand-slate-400">
+                  Maintenance margin
                 </span>
                 <span class="font-mono text-slate-100">
                   {formatOptionalUsd(
@@ -1594,8 +1583,8 @@ const OrderForm: Component = () => {
                 </span>
               </div>
               <div class="flex justify-between gap-3 text-sm">
-                <span class="text-brand-slate-400 underline decoration-dashed underline-offset-4">
-                  Portfolio Account Leverage
+                <span class="text-brand-slate-400">
+                  Account leverage
                 </span>
                 <span class="font-mono text-slate-100">
                   {livePortfolioSummary()?.accountLeverage === undefined
@@ -1609,7 +1598,7 @@ const OrderForm: Component = () => {
       </div>
       <div class="ticket-submit">
         <button
-          class={`w-full rounded-full py-3 text-sm font-semibold transition-colors ${
+          class={`flex min-h-11 w-full items-center justify-center rounded-full py-3 text-sm font-semibold transition-colors ${
             (!isAuthenticated() && !isHyperliquidExecution()) ||
             (canSubmitOrder() && !isSubmitting())
               ? "bg-brand-accent text-brand-screen hover:brightness-105"
@@ -1624,11 +1613,12 @@ const OrderForm: Component = () => {
             (isAuthenticated() || isHyperliquidExecution()) &&
             (!canSubmitOrder() || isSubmitting())
           }
+          aria-busy={isSubmitting()}
         >
           {!isAuthenticated() && !isHyperliquidExecution()
             ? "Connect to trade"
             : isSubmitting()
-              ? "Placing..."
+              ? <Spinner label="Placing order" />
               : !isHyperliquidExecution() &&
                   isSpot() &&
                   insufficientSpotBalance()

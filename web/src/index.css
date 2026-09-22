@@ -312,6 +312,15 @@ input[type="checkbox"] {
 .ticket-account {
   background: #111519;
 }
+.ticket-section-title {
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-brand-slate-400);
+}
+.ticket-details .font-mono {
+  white-space: nowrap;
+}
 .mobile-header,
 .mobile-nav,
 .mobile-trade-tabs {
