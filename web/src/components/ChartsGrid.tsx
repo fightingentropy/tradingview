@@ -1,324 +1,143 @@
-import { Component, createEffect, createMemo, createSignal } from "solid-js";
+import { type Component, Index, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import SymbolChart from "./SymbolChart";
-import { MARKETS, currentMarketType, type Market } from "../stores/market";
-import { normalizeSymbol } from "../lib/hyperliquid";
-
-const STORAGE_KEY = "trade-xyz-charts-grid";
-const RESOLUTION_KEY = "trade-xyz-charts-resolution";
-const CHART_COUNT_KEY = "trade-xyz-charts-count";
-const DEFAULT_SYMBOLS = ["BTC", "HYPE", "BTC", "HYPE", "BTC", "HYPE"];
-const CHART_COUNTS = [2, 4, 6] as const;
-type ChartCount = (typeof CHART_COUNTS)[number];
-const RESOLUTIONS = ["5", "15", "60", "240", "1D", "1W"] as const;
-type Resolution = (typeof RESOLUTIONS)[number];
-const RESOLUTION_LABELS: Record<Resolution, string> = {
-  "5": "5m",
-  "15": "15m",
-  "60": "1h",
-  "240": "4h",
-  "1D": "1d",
-  "1W": "1w",
-};
-const RAW_SYMBOLS = new Set([
-  "COPPER",
-  "NATGAS",
-  "PLATINUM",
-  "SILVER",
-  "GOLD",
-  "ALUMINIUM",
-  "URANIUM",
-]);
-
-const loadResolution = (): Resolution => {
-  try {
-    const stored = localStorage.getItem(RESOLUTION_KEY);
-    if (stored && RESOLUTIONS.includes(stored as Resolution)) {
-      return stored as Resolution;
-    }
-  } catch (error) {
-    // Ignore storage errors
-  }
-  return "5";
-};
-
-const normalizeSymbolsList = (values: string[], count: number): string[] => {
-  const normalized = values.map((entry, index) => {
-    const fallback = DEFAULT_SYMBOLS[index] ?? DEFAULT_SYMBOLS[0];
-    const value = String(entry ?? "").trim();
-    if (!value) return fallback;
-    const next = normalizeSymbol(value);
-    return next || fallback;
-  });
-  const trimmed = normalized.slice(0, count);
-  while (trimmed.length < count) {
-    trimmed.push(DEFAULT_SYMBOLS[trimmed.length] ?? DEFAULT_SYMBOLS[0]);
-  }
-  return trimmed;
-};
-
-const loadSymbols = (count: number): string[] => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored) as string[];
-      if (Array.isArray(parsed)) {
-        return normalizeSymbolsList(parsed, count);
-      }
-    }
-  } catch (error) {
-    // Ignore storage errors
-  }
-  return normalizeSymbolsList(DEFAULT_SYMBOLS, count);
-};
-
-const loadChartCount = (): ChartCount => {
-  try {
-    const stored = localStorage.getItem(CHART_COUNT_KEY);
-    if (stored) {
-      const parsed = Number(stored);
-      if (CHART_COUNTS.includes(parsed as ChartCount)) {
-        return parsed as ChartCount;
-      }
-    }
-  } catch (error) {
-    // Ignore storage errors
-  }
-  return 4;
-};
-
-const getSymbolOptions = (): string[] => {
-  const set = new Set<string>();
-  MARKETS().forEach((market) => set.add(market.symbol));
-  DEFAULT_SYMBOLS.forEach((symbol) => set.add(symbol));
-  return Array.from(set).sort();
-};
+import WatchlistPanel from "./WatchlistPanel";
+import MarketAvatar from "./MarketAvatar";
+import ChartControls from "./ChartControls";
+import { MARKETS, getUrlSymbol, useLivePrices } from "../stores/market";
+import { chartLayout, setChartLayout, setChartCount, setChartSymbol, removeChart } from "../stores/chartLayout";
+import { CHART_COUNTS, type ChartCount } from "../lib/chartLayout";
+import "./ChartsGrid.css";
 
 const ChartsGrid: Component = () => {
-  const initialChartCount = loadChartCount();
-  const [chartCount, setChartCount] =
-    createSignal<ChartCount>(initialChartCount);
-  const [symbols, setSymbols] = createSignal<string[]>(
-    loadSymbols(initialChartCount),
-  );
   const [menuOpen, setMenuOpen] = createSignal(false);
-  const [resolution, setResolution] =
-    createSignal<Resolution>(loadResolution());
-  const options = createMemo(() => {
-    const merged = new Set(getSymbolOptions());
-    symbols().forEach((symbol) => merged.add(symbol));
-    return Array.from(merged).sort();
-  });
-  const marketBySymbol = createMemo(() => {
-    const preferredType = currentMarketType();
-    const list = MARKETS();
-    const map = new Map<string, Market>();
-    list.forEach((market) => {
-      if (market.type === preferredType) {
-        map.set(market.symbol, market);
-      }
-    });
-    list.forEach((market) => {
-      if (!map.has(market.symbol)) {
-        map.set(market.symbol, market);
-      }
-    });
-    return map;
-  });
-
-  const updateSymbol = (index: number, value: string) => {
-    const normalized = normalizeSymbol(value);
-    setSymbols((prev) => {
-      const next = [...prev];
-      next[index] = normalized || prev[index];
-      return next;
-    });
+  const [watchlistOpen, setWatchlistOpen] = createSignal(false);
+  const [desktop, setDesktop] = createSignal(window.matchMedia("(min-width: 900px)").matches);
+  const [visible, setVisible] = createSignal(!document.hidden);
+  const pinned = () => chartLayout().count === 1 && desktop();
+  const sidebarVisible = () => pinned() || watchlistOpen();
+  let panel: HTMLElement | undefined;
+  let trigger: HTMLButtonElement | undefined;
+  let edge: HTMLButtonElement | undefined;
+  let layoutMenu: HTMLDivElement | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearHide = () => { if (hideTimer) clearTimeout(hideTimer); hideTimer = undefined; };
+  const reveal = () => { clearHide(); setWatchlistOpen(true); };
+  const hide = () => {
+    clearHide();
+    if (pinned()) return;
+    setWatchlistOpen(false);
+  };
+  const hideLater = () => {
+    clearHide();
+    hideTimer = setTimeout(() => {
+      if (edge?.matches(":hover") || panel?.matches(":hover") || panel?.querySelector(":focus-visible") || panel?.querySelector("details[open]")) return;
+      if (panel?.contains(document.activeElement) && document.activeElement?.matches("input, select")) return;
+      hide();
+    }, 1200);
+  };
+  const closeSidebar = () => {
+    if (pinned()) return;
+    hide();
+    trigger?.focus({ preventScroll: true });
+  };
+  const marketsBySymbol = createMemo(() => new Map(MARKETS().filter(market => market.type !== "spot").map(market => [market.symbol, market])));
+  const options = createMemo(() => [...new Set([...marketsBySymbol().keys(), ...chartLayout().symbols])].sort());
+  const symbols = createMemo(() => chartLayout().symbols.slice(0, chartLayout().count));
+  const chartCount = createMemo(() => chartLayout().count);
+  const resolution = createMemo(() => chartLayout().resolution);
+  const removePane = (index: number) => {
+    removeChart(index);
+    const next = Math.min(index, chartLayout().count - 1);
+    queueMicrotask(() => layoutMenu?.querySelector<HTMLSelectElement>(`[aria-label="Chart ${next + 1} symbol"]`)?.focus({ preventScroll: true }));
   };
 
-  createEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(symbols()));
-    } catch (error) {
-      // Ignore storage errors
-    }
+  useLivePrices({ enabled: visible });
+  onMount(() => {
+    const media = window.matchMedia("(min-width: 900px)");
+    const resize = () => setDesktop(media.matches);
+    const visibility = () => setVisible(!document.hidden);
+    media.addEventListener("change", resize);
+    document.addEventListener("visibilitychange", visibility);
+    onCleanup(() => { media.removeEventListener("change", resize); document.removeEventListener("visibilitychange", visibility); });
   });
+  createEffect(() => { chartCount(); clearHide(); setWatchlistOpen(false); });
+  onCleanup(clearHide);
 
-  createEffect(() => {
-    try {
-      localStorage.setItem(RESOLUTION_KEY, resolution());
-    } catch (error) {
-      // Ignore storage errors
-    }
-  });
-
-  createEffect(() => {
-    const count = chartCount();
-    setSymbols((prev) => {
-      const next = normalizeSymbolsList(prev, count);
-      if (
-        next.length === prev.length &&
-        next.every((value, index) => value === prev[index])
-      ) {
-        return prev;
-      }
-      return next;
-    });
-    try {
-      localStorage.setItem(CHART_COUNT_KEY, String(count));
-    } catch (error) {
-      // Ignore storage errors
-    }
-  });
-
-  const gridClasses = createMemo(() => {
-    const count = chartCount();
-    if (count === 2) {
-      return "grid-cols-1 grid-rows-2 md:grid-cols-2 md:grid-rows-1";
-    }
-    if (count === 6) {
-      return "grid-cols-1 grid-rows-6 md:grid-cols-2 md:grid-rows-3";
-    }
-    return "grid-cols-1 grid-rows-4 md:grid-cols-2 md:grid-rows-2";
-  });
-  const changeForSymbol = (symbol: string) => {
-    const market = marketBySymbol().get(symbol);
-    if (!market || !Number.isFinite(market.change24h)) {
-      return { text: "--", className: "text-brand-slate-500" };
-    }
-    const sign = market.change24h >= 0 ? "+" : "";
-    return {
-      text: `${sign}${market.change24h.toFixed(2)}%`,
-      className:
-        market.change24h >= 0 ? "text-brand-green-400" : "text-brand-red-400",
-    };
-  };
-  const labelForSymbol = (symbol: string) => {
-    const trimmed = symbol.trim();
-    const withoutPrefix = trimmed.toLowerCase().startsWith("xyz:")
-      ? trimmed.slice(trimmed.indexOf(":") + 1)
-      : trimmed;
-    const withoutSuffix = withoutPrefix.toUpperCase().endsWith("-USDC")
-      ? withoutPrefix.slice(0, -5)
-      : withoutPrefix;
-    const base = withoutSuffix.toUpperCase();
-    for (const raw of RAW_SYMBOLS) {
-      if (base === raw || base.startsWith(`${raw}-`)) {
-        return raw;
-      }
-    }
-    return `${base}-USDC`;
-  };
-
-  return (
-    <div class="relative h-full w-full bg-brand-screen">
-      <div class="absolute right-4 top-4 z-20">
-        <button
-          class="flex items-center gap-2 rounded-full border border-brand-border bg-brand-surface px-3 py-2 text-xs font-semibold text-brand-slate-200 shadow-lg hover:bg-brand-border/60"
-          onClick={() => setMenuOpen(!menuOpen())}
-        >
-          <span>Charts</span>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+  return <div class="charts-workspace" classList={{ "watchlist-pinned": pinned() }} data-chart-count={chartLayout().count}>
+    <div class="charts-stage">
+      <div class="charts-controls">
+        <button ref={trigger} class="charts-control charts-watchlist-toggle" aria-label={sidebarVisible() ? "Hide watchlist" : "Show watchlist"} title="Watchlist"
+          aria-expanded={sidebarVisible()} aria-controls="charts-watchlist" onClick={() => sidebarVisible() ? hide() : reveal()}>
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M15 4v16M18 8h.01M18 12h.01M18 16h.01" /></svg>
         </button>
-        {menuOpen() && (
-          <>
-            <div
-              class="fixed inset-0 z-30"
-              onClick={() => setMenuOpen(false)}
-            />
-            <div class="absolute right-0 top-full z-40 mt-2 w-52 rounded-lg border border-brand-border bg-brand-surface shadow-xl">
-              <div class="border-b border-brand-border px-3 py-2">
-                <span class="text-[11px] font-medium uppercase tracking-wider text-brand-slate-400">
-                  Layout
-                </span>
-              </div>
-              <div class="space-y-2 px-3 py-3">
-                <div class="flex items-center justify-between gap-2 text-xs text-brand-slate-300">
-                  <span>Charts</span>
-                  <select
-                    class="rounded-md border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
-                    value={chartCount()}
-                    onChange={(event) =>
-                      setChartCount(
-                        Number(event.currentTarget.value) as ChartCount,
-                      )
-                    }
-                  >
-                    {CHART_COUNTS.map((count) => (
-                      <option value={count}>{count}</option>
-                    ))}
-                  </select>
-                </div>
-                <div class="flex items-center justify-between gap-2 text-xs text-brand-slate-300">
-                  <span>Resolution</span>
-                  <select
-                    class="rounded-md border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
-                    value={resolution()}
-                    onChange={(event) =>
-                      setResolution(event.currentTarget.value as Resolution)
-                    }
-                  >
-                    {RESOLUTIONS.map((option) => (
-                      <option value={option}>
-                        {RESOLUTION_LABELS[option]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {symbols().map((symbol, index) => (
-                  <label class="flex items-center justify-between gap-2 text-xs text-brand-slate-300">
-                    <span>Chart {index + 1}</span>
-                    <select
-                      class="rounded-md border border-brand-border bg-brand-screen px-2 py-1 text-xs text-slate-200 focus:border-brand-accent"
-                      value={symbol}
-                      onChange={(event) =>
-                        updateSymbol(index, event.currentTarget.value)
-                      }
-                    >
-                      {options().map((option) => (
-                        <option value={option} selected={option === symbol}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </div>
+        <button class="charts-control" aria-label="Chart layout" aria-expanded={menuOpen()} onClick={() => setMenuOpen(!menuOpen())}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
+          <span>Charts</span><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" /></svg>
+        </button>
+        <Show when={menuOpen()}>
+          <div class="charts-menu-backdrop" onClick={() => setMenuOpen(false)} />
+          <div ref={layoutMenu} class="charts-layout-menu" onKeyDown={event => { if (event.key === "Escape") setMenuOpen(false); }}>
+            <label><span>Charts</span><select aria-label="Number of charts" value={chartLayout().count} onChange={event => setChartCount(Number(event.currentTarget.value) as ChartCount)}>
+              <For each={CHART_COUNTS}>{count => <option value={count}>{count}</option>}</For>
+            </select></label>
+            <div class="charts-layout-items">
+              <Index each={symbols()}>{(symbol, index) => <div class="charts-layout-item">
+                <label><span>Chart {index + 1}</span><select aria-label={`Chart ${index + 1} symbol`} value={symbol()}
+                  onChange={event => setChartSymbol(event.currentTarget.value, index)}>
+                  <For each={options()}>{option => <option value={option}>{getUrlSymbol(option)}</option>}</For>
+                </select></label>
+                <button class="charts-remove" aria-label={`Remove chart ${index + 1}`} disabled={chartLayout().count === 1}
+                  title={chartLayout().count === 1 ? "Keep at least one chart" : `Remove chart ${index + 1}`} onClick={() => removePane(index)}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5" /></svg>
+                </button>
+              </div>}</Index>
             </div>
-          </>
-        )}
-      </div>
-
-      <div class={`grid h-full gap-px bg-brand-border ${gridClasses()}`}>
-        {symbols().map((symbol) => (
-          <div class="relative flex min-h-0 flex-col bg-brand-screen">
-            <div class="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-md border border-brand-border bg-brand-surface/80 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-slate-200">
-              {(() => {
-                const change = changeForSymbol(symbol);
-                return (
-                  <>
-                    <span>{labelForSymbol(symbol)}</span>
-                    <span class={change.className}>{change.text}</span>
-                  </>
-                );
-              })()}
-            </div>
-            <SymbolChart symbol={symbol} resolution={resolution()} />
+            <Show when={chartLayout().count < 6}>
+              <button class="charts-add" onClick={() => {
+                const nextIndex = chartLayout().count;
+                setChartCount((nextIndex + 1) as ChartCount);
+                setChartLayout(state => ({ ...state, activeIndex: nextIndex }));
+              }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg><span>Add chart</span></button>
+            </Show>
           </div>
-        ))}
+        </Show>
+      </div>
+      <div class="charts-grid" data-count={chartLayout().count}>
+        <Index each={symbols()}>{(symbol, index) => {
+          const market = () => marketsBySymbol().get(symbol());
+          // Price ticks change the market object, but must not restart candles.
+          const marketType = createMemo(() => market()?.type ?? "perps");
+          const change = () => market()?.change24h;
+          const active = () => chartLayout().activeIndex === index;
+          const activate = () => setChartLayout(state => state.activeIndex === index ? state : { ...state, activeIndex: index });
+          return <div class="charts-pane" classList={{ "is-active": active() && chartLayout().count > 1 }} data-chart-index={index}
+            onPointerDown={activate} onFocusIn={activate}>
+            <div class="charts-pane-heading">
+              <button class="charts-symbol-label" aria-label={`Select chart ${index + 1}: ${getUrlSymbol(symbol())}`} aria-pressed={active()} onClick={activate}>
+                <MarketAvatar symbol={symbol()} size={20} />
+                <span>{getUrlSymbol(symbol())}</span>
+                <Show when={Number.isFinite(change())}><span classList={{ up: (change() ?? 0) >= 0, down: (change() ?? 0) < 0 }}>{(change() ?? 0) >= 0 ? "+" : ""}{change()?.toFixed(2)}%</span></Show>
+              </button>
+              <Show when={index === 0}>
+                <ChartControls resolution={resolution()} onResolutionChange={resolution => setChartLayout(state => ({ ...state, resolution }))} />
+              </Show>
+            </div>
+            <SymbolChart symbol={symbol()} resolution={resolution()} marketType={marketType()} />
+          </div>;
+        }}</Index>
       </div>
     </div>
-  );
+    <Show when={!pinned()}>
+      <button ref={edge} class="charts-watchlist-edge" aria-label="Reveal watchlist" aria-controls="charts-watchlist" aria-expanded={sidebarVisible()}
+        onPointerEnter={reveal} onPointerLeave={hideLater} onFocus={reveal} onBlur={hideLater} onClick={reveal} data-testid="charts-watchlist-edge">
+        <span />
+      </button>
+    </Show>
+    <aside ref={panel} id="charts-watchlist" class="charts-watchlist" data-visible={sidebarVisible()} aria-hidden={!sidebarVisible()} inert={!sidebarVisible()}
+      onPointerEnter={clearHide} onPointerLeave={hideLater} onFocusIn={clearHide} onFocusOut={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) hideLater(); }}
+      onKeyDown={event => { if (event.key === "Escape" && !pinned()) { event.stopPropagation(); closeSidebar(); } }}>
+      <WatchlistPanel onSelectMarket={market => setChartSymbol(market.symbol)} selectedSymbol={chartLayout().symbols[chartLayout().activeIndex]} onClose={pinned() ? undefined : closeSidebar} />
+    </aside>
+  </div>;
 };
-
 export default ChartsGrid;

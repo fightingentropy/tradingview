@@ -29,7 +29,6 @@ import {
   updateLastCandle,
 } from "../stores/chartCache";
 import {
-  currentMarketType,
   dataProvider,
   showChartGrid,
   showChartVolume,
@@ -40,10 +39,13 @@ import {
   hyperliquidWsUrl,
 } from "../lib/hyperliquidNetwork";
 import { createLatestAnimationFrameBatcher } from "../lib/animationFrameBatcher";
+import { createMovingAverages } from "../lib/movingAverages";
+import { maEnabled } from "../stores/chartIndicators";
 
 interface SymbolChartProps {
   symbol: string;
   resolution: string;
+  marketType?: HyperliquidMarketType;
 }
 
 const MAX_LOCAL_CANDLES = 1000;
@@ -55,6 +57,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
   let chart: IChartApi | undefined;
   let candleSeries: ISeriesApi<"Candlestick"> | undefined;
   let volumeSeries: ISeriesApi<"Histogram"> | undefined;
+  let movingAverages: ReturnType<typeof createMovingAverages> | undefined;
   let unsubscribeStream: (() => void) | undefined;
   let streamGeneration = 0;
   let loadController: AbortController | undefined;
@@ -151,7 +154,14 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
       symbol: string;
     }) => {
       updateLastCandle(provider, `${symbol}-${marketType}`, resolution, candle);
-      upsertLocalCandle(candle);
+      const updateMode = upsertLocalCandle(candle);
+      if (updateMode === "outOfOrder") {
+        candleSeries?.setData(formatCandleData(localCandles));
+        volumeSeries?.setData(formatVolumeData(localCandles));
+        movingAverages?.setData(localCandles);
+        return;
+      }
+      movingAverages?.update(localCandles);
       candleSeries?.update({
         time: (candle.time / 1000) as Time,
         open: candle.open,
@@ -214,6 +224,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
         lastLoadedKey = cacheKey;
       }
       localCandles = cached.candles;
+      movingAverages?.setData(localCandles);
       if (!signal?.aborted && requestId === loadGeneration) {
         setIsLoading(false);
       }
@@ -242,6 +253,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
           candleSeries.setData(formatCandleData(mergedCandles));
           volumeSeries?.setData(formatVolumeData(mergedCandles));
           localCandles = mergedCandles;
+          movingAverages?.setData(localCandles);
         }
       } catch (error) {
         console.error("Failed to fetch new candles:", error);
@@ -255,6 +267,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
       candleSeries.setData([]);
       volumeSeries?.setData([]);
       localCandles = [];
+      movingAverages?.setData(localCandles);
     }
 
     setIsLoading(true);
@@ -281,6 +294,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
       } else {
         localCandles = [];
       }
+      movingAverages?.setData(localCandles);
 
       chart?.timeScale().fitContent();
     } catch (error) {
@@ -410,6 +424,8 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
       priceScaleId: "",
     });
 
+    movingAverages = createMovingAverages(chart);
+
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
         top: 0.85,
@@ -461,6 +477,11 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
   });
 
   createEffect(() => {
+    if (!chartReady()) return;
+    movingAverages?.setEnabled(maEnabled(), localCandles);
+  });
+
+  createEffect(() => {
     const symbol = props.symbol;
     const resolution = props.resolution;
     const ready = chartReady();
@@ -469,7 +490,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
     hyperliquidDataNetwork();
     // Track marketType so the stream restarts on perp/spot switch and candles
     // are not cached under the wrong key.
-    const marketType = currentMarketType();
+    const marketType = props.marketType ?? "perps";
 
     if (loadTimer) {
       clearTimeout(loadTimer);
@@ -569,7 +590,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
         </div>
       )}
       {isLoading() && (
-        <div class="absolute inset-0 flex items-center justify-center bg-brand-screen/70 z-10">
+        <div role="status" aria-label="Loading chart" class="absolute inset-0 flex items-center justify-center bg-brand-screen/70 z-10">
           <div class="flex items-center gap-2 text-brand-slate-400">
             <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
               <circle
@@ -587,7 +608,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            <span class="text-xs font-medium">Loading...</span>
+
           </div>
         </div>
       )}

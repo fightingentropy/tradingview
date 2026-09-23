@@ -15,7 +15,7 @@ export interface L2Book {
 
 /**
  * Normalize a symbol to standard format (uppercase, no suffix).
- * Preserves the lowercase xyz: prefix used by equity perps.
+ * Preserves supported venue prefixes and case-sensitive thousand-unit contracts.
  */
 const normalizeCoreSymbol = (value: string): string => {
   const upper = value.toUpperCase();
@@ -30,11 +30,13 @@ export const normalizeSymbol = (symbolName: string): string => {
   if (!symbolName) return "BTC";
   const raw = String(symbolName);
   const trimmed = raw.trim();
+  // Hyperliquid's thousand-unit contracts have a case-sensitive lowercase k.
+  if (/^k[A-Z0-9]+$/.test(trimmed)) return trimmed;
   const lower = trimmed.toLowerCase();
-  if (lower.startsWith("xyz:")) {
+  if (lower.startsWith("xyz:") || lower.startsWith("para:")) {
     const suffix = trimmed.slice(trimmed.indexOf(":") + 1);
     const normalized = normalizeCoreSymbol(suffix);
-    return normalized ? `xyz:${normalized}` : "";
+    return normalized ? `${lower.split(":")[0]}:${normalized}` : "";
   }
   return normalizeCoreSymbol(raw);
 };

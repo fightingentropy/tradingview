@@ -22,7 +22,7 @@ const NAMES: Readonly<Record<string, string>> = {
   TLT: '20+ Year Treasury Bond ETF', EUR: 'Euro', GBP: 'British pound', JPY: 'Japanese yen',
 };
 
-export function instrumentDisplayName(instrument: Instrument): string {
+export function instrumentDisplayName(instrument: Pick<Instrument, 'assetClass' | 'symbol' | 'name'>): string {
   if (instrument.assetClass === 'outcome') return instrument.name;
   const name = NAMES[instrument.symbol.toUpperCase()];
   if (!name) return instrument.name;

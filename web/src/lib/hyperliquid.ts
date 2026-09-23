@@ -68,6 +68,7 @@ export interface AssetMeta {
   szDecimals: number;
   maxLeverage: number;
   onlyIsolated?: boolean;
+  isDelisted?: boolean;
 }
 
 export interface AssetCtx {
@@ -151,7 +152,8 @@ const isAssetMeta = (value: unknown): value is AssetMeta =>
   Number.isSafeInteger(value.maxLeverage) &&
   (value.maxLeverage as number) >= 1 &&
   (value.maxLeverage as number) <= 200 &&
-  (value.onlyIsolated === undefined || typeof value.onlyIsolated === "boolean");
+  (value.onlyIsolated === undefined || typeof value.onlyIsolated === "boolean") &&
+  (value.isDelisted === undefined || typeof value.isDelisted === "boolean");
 
 const isAssetCtx = (value: unknown): value is AssetCtx =>
   isRecord(value) &&
@@ -379,7 +381,7 @@ const HYPERLIQUID_INTERVAL_MAP: Record<string, string> = {
 const isHyperliquidSymbol = (value: unknown): value is string =>
   typeof value === "string" &&
   (/^@(?:0|[1-9]\d{0,6})$/.test(value) ||
-    /^(?:xyz:)?[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(value));
+    /^(?:(?:xyz|para):)?[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(value));
 
 const normalizeHyperliquidMarketCoin = (coin: string): string =>
   coin.startsWith("@") ? coin : normalizeSymbol(coin);

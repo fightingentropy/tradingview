@@ -1,3 +1,5 @@
+import { DEFAULT_WATCHLISTS, WATCHLISTS_KEY, restoreWatchlists, syncWatchlistThemes, themeForMarket, type WatchlistsState } from "../lib/watchlists";
+import { setChartCount, setChartSymbol } from "./chartLayout";
 import { subscribeHyperliquid } from "../lib/hyperliquidStreams";
 import {
   batch,
@@ -45,15 +47,15 @@ export interface Market {
   type: "perps" | "spot" | "equities";
   leverage: string;
   watchlist: boolean;
+  chartOnly?: boolean;
 }
 
 // Watchlist stored in localStorage
 const WATCHLIST_KEY = "trade-xyz-watchlist";
-const WATCHLISTS_KEY = "trade-xyz-watchlists";
 const TICKER_WATCHLIST_KEY = "trade-xyz-ticker-watchlist";
 const TICKER_WATCHLIST_VERSION_KEY = "trade-xyz-ticker-watchlist-version";
 const TICKER_WATCHLIST_VERSION = 2;
-const DEFAULT_WATCHLIST_NAME = "crypto";
+const DEFAULT_WATCHLIST_NAME = "watchlist";
 const COMMODITY_SYMBOLS = new Set([
   "ALUMINIUM",
   "COPPER",
@@ -74,41 +76,6 @@ const DEFAULT_TICKER_WATCHLIST = [
   "SILVER",
   "URNM",
 ];
-const DEFAULT_WATCHLISTS: Record<string, string[]> = {
-  crypto: ["BTC", "ETH", "HYPE"],
-  commodities: [
-    "ALUMINIUM",
-    "COPPER",
-    "GOLD",
-    "NATGAS",
-    "PLATINUM",
-    "SILVER",
-    "URNM",
-  ],
-  indices: ["xyz:XYZ100"],
-  stocks: [
-    "xyz:AAPL",
-    "xyz:TSLA",
-    "xyz:NVDA",
-    "xyz:MSFT",
-    "xyz:META",
-    "xyz:GOOGL",
-    "xyz:AMZN",
-    "xyz:NFLX",
-    "xyz:AMD",
-    "xyz:PLTR",
-    "xyz:HOOD",
-    "xyz:MSTR",
-    "xyz:MU",
-    "xyz:SNDK",
-  ],
-};
-
-interface WatchlistsState {
-  activeId: string;
-  lists: Record<string, string[]>;
-}
-
 const normalizeWatchlist = (symbols: string[]): string[] => {
   const deduped = new Set<string>();
   symbols.forEach((symbol) => {
@@ -121,7 +88,7 @@ const normalizeWatchlist = (symbols: string[]): string[] => {
 
 const getWatchlistCoreSymbol = (symbol: string): string => {
   const trimmed = String(symbol ?? "").trim();
-  if (trimmed.toLowerCase().startsWith("xyz:")) {
+  if (/^(xyz|para):/i.test(trimmed)) {
     return trimmed.slice(trimmed.indexOf(":") + 1).toUpperCase();
   }
   return trimmed.toUpperCase();
@@ -136,19 +103,6 @@ const getHyperliquidSpotCanonicalSymbol = (symbol: string): string => {
   const uiSymbol = normalizeHyperliquidSpotUiSymbol(symbol);
   return HYPERLIQUID_SPOT_CANONICAL_SYMBOLS[uiSymbol] ?? uiSymbol;
 };
-
-const NON_CRYPTO_SYMBOLS = new Set<string>([
-  ...COMMODITY_SYMBOLS,
-  "NDX",
-  "XYZ100",
-  "100",
-]);
-Object.entries(DEFAULT_WATCHLISTS).forEach(([name, symbols]) => {
-  if (name === DEFAULT_WATCHLIST_NAME) return;
-  symbols.forEach((symbol) => {
-    NON_CRYPTO_SYMBOLS.add(getWatchlistCoreSymbol(symbol));
-  });
-});
 
 const getWatchlistAliases = (symbol: string): string[] => {
   const core = getWatchlistCoreSymbol(symbol);
@@ -290,107 +244,11 @@ export const toggleTickerWatchlist = (
 };
 
 const loadWatchlists = (): WatchlistsState => {
-  const fallbackLists = Object.fromEntries(
-    Object.entries(DEFAULT_WATCHLISTS).map(([key, list]) => [
-      key,
-      normalizeWatchlist(list),
-    ]),
-  );
-  if (fallbackLists[DEFAULT_WATCHLIST_NAME]) {
-    fallbackLists[DEFAULT_WATCHLIST_NAME] = normalizeWatchlist(
-      fallbackLists[DEFAULT_WATCHLIST_NAME].filter(
-        (symbol) => !NON_CRYPTO_SYMBOLS.has(getWatchlistCoreSymbol(symbol)),
-      ),
-    );
-  }
-
-  try {
-    const stored = localStorage.getItem(WATCHLISTS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored) as Partial<WatchlistsState>;
-      if (parsed && typeof parsed === "object") {
-        const lists = { ...fallbackLists };
-        const storedLists = parsed.lists ?? {};
-        Object.entries(storedLists).forEach(([key, list]) => {
-          if (!Array.isArray(list)) return;
-          // Skip the old "watchlist" list - it's been removed
-          if (key === "watchlist") return;
-          const storedList = normalizeWatchlist(list);
-          // Merge default symbols into existing lists to include new additions
-          const defaultList = fallbackLists[key];
-          if (defaultList && Array.isArray(defaultList)) {
-            const mergedSet = new Set([...storedList, ...defaultList]);
-            lists[key] = normalizeWatchlist([...mergedSet]);
-          } else {
-            lists[key] = storedList;
-          }
-          if (key === DEFAULT_WATCHLIST_NAME) {
-            lists[key] = normalizeWatchlist(
-              lists[key].filter(
-                (symbol) =>
-                  !NON_CRYPTO_SYMBOLS.has(getWatchlistCoreSymbol(symbol)),
-              ),
-            );
-          }
-        });
-        let activeId =
-          typeof parsed.activeId === "string" && lists[parsed.activeId]
-            ? parsed.activeId
-            : DEFAULT_WATCHLIST_NAME;
-        // If activeId is "watchlist" (the removed list), switch to default
-        if (activeId === "watchlist") {
-          activeId = DEFAULT_WATCHLIST_NAME;
-        }
-        return { activeId, lists };
-      }
-    }
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    const legacy = localStorage.getItem(WATCHLIST_KEY);
-    if (legacy) {
-      const parsed = JSON.parse(legacy) as string[];
-      if (Array.isArray(parsed)) {
-        // Merge legacy watchlist into crypto list
-        if (fallbackLists[DEFAULT_WATCHLIST_NAME]) {
-          fallbackLists[DEFAULT_WATCHLIST_NAME] = normalizeWatchlist([
-            ...fallbackLists[DEFAULT_WATCHLIST_NAME],
-            ...parsed,
-          ]).filter(
-            (symbol) => !NON_CRYPTO_SYMBOLS.has(getWatchlistCoreSymbol(symbol)),
-          );
-        }
-      }
-    }
-  } catch (e) {
-    // Ignore
-  }
-
-  return {
-    activeId: DEFAULT_WATCHLIST_NAME,
-    lists: fallbackLists,
-  };
+  const read = (key: string) => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
+  return restoreWatchlists(read(WATCHLISTS_KEY), read(WATCHLIST_KEY));
 };
-
 const saveWatchlists = (state: WatchlistsState) => {
-  try {
-    // Remove "watchlist" list if it exists before saving
-    const cleanedLists = { ...state.lists };
-    if (cleanedLists["watchlist"]) {
-      delete cleanedLists["watchlist"];
-    }
-    // Ensure activeId is not "watchlist"
-    const activeId =
-      state.activeId === "watchlist" ? DEFAULT_WATCHLIST_NAME : state.activeId;
-    localStorage.setItem(
-      WATCHLISTS_KEY,
-      JSON.stringify({ activeId, lists: cleanedLists }),
-    );
-  } catch (e) {
-    // Ignore
-  }
+  try { localStorage.setItem(WATCHLISTS_KEY, JSON.stringify(state)); } catch { /* storage unavailable */ }
 };
 
 const {
@@ -523,6 +381,8 @@ const {
 
 // Export reactive accessor
 export const MARKETS = markets;
+export const activeWatchlistSymbols = () => watchlists().lists[activeWatchlistId()] ?? [];
+export const watchlistSymbols = (id: string) => watchlists().lists[id] ?? [];
 export { marketsLoading, marketsError };
 
 const updateActiveWatchlistSymbols = (symbols: string[]) => {
@@ -620,6 +480,7 @@ export const deleteWatchlist = (listId: string): boolean => {
     nextActiveId = DEFAULT_WATCHLIST_NAME;
   }
   const nextState: WatchlistsState = {
+    ...state,
     activeId: nextActiveId,
     lists: nextLists,
   };
@@ -761,7 +622,7 @@ const URL_SYMBOL_OVERRIDES: Record<string, string> = {
 };
 const getDisplaySymbol = (symbol: string): string => {
   const trimmed = symbol.trim();
-  if (trimmed.toLowerCase().startsWith("xyz:")) {
+  if (/^(xyz|para):/i.test(trimmed)) {
     return trimmed.slice(trimmed.indexOf(":") + 1);
   }
   return trimmed;
@@ -1072,6 +933,12 @@ export {
 };
 
 export const selectMarket = (market: Market) => {
+  if (market.chartOnly) {
+    setChartCount(1);
+    setChartSymbol(market.symbol, 0);
+    void import("./page").then(({ setCurrentPage }) => setCurrentPage("charts"));
+    return;
+  }
   setCurrentSymbol(market.symbol);
   setCurrentMarket(market.name);
   setCurrentMarketTypeInternal(market.type);
@@ -1398,12 +1265,13 @@ const buildHyperliquidMarkets = async (
     spotsSet.add(getHyperliquidSpotCanonicalSymbol(uiSymbol));
   });
 
-  const [metaAndCtxs, spotData, equitiesMetaAndCtxs] = await Promise.all([
+  const [metaAndCtxs, spotData, equitiesMetaAndCtxs, ratesMetaAndCtxs] = await Promise.all([
     perpsSet.size > 0 ? fetchMetaAndAssetCtxs(signal) : Promise.resolve(null),
     spotsSet.size > 0
       ? fetchSpotMetaAndAssetCtxs(signal)
       : Promise.resolve(null),
     fetchMetaAndAssetCtxs(signal, { dex: "xyz" }),
+    fetchMetaAndAssetCtxs(signal, { dex: "para" }),
   ]);
 
   const newMarkets: Market[] = [];
@@ -1411,10 +1279,7 @@ const buildHyperliquidMarkets = async (
 
   if (metaAndCtxs) {
     metaAndCtxs.universe.forEach((asset, index) => {
-      const normalizedAssetName = normalizeSymbol(asset.name);
-      // Check both raw name and normalized name against the tracked set
-      if (!perpsSet.has(asset.name) && !perpsSet.has(normalizedAssetName))
-        return;
+      if (asset.isDelisted) return;
       const ctx = metaAndCtxs.ctx[index];
       if (!ctx) return;
 
@@ -1508,6 +1373,7 @@ const buildHyperliquidMarkets = async (
 
   if (equitiesMetaAndCtxs) {
     equitiesMetaAndCtxs.universe.forEach((asset, index) => {
+      if (asset.isDelisted) return;
       const ctx = equitiesMetaAndCtxs.ctx[index];
       if (!ctx) return;
 
@@ -1546,6 +1412,25 @@ const buildHyperliquidMarkets = async (
     });
   }
 
+  if (ratesMetaAndCtxs) {
+    ratesMetaAndCtxs.universe.forEach((asset, index) => {
+      if (asset.isDelisted || themeForMarket({ symbol: asset.name, type: "equities" }) !== "rates") return;
+      const ctx = ratesMetaAndCtxs.ctx[index];
+      if (!ctx) return;
+      const mark = Number(ctx.markPx);
+      const previous = Number(ctx.prevDayPx);
+      if (!(mark > 0)) return;
+      newMarkets.push({ symbol: asset.name, name: asset.name.endsWith(":10Y") ? "US 10-year Treasury yield" : asset.name,
+        price: formatPriceValue(mark), change24h: previous > 0 ? (mark / previous - 1) * 100 : 0,
+        prevDayPrice: previous, volume24h: Number(ctx.dayNtlVlm), openInterest: Number(ctx.openInterest) * mark,
+        funding: Number(ctx.funding) * 100, type: "equities", leverage: `${asset.maxLeverage}x`,
+        watchlist: isWatchlisted(asset.name), chartOnly: true });
+    });
+  } else {
+    // A rates outage must not erase existing rows or their last known prices.
+    newMarkets.push(...untrack(markets).filter(market => market.chartOnly));
+  }
+
   return {
     markets: newMarkets,
     metaAndCtxs,
@@ -1578,7 +1463,12 @@ const fetchAndUpdateMarkets = async (
     newMarkets.sort((a, b) => b.volume24h - a.volume24h);
 
     spotMidKeyByUiSymbol = result.spotMidKeys;
-    setMarkets(newMarkets);
+    batch(() => {
+      const previousLists = untrack(watchlists);
+      const nextLists = syncWatchlistThemes(previousLists, newMarkets);
+      if (nextLists !== previousLists) { setWatchlists(nextLists); saveWatchlists(nextLists); }
+      setMarkets(newMarkets.map(market => ({ ...market, watchlist: isWatchlisted(market.symbol) })));
+    });
     setMarketsLoading(false);
     setMarketsError(null);
 
@@ -1617,7 +1507,7 @@ const fetchAndUpdateMarkets = async (
 };
 
 const MARKETS_POLL_MS = 60_000;
-const LIVE_MIDS_DEXES = ["", "xyz"] as const;
+const LIVE_MIDS_DEXES = ["", "xyz", "para"] as const;
 
 /**
  * Live market-data hook.

@@ -3,14 +3,12 @@ import type {
   IChartApi,
   IPriceLine,
   ISeriesApi,
-  LineData,
 } from "lightweight-charts";
 import {
   CandlestickData,
   CandlestickSeries,
   ColorType,
   HistogramSeries,
-  LineSeries,
   Time,
   createChart,
 } from "lightweight-charts";
@@ -25,7 +23,10 @@ import {
   onMount,
 } from "solid-js";
 import { createLatestAnimationFrameBatcher } from "../lib/animationFrameBatcher";
-import { resolutionToMs, type Candle } from "../lib/candles";
+import { CHART_RESOLUTIONS, resolutionToMs, type Candle, type ChartResolution as Resolution } from "../lib/candles";
+import { createMovingAverages } from "../lib/movingAverages";
+import { maEnabled } from "../stores/chartIndicators";
+import ChartControls from "./ChartControls";
 import {
   fetchHyperliquidCandles,
   resolveHyperliquidMarketCoin,
@@ -56,25 +57,12 @@ import {
   type DataProvider,
 } from "../stores/market";
 
-const RESOLUTIONS = ["1", "5", "15", "60", "240", "1D", "1W"] as const;
-type Resolution = (typeof RESOLUTIONS)[number];
 const DEFAULT_RESOLUTION: Resolution = "5";
 const RESOLUTION_STORAGE_KEY = "trade-xyz-chart-resolution";
-const MA_STORAGE_KEY = "trade-xyz-chart-ma";
 const CHART_GRID_COLOR = "rgba(38, 42, 47, 0.6)";
 
-const RESOLUTION_LABELS: Record<Resolution, string> = {
-  "1": "1m",
-  "5": "5m",
-  "15": "15m",
-  "60": "1H",
-  "240": "4H",
-  "1D": "1D",
-  "1W": "1W",
-};
-
 const isResolution = (value: string): value is Resolution =>
-  RESOLUTIONS.includes(value as Resolution);
+  CHART_RESOLUTIONS.includes(value as Resolution);
 
 const loadResolution = (): Resolution => {
   try {
@@ -86,21 +74,6 @@ const loadResolution = (): Resolution => {
     // Ignore storage errors
   }
   return DEFAULT_RESOLUTION;
-};
-
-const MA_PERIODS = [20, 50, 200] as const;
-type MaPeriod = (typeof MA_PERIODS)[number];
-
-const DEFAULT_MA_ENABLED: Record<MaPeriod, boolean> = {
-  20: false,
-  50: false,
-  200: true,
-};
-
-const MA_COLORS: Record<MaPeriod, string> = {
-  20: "#f59e0b",
-  50: "#38bdf8",
-  200: "#b0a079",
 };
 
 const TICKER_ORDER_TYPES = new Set(["perps", "spot", "equities"]);
@@ -129,25 +102,6 @@ const formatExposure = (size: number) => {
   return `${size > 0 ? "+" : "-"}${formatted}`;
 };
 
-const loadMaSettings = (): Record<MaPeriod, boolean> => {
-  try {
-    const stored = localStorage.getItem(MA_STORAGE_KEY);
-    if (!stored) return DEFAULT_MA_ENABLED;
-    const parsed = JSON.parse(stored) as Record<string, unknown>;
-    const next: Record<MaPeriod, boolean> = { ...DEFAULT_MA_ENABLED };
-    MA_PERIODS.forEach((period) => {
-      const value = parsed?.[String(period)];
-      if (typeof value === "boolean") {
-        next[period] = value;
-      }
-    });
-    return next;
-  } catch (error) {
-    // Ignore storage errors
-  }
-  return DEFAULT_MA_ENABLED;
-};
-
 const TradingViewChart: Component = () => {
   let containerRef: HTMLDivElement | undefined;
   let chart: IChartApi | undefined;
@@ -159,7 +113,7 @@ const TradingViewChart: Component = () => {
   let loadTimer: number | undefined;
   let loadGeneration = 0;
   let lastLoadedKey: string | undefined;
-  const maSeries = new Map<MaPeriod, ISeriesApi<"Line">>();
+  let movingAverages: ReturnType<typeof createMovingAverages> | undefined;
   let localCandles: Candle[] = [];
   let entryPriceLine: IPriceLine | undefined;
   let takeProfitLine: IPriceLine | undefined;
@@ -169,10 +123,7 @@ const TradingViewChart: Component = () => {
     createSignal<Resolution>(loadResolution());
   const [isLoading, setIsLoading] = createSignal(true);
   const [chartReady, setChartReady] = createSignal(false);
-  const [maMenuOpen, setMaMenuOpen] = createSignal(false);
   const [isTabVisible, setIsTabVisible] = createSignal(!document.hidden);
-  const [maEnabled, setMaEnabled] =
-    createSignal<Record<MaPeriod, boolean>>(loadMaSettings());
   const [contextMenu, setContextMenu] = createSignal<{
     x: number;
     y: number;
@@ -213,10 +164,6 @@ const TradingViewChart: Component = () => {
     return result;
   });
 
-  const inactiveResolutions = createMemo(() =>
-    RESOLUTIONS.filter((res) => res !== resolution()),
-  );
-
   const handleVisibilityChange = () => {
     setIsTabVisible(!document.hidden);
   };
@@ -228,12 +175,6 @@ const TradingViewChart: Component = () => {
   onCleanup(() => {
     document.removeEventListener("visibilitychange", handleVisibilityChange);
   });
-
-  const toggleMa = (period: MaPeriod) => {
-    setMaEnabled((prev) => ({ ...prev, [period]: !prev[period] }));
-  };
-
-  const hasMa = () => MA_PERIODS.some((period) => maEnabled()[period]);
 
   const formatWatchlistChange = (value: number) => {
     if (!Number.isFinite(value)) return "--";
@@ -266,67 +207,6 @@ const TradingViewChart: Component = () => {
           ? "rgba(80, 227, 171, 0.5)"
           : "rgba(255, 85, 114, 0.5)",
     }));
-  };
-
-  const calculateSma = (
-    candles: Candle[],
-    period: MaPeriod,
-  ): LineData<Time>[] => {
-    if (candles.length < period) return [];
-    const data: LineData<Time>[] = [];
-    let sum = 0;
-
-    for (let i = 0; i < candles.length; i += 1) {
-      sum += candles[i].close;
-      if (i >= period) {
-        sum -= candles[i - period].close;
-      }
-      if (i >= period - 1) {
-        data.push({
-          time: (candles[i].time / 1000) as Time,
-          value: sum / period,
-        });
-      }
-    }
-
-    return data;
-  };
-
-  const refreshMovingAveragesFull = (candles: Candle[]) => {
-    if (!chartReady()) return;
-    const enabled = maEnabled();
-
-    MA_PERIODS.forEach((period) => {
-      const series = maSeries.get(period);
-      if (!series || !enabled[period]) return;
-      series.setData(calculateSma(candles, period));
-    });
-  };
-
-  const refreshMovingAveragesIncremental = () => {
-    if (!chartReady()) return;
-    const enabled = maEnabled();
-    const candles = localCandles;
-
-    MA_PERIODS.forEach((period) => {
-      const series = maSeries.get(period);
-      if (!series || !enabled[period]) return;
-      if (candles.length < period) {
-        series.setData([]);
-        return;
-      }
-
-      let sum = 0;
-      for (let i = candles.length - period; i < candles.length; i += 1) {
-        sum += candles[i].close;
-      }
-
-      const last = candles[candles.length - 1];
-      series.update({
-        time: (last.time / 1000) as Time,
-        value: sum / period,
-      });
-    });
   };
 
   type CandleUpdateMode = "appended" | "updated" | "outOfOrder";
@@ -378,9 +258,12 @@ const TradingViewChart: Component = () => {
       updateLastCandle(provider, `${symbol}-${marketType}`, res, candle);
       const updateMode = upsertLocalCandle(candle);
       if (updateMode === "outOfOrder") {
-        refreshMovingAveragesFull(localCandles);
+        candleSeries?.setData(formatCandleData(localCandles));
+        volumeSeries?.setData(formatVolumeData(localCandles));
+        movingAverages?.setData(localCandles);
+        return;
       } else {
-        refreshMovingAveragesIncremental();
+        movingAverages?.update(localCandles);
       }
 
       candleSeries?.update({
@@ -453,7 +336,7 @@ const TradingViewChart: Component = () => {
         lastLoadedKey = cacheKey;
       }
       localCandles = cached.candles;
-      refreshMovingAveragesFull(localCandles);
+      movingAverages?.setData(localCandles);
       if (!signal?.aborted && requestId === loadGeneration) {
         setIsLoading(false);
       }
@@ -487,7 +370,7 @@ const TradingViewChart: Component = () => {
             volumeSeries.setData(formatVolumeData(mergedCandles));
           }
           localCandles = mergedCandles;
-          refreshMovingAveragesFull(localCandles);
+          movingAverages?.setData(localCandles);
         }
       } catch (error) {
         console.error("Failed to fetch new candles:", error);
@@ -505,7 +388,7 @@ const TradingViewChart: Component = () => {
         volumeSeries.setData([]);
       }
       localCandles = [];
-      refreshMovingAveragesFull(localCandles);
+      movingAverages?.setData(localCandles);
     }
 
     setIsLoading(true);
@@ -533,10 +416,10 @@ const TradingViewChart: Component = () => {
           volumeSeries.setData(formatVolumeData(candles));
         }
         localCandles = candles;
-        refreshMovingAveragesFull(localCandles);
+        movingAverages?.setData(localCandles);
       } else {
         localCandles = [];
-        refreshMovingAveragesFull(localCandles);
+        movingAverages?.setData(localCandles);
       }
 
       // Fit content after initial load
@@ -696,16 +579,7 @@ const TradingViewChart: Component = () => {
       priceScaleId: "",
     });
 
-    MA_PERIODS.forEach((period) => {
-      const series = chartInstance.addSeries(LineSeries, {
-        color: MA_COLORS[period],
-        lineWidth: period === 200 ? 2 : 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      series.applyOptions({ visible: maEnabled()[period] });
-      maSeries.set(period, series);
-    });
+    movingAverages = createMovingAverages(chartInstance);
 
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
@@ -809,15 +683,7 @@ const TradingViewChart: Component = () => {
 
   createEffect(() => {
     if (!chartReady()) return;
-    const enabled = maEnabled();
-
-    MA_PERIODS.forEach((period) => {
-      const series = maSeries.get(period);
-      if (!series) return;
-      series.applyOptions({ visible: enabled[period] });
-    });
-
-    refreshMovingAveragesFull(localCandles);
+    movingAverages?.setEnabled(maEnabled(), localCandles);
   });
 
   createEffect(() => {
@@ -840,15 +706,6 @@ const TradingViewChart: Component = () => {
     const value = resolution();
     try {
       localStorage.setItem(RESOLUTION_STORAGE_KEY, value);
-    } catch (error) {
-      // Ignore storage errors
-    }
-  });
-
-  createEffect(() => {
-    const value = maEnabled();
-    try {
-      localStorage.setItem(MA_STORAGE_KEY, JSON.stringify(value));
     } catch (error) {
       // Ignore storage errors
     }
@@ -953,72 +810,8 @@ const TradingViewChart: Component = () => {
         onContextMenu={handleContextMenu}
         onClick={handleClick}
       >
-        <div class="absolute left-3 top-3 z-20 flex items-center gap-1 rounded-full border border-brand-border/70 bg-brand-surface/80 px-2 py-1.5 shadow-sm backdrop-blur">
-          <div class="group flex items-center gap-1">
-            <button
-              class="px-2.5 py-1 text-xs font-medium rounded-full transition-colors bg-brand-border text-slate-100"
-              onClick={() => setResolution(resolution())}
-            >
-              {RESOLUTION_LABELS[resolution()]}
-            </button>
-            <div class="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 scale-95 pointer-events-none transition-all duration-200 group-hover:max-w-65 group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto">
-              <For each={inactiveResolutions()}>
-                {(res) => (
-                  <button
-                    class="px-2.5 py-1 text-xs font-medium rounded-full transition-colors text-brand-slate-400 hover:text-slate-200 hover:bg-brand-border/50"
-                    onClick={() => setResolution(res)}
-                  >
-                    {RESOLUTION_LABELS[res]}
-                  </button>
-                )}
-              </For>
-            </div>
-          </div>
-          <div class="mx-1 h-4 w-px bg-brand-border/70" />
-          <div class="relative">
-            <button
-              class={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-                hasMa()
-                  ? "bg-brand-border text-slate-200"
-                  : "text-brand-slate-400 hover:text-slate-200 hover:bg-brand-border/50"
-              }`}
-              onClick={() => setMaMenuOpen(!maMenuOpen())}
-            >
-              MA
-            </button>
-            {maMenuOpen() && (
-              <>
-                <div
-                  class="fixed inset-0 z-40"
-                  onClick={() => setMaMenuOpen(false)}
-                />
-                <div class="absolute left-0 top-full mt-2 w-44 bg-brand-surface border border-brand-border rounded-lg shadow-xl z-50 py-2">
-                  <div class="px-3 py-2 border-b border-brand-border">
-                    <span class="text-[11px] font-medium text-brand-slate-400 uppercase tracking-wider">
-                      Moving Averages
-                    </span>
-                  </div>
-                  {MA_PERIODS.map((period) => (
-                    <label class="flex items-center justify-between px-3 py-2 text-sm text-slate-200 hover:bg-brand-border/30 cursor-pointer">
-                      <span class="flex items-center gap-2">
-                        <span
-                          class="w-2.5 h-2.5 rounded-full"
-                          style={{ "background-color": MA_COLORS[period] }}
-                        />
-                        {period} MA
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={maEnabled()[period]}
-                        onChange={() => toggleMa(period)}
-                        class="w-4 h-4 rounded border-brand-border bg-brand-screen"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+        <div class="trade-chart-controls">
+          <ChartControls resolution={resolution()} onResolutionChange={setResolution} />
         </div>
       </div>
 
