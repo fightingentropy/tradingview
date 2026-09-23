@@ -7,10 +7,13 @@ import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/lib/queryKeys';
 import { allProviders } from '@/providers/registry';
 import { usePreferences } from '@/store/preferences';
+import { useWatchlists } from '@/store/watchlists';
 
 export type { MarketsData } from '@/lib/loadMarketCatalog';
-export function loadAllMarkets(): Promise<MarketsData> {
-  return loadMarketCatalog(allProviders(), queryClient.getQueryData<MarketsData>(queryKeys.instruments()));
+export async function loadAllMarkets(): Promise<MarketsData> {
+  const data = await loadMarketCatalog(allProviders(), queryClient.getQueryData<MarketsData>(queryKeys.instruments()));
+  useWatchlists.getState().syncThemes(data.instruments);
+  return data;
 }
 
 /**

@@ -14,7 +14,8 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useLivePriceFeed } from '@/data/useLivePriceFeed';
 import { useMarkets } from '@/data/useMarkets';
 import { instrumentDisplayName } from '@/domain/instrumentDisplay';
-import type { AssetClass, Instrument } from '@/domain/types';
+import type { Instrument } from '@/domain/types';
+import { WATCHLIST_THEMES, watchlistThemeFor } from '@/domain/marketThemes';
 import { hasMarketFeedError } from '@/lib/marketCatalog';
 import { usePreferences, type MarketsFilter } from '@/store/preferences';
 import { useWatchlists } from '@/store/watchlists';
@@ -23,18 +24,15 @@ type Filter = MarketsFilter;
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'crypto', label: 'Crypto' },
-  { key: 'stocks', label: 'Stocks' },
+  ...WATCHLIST_THEMES.map((theme) => ({ key: theme.id, label: theme.name })),
   { key: 'spot', label: 'Spot' },
 ];
-const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'commodity', 'index', 'fx']);
 
 function matchesFilter(i: Instrument, f: Filter): boolean {
   if (i.assetClass === 'outcome') return false;
   if (f === 'all') return true;
-  if (f === 'crypto') return i.assetClass === 'crypto-perp';
   if (f === 'spot') return i.assetClass === 'crypto-spot';
-  return STOCK_CLASSES.has(i.assetClass);
+  return watchlistThemeFor(i) === f;
 }
 
 // Instrument + precomputed lowercased searchable text, so typing doesn't lowercase

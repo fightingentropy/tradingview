@@ -8,7 +8,7 @@ import { mmkvStorage } from '@/lib/mmkv';
 /** USD threshold below which a balance counts as "dust". */
 export const SMALL_BALANCE_USD = 1;
 
-export type MarketsFilter = 'all' | 'crypto' | 'stocks' | 'spot';
+export type MarketsFilter = 'all' | 'spot' | import('@/domain/marketThemes').WatchlistThemeId;
 
 export type AccountTab =
   | 'positions' | 'orders' | 'balances' | 'history'

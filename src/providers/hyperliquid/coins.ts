@@ -1,4 +1,5 @@
-import type { AssetClass, Instrument, Quote } from '@/domain/types';
+import type { Instrument, Quote } from '@/domain/types';
+import { classifyTradfiSymbol } from '@/domain/marketThemes';
 import { toNum } from '@/lib/format';
 import {
   buildOutcomeEvents,
@@ -37,19 +38,6 @@ const SPOT_MIN_DAY_VOLUME = 100_000;
  */
 const SPOT_HIDE = new Set(['USDH', 'USDE', 'USDT0', 'UFART']);
 
-const COMMODITIES = new Set([
-  'GOLD', 'SILVER', 'OIL', 'WTI', 'BRENT', 'NATGAS', 'GAS', 'ALUMINIUM',
-  'COPPER', 'PLATINUM', 'PALLADIUM', 'WHEAT', 'CORN', 'SUGAR',
-]);
-const INDICES = new Set(['XYZ100', 'SPX', 'NDX', 'DJI', 'RUT', 'VIX', 'SPX500', 'US500']);
-
-function classifyXyz(sym: string): AssetClass {
-  if (COMMODITIES.has(sym)) return 'commodity';
-  if (INDICES.has(sym)) return 'index';
-  if (/^[A-Z]{6}$/.test(sym)) return 'fx'; // EURUSD-style
-  return 'equity-perp';
-}
-
 /** Returns null when the context has no finite price, so callers can skip the instrument. */
 function quoteFromCtx(
   instrumentId: string,
@@ -74,10 +62,10 @@ function quoteFromCtx(
   };
 }
 
-/** Build perp instruments + quotes. `dex` undefined = default crypto perps; `xyz` = trade.xyz. */
+/** Keep the exchange's full coin key; identical tickers on different venues stay distinct. */
 export function buildPerps(
   [meta, ctxs]: MetaAndAssetCtxs,
-  dex: 'default' | 'xyz',
+  dex: 'default' | 'xyz' | 'para',
 ): { instruments: Instrument[]; quotes: Record<string, Quote> } {
   const ts = Date.now();
   const instruments: Instrument[] = [];
@@ -88,22 +76,26 @@ export function buildPerps(
     const ctx = ctxs[i];
     if (!ctx) return;
 
-    const isXyz = dex === 'xyz';
-    const display = isXyz ? u.name.replace(/^xyz:/, '') : u.name;
-    // u.name is already `xyz:NAME` for the xyz dex, so `hl:${u.name}` => `hl:xyz:NAME`.
-    const id = isXyz ? `hl:${u.name}` : `hl:perp:${u.name}`;
+    const isNamedDex = dex !== 'default';
+    if (isNamedDex && !u.name.startsWith(`${dex}:`)) return;
+    const display = isNamedDex ? u.name.slice(dex.length + 1) : u.name;
+    const id = isNamedDex ? `hl:${u.name}` : `hl:perp:${u.name}`;
+    const assetClass = isNamedDex ? classifyTradfiSymbol(display) : 'crypto-perp';
+    // Paragon is added specifically for its rates feed, not as a new execution venue.
+    if (dex === 'para' && assetClass !== 'rates') return;
     const quote = quoteFromCtx(id, ctx, ts);
     if (!quote) return; // no finite price → skip the instrument
     const instrument: Instrument = {
       id,
       source: 'hyperliquid',
-      assetClass: isXyz ? classifyXyz(display) : 'crypto-perp',
+      assetClass,
       symbol: display,
-      name: isXyz ? `${display} Perp` : `${u.name} Perpetual`,
-      venue: isXyz ? 'trade.xyz' : 'Hyperliquid',
+      name: isNamedDex ? `${display} Perp` : `${u.name} Perpetual`,
+      venue: dex === 'xyz' ? 'trade.xyz' : dex === 'para' ? 'Paragon' : 'Hyperliquid',
       priceDecimals: perpPriceDecimals(u.szDecimals),
-      coinKey: u.name, // perps use plain name; xyz uses `xyz:NAME`
+      coinKey: u.name,
       quoteCurrency: 'USDC',
+      ...(dex === 'para' ? { supportsPriceAlerts: false as const } : {}),
     };
     instruments.push(instrument);
     quotes[id] = quote;

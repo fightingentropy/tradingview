@@ -15,6 +15,11 @@ const NAMES: Readonly<Record<string, string>> = {
   SP500: 'S&P 500', SPX: 'S&P 500', XYZ100: 'US Tech 100',
   VIX: 'Volatility Index', GOLD: 'Gold', SILVER: 'Silver',
   COPPER: 'Copper', NATGAS: 'Natural gas', PLATINUM: 'Platinum',
+  CL: 'WTI crude oil', BRENTOIL: 'Brent crude oil', PALLADIUM: 'Palladium',
+  JP225: 'Japan 225', KR200: 'Korea 200',
+  '2Y': 'US 2-year Treasury yield', '5Y': 'US 5-year Treasury yield',
+  '10Y': 'US 10-year Treasury yield', '30Y': 'US 30-year Treasury yield',
+  TLT: '20+ Year Treasury Bond ETF', EUR: 'Euro', GBP: 'British pound', JPY: 'Japanese yen',
 };
 
 export function instrumentDisplayName(instrument: Instrument): string {

@@ -4,7 +4,7 @@ import type { Instrument, Quote } from '../domain/types';
 export function marketSegment(instrument: Instrument): string {
   if (instrument.source !== 'hyperliquid') return instrument.source;
   if (instrument.assetClass === 'outcome') return 'hyperliquid:outcome';
-  if (instrument.id.startsWith('hl:xyz:')) return 'hyperliquid:xyz';
+  if (instrument.coinKey.includes(':')) return `hyperliquid:${instrument.coinKey.split(':')[0]}`;
   if (instrument.assetClass === 'crypto-spot') return 'hyperliquid:spot';
   return 'hyperliquid:perp';
 }

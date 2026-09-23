@@ -108,7 +108,7 @@ function SymbolMenuSheet({
 
   const createAlert = useCallback(
     (pct: number, dir: AlertDirection) => {
-      if (!instrument || !canAnchor || anchor == null || !Number.isFinite(pct) || !(Math.round(pct * 100) > 0)) return;
+      if (!instrument || instrument.supportsPriceAlerts === false || !canAnchor || anchor == null || !Number.isFinite(pct) || !(Math.round(pct * 100) > 0)) return;
       add({
         instrumentId: instrument.id,
         symbol: instrument.symbol,
@@ -174,6 +174,7 @@ function SymbolMenuSheet({
             </View>
 
             {/* Alert builder */}
+            {instrument.supportsPriceAlerts !== false ? <>
             <AppText variant="caption" muted style={styles.sectionLabel}>
               PRICE-MOVE ALERT
             </AppText>
@@ -266,6 +267,7 @@ function SymbolMenuSheet({
             ) : null}
 
             {/* Quick actions */}
+            </> : null}
             <View style={styles.actions}>
               <Pressable style={styles.action} onPress={openChart}>
                 <Ionicons name="bar-chart-outline" size={18} color={Colors.text} />

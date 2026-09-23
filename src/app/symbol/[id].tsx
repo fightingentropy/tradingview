@@ -837,8 +837,8 @@ export default function SymbolScreen() {
                 hitSlop={12}
                 onPress={() => openMenu(instrument)}
                 accessibilityRole="button"
-                accessibilityLabel="Set price alert">
-                <Ionicons name="notifications-outline" size={21} color={Colors.textMuted} />
+                accessibilityLabel={instrument?.supportsPriceAlerts === false ? 'Symbol actions' : 'Set price alert'}>
+                <Ionicons name={instrument.supportsPriceAlerts === false ? 'ellipsis-horizontal' : 'notifications-outline'} size={21} color={Colors.textMuted} />
               </Pressable>
               <Pressable hitSlop={12} onPress={() => toggle(activeId, instrument.id)}>
                 <Ionicons

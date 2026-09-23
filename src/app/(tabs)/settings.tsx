@@ -80,7 +80,7 @@ export default function SettingsScreen() {
   );
 
   const onReset = () =>
-    Alert.alert('Reset watchlists?', 'Restores the default Crypto and Stocks lists.', [
+    Alert.alert('Reset watchlists?', 'Restores your default watchlist and theme lists.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reset', style: 'destructive', onPress: resetDefaults },
     ]);

@@ -26,16 +26,18 @@ export const hyperliquidProvider: MarketDataProvider = {
     // the default + xyz dexes are healthy. Treating the independent reads as one
     // Promise.all used to reject the entire provider in that case, leaving the
     // independently-loaded VIX as the only resolvable watchlist row.
-    const [perpResult, spotResult, xyzResult, outcomeResult] = await Promise.allSettled([
+    const [perpResult, spotResult, xyzResult, outcomeResult, ratesResult] = await Promise.allSettled([
       fetchPerpMeta(),
       fetchSpotMeta(),
       fetchPerpMeta(XYZ_DEX),
       fetchOutcomeMeta(),
+      fetchPerpMeta('para'),
     ]);
     const marketErrors: Record<string, string> = {};
     for (const [segment, result] of [
       ['hyperliquid:perp', perpResult], ['hyperliquid:spot', spotResult],
       ['hyperliquid:xyz', xyzResult], ['hyperliquid:outcome', outcomeResult],
+      ['hyperliquid:para', ratesResult],
     ] as const) {
       if (result.status === 'rejected') marketErrors[segment] =
         result.reason instanceof Error ? result.reason.message : 'Market data unavailable';
@@ -53,6 +55,9 @@ export const hyperliquidProvider: MarketDataProvider = {
       xyzResult.status === 'fulfilled'
         ? buildPerps(xyzResult.value, 'xyz')
         : { instruments: [], quotes: {} };
+    const rates = ratesResult.status === 'fulfilled'
+      ? buildPerps(ratesResult.value, 'para')
+      : { instruments: [], quotes: {} };
     const outcomes =
       outcomeResult.status === 'fulfilled' && spotResult.status === 'fulfilled'
         ? buildOutcomes(outcomeResult.value, spotResult.value[1])
@@ -71,9 +76,10 @@ export const hyperliquidProvider: MarketDataProvider = {
       perps.instruments.length === 0 &&
       spots.instruments.length === 0 &&
       xyzs.instruments.length === 0 &&
+      rates.instruments.length === 0 &&
       outcomes.instruments.length === 0
     ) {
-      const reasons = [perpResult, spotResult, xyzResult, outcomeResult]
+      const reasons = [perpResult, spotResult, xyzResult, outcomeResult, ratesResult]
         .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
         .map((result) =>
           result.reason instanceof Error ? result.reason.message : String(result.reason),
@@ -87,10 +93,11 @@ export const hyperliquidProvider: MarketDataProvider = {
       instruments: [
         ...perps.instruments,
         ...xyzs.instruments,
+        ...rates.instruments,
         ...spots.instruments,
         ...outcomes.instruments,
       ],
-      quotes: { ...perps.quotes, ...xyzs.quotes, ...spots.quotes, ...outcomes.quotes },
+      quotes: { ...perps.quotes, ...xyzs.quotes, ...rates.quotes, ...spots.quotes, ...outcomes.quotes },
       outcomeEvents: outcomes.events,
       outcomeMarketsError,
       marketErrors,
@@ -112,8 +119,7 @@ export const hyperliquidProvider: MarketDataProvider = {
 
   subscribePrices(coinKeys: string[], onTicks: (ticks: PriceTick[]) => void) {
     const wanted = new Set(coinKeys);
-    const needsXyz = coinKeys.some((k) => k.startsWith(`${XYZ_DEX}:`));
-    const dexes: (string | undefined)[] = [undefined, ...(needsXyz ? [XYZ_DEX] : [])];
+    const dexes = [...new Set(coinKeys.map((key) => key.includes(':') ? key.split(':')[0] : undefined))];
 
     return subscribeAllMids(dexes, (mids) => {
       const ticks: PriceTick[] = [];

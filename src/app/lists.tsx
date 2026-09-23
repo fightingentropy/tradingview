@@ -7,6 +7,7 @@ import Reanimated, { LinearTransition } from 'react-native-reanimated';
 import { AppText } from '@/components/ui/AppText';
 import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { WATCHLIST_THEMES } from '@/domain/marketThemes';
 import type { Instrument } from '@/domain/types';
 import { useMarkets } from '@/data/useMarkets';
 import { useWatchlists } from '@/store/watchlists';
@@ -68,6 +69,7 @@ export default function ListsScreen() {
       <ScrollView contentContainerStyle={styles.listContent}>
         {lists.map((l) => {
           const isActive = l.id === activeId;
+          const theme = WATCHLIST_THEMES.find((theme) => theme.id === l.theme);
           const row = (
             <Pressable
               onPress={() => onSelect(l.id)}
@@ -78,14 +80,19 @@ export default function ListsScreen() {
                 isActive && styles.rowActive,
                 pressed && !isActive && styles.rowPressed,
               ]}>
-              <View style={styles.nameRow}>
-                <AppText style={[styles.name, isActive && styles.nameActive]} numberOfLines={1}>{l.name}</AppText>
-                <AppText style={styles.count}>{l.symbolIds.filter((id) => !id.startsWith('hl:outcome:')).length}</AppText>
-                {isActive ? <Ionicons name="checkmark" size={17} color={Colors.accent} /> : null}
+              <View style={[styles.icon, isActive && styles.iconActive]}>
+                <Ionicons name={theme?.icon ?? 'star-outline'} size={21} color={isActive ? Colors.accent : Colors.textMuted} />
               </View>
-              <AppText style={[styles.preview, isActive && styles.previewActive]} numberOfLines={1}>
-                {previewFor(l.symbolIds, data?.byId) || 'Empty list'}
-              </AppText>
+              <View style={styles.rowBody}>
+                <View style={styles.nameRow}>
+                  <AppText style={[styles.name, isActive && styles.nameActive]} numberOfLines={1}>{l.name}</AppText>
+                  <AppText style={styles.count}>{l.symbolIds.filter((id) => !id.startsWith('hl:outcome:')).length}</AppText>
+                  {isActive ? <Ionicons name="checkmark" size={17} color={Colors.accent} /> : null}
+                </View>
+                <AppText style={[styles.preview, isActive && styles.previewActive]} numberOfLines={1}>
+                  {previewFor(l.symbolIds, data?.byId) || 'Empty list'}
+                </AppText>
+              </View>
             </Pressable>
           );
           return (
@@ -152,6 +159,9 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     minHeight: 70,
     paddingHorizontal: Spacing.md,
     paddingVertical: 14,
@@ -159,6 +169,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   rowActive: { backgroundColor: Colors.surfaceAlt },
+  rowBody: { flex: 1 },
+  icon: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  iconActive: { backgroundColor: 'rgba(115, 210, 187, 0.10)' },
   deleteAction: {
     width: 88,
     backgroundColor: Colors.down,

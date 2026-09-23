@@ -2,16 +2,23 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { mmkvStorage } from '@/lib/mmkv';
+import type { Instrument } from '@/domain/types';
+import { themedSymbols, WATCHLIST_THEMES, type WatchlistThemeId } from '@/domain/marketThemes';
 
 export interface Watchlist {
   id: string;
   name: string;
   symbolIds: string[];
+  theme?: WatchlistThemeId;
+  /** All automatically discovered members, including any the user later removed. */
+  knownSymbolIds?: string[];
 }
 
 interface WatchlistState {
   lists: Watchlist[];
   activeId: string;
+  addedThemes: WatchlistThemeId[];
+  syncThemes: (instruments: readonly Instrument[]) => void;
   setActive: (id: string) => void;
   createList: (name: string) => string;
   renameList: (id: string, name: string) => void;
@@ -23,6 +30,36 @@ interface WatchlistState {
 }
 
 const freshDefaults = () => DEFAULT_LISTS.map((l) => ({ ...l, symbolIds: [...l.symbolIds] }));
+let latestCatalog: readonly Instrument[] = [];
+
+function withThemes(lists: Watchlist[], addedThemes: WatchlistThemeId[], instruments: readonly Instrument[]) {
+  let nextLists = lists;
+  let nextAdded = addedThemes;
+  for (const theme of WATCHLIST_THEMES) {
+    const members = themedSymbols(instruments, theme.id);
+    if (!members.length) continue;
+    const existing = nextLists.find((list) => list.theme === theme.id);
+    if (!existing) {
+      // Deleting a theme is intentional; future catalog refreshes must not recreate it.
+      if (nextAdded.includes(theme.id)) continue;
+      nextLists = [...nextLists, {
+        id: `theme_${theme.id}`, name: theme.name, theme: theme.id,
+        symbolIds: members, knownSymbolIds: members,
+      }];
+      nextAdded = [...nextAdded, theme.id];
+      continue;
+    }
+    const known = new Set(existing.knownSymbolIds ?? existing.symbolIds);
+    const additions = members.filter((id) => !known.has(id));
+    if (!additions.length) continue;
+    nextLists = nextLists.map((list) => list === existing ? {
+      ...list,
+      symbolIds: [...new Set([...list.symbolIds, ...additions])],
+      knownSymbolIds: [...known, ...additions],
+    } : list);
+  }
+  return { lists: nextLists, addedThemes: nextAdded };
+}
 
 /**
  * Seeded on first launch; ids must match the provider id scheme.
@@ -65,7 +102,15 @@ export const useWatchlists = create<WatchlistState>()(
     (set, get) => ({
       lists: DEFAULT_LISTS,
       activeId: DEFAULT_LISTS[0].id,
-      setActive: (id) => set({ activeId: id }),
+      addedThemes: [],
+      syncThemes: (instruments) => {
+        latestCatalog = instruments;
+        const current = get();
+        const next = withThemes(current.lists, current.addedThemes, instruments);
+        // Price refreshes must not rewrite the saved lists or trigger row rerenders.
+        if (next.lists !== current.lists) set(next);
+      },
+      setActive: (id) => { if (get().lists.some((list) => list.id === id)) set({ activeId: id }); },
       createList: (name) => {
         const id = `wl_${name.toLowerCase().replace(/\s+/g, '-')}_${get().lists.length}`;
         set((s) => ({ lists: [...s.lists, { id, name, symbolIds: [] }], activeId: id }));
@@ -75,6 +120,7 @@ export const useWatchlists = create<WatchlistState>()(
         set((s) => ({ lists: s.lists.map((l) => (l.id === id ? { ...l, name } : l)) })),
       deleteList: (id) =>
         set((s) => {
+          if (s.lists.length <= 1) return s;
           const lists = s.lists.filter((l) => l.id !== id);
           const activeId = s.activeId === id ? (lists[0]?.id ?? '') : s.activeId;
           return { lists, activeId };
@@ -96,17 +142,18 @@ export const useWatchlists = create<WatchlistState>()(
         get().lists.find((l) => l.id === listId)?.symbolIds.includes(instrumentId) ?? false,
       reorder: (listId, symbolIds) =>
         set((s) => ({ lists: s.lists.map((l) => (l.id === listId ? { ...l, symbolIds } : l)) })),
-      resetDefaults: () => set({ lists: freshDefaults(), activeId: DEFAULT_LISTS[0].id }),
+      resetDefaults: () => set({ ...withThemes(freshDefaults(), [], latestCatalog), activeId: DEFAULT_LISTS[0].id }),
     }),
     {
       name: 'watchlists-v3',
       storage: createJSONStorage(() => mmkvStorage),
-      version: 1,
+      version: 2,
       // Coerce a stale/garbage persisted shape into a valid one: `lists` must be
       // an array of lists, each with a string `id`/`name` and an array `symbolIds`.
       // Malformed entries are dropped so consumers can read `list.symbolIds` safely.
       migrate: (persisted) => {
         const s = (persisted ?? {}) as Partial<WatchlistState>;
+        const validThemes = new Set<string>(WATCHLIST_THEMES.map((theme) => theme.id));
         const lists = (Array.isArray(s.lists) ? s.lists : [])
           .filter((l): l is Watchlist => !!l && typeof l.id === 'string' && typeof l.name === 'string')
           .map((l) => ({
@@ -114,13 +161,21 @@ export const useWatchlists = create<WatchlistState>()(
             symbolIds: Array.isArray(l.symbolIds)
               ? l.symbolIds.filter((x): x is string => typeof x === 'string')
               : [],
+            theme: l.theme && validThemes.has(l.theme) ? l.theme : undefined,
+            knownSymbolIds: Array.isArray(l.knownSymbolIds)
+              ? l.knownSymbolIds.filter((x): x is string => typeof x === 'string')
+              : undefined,
           }));
         const safeLists = lists.length ? lists : freshDefaults();
         const activeId =
           typeof s.activeId === 'string' && safeLists.some((l) => l.id === s.activeId)
             ? s.activeId
             : safeLists[0].id;
-        return { ...s, lists: safeLists, activeId } as WatchlistState;
+        const addedThemes = [...new Set([
+          ...(Array.isArray(s.addedThemes) ? s.addedThemes.filter((id) => validThemes.has(id)) : []),
+          ...safeLists.flatMap((list) => list.theme ? [list.theme] : []),
+        ])];
+        return { ...s, lists: safeLists, activeId, addedThemes } as WatchlistState;
       },
     },
   ),

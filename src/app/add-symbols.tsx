@@ -11,28 +11,23 @@ import { Screen } from '@/components/ui/Screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { instrumentDisplayName } from '@/domain/instrumentDisplay';
 import type { AssetClass, Instrument } from '@/domain/types';
+import { WATCHLIST_THEMES, watchlistThemeFor, type WatchlistThemeId } from '@/domain/marketThemes';
 import { useMarkets } from '@/data/useMarkets';
 import { useWatchlists } from '@/store/watchlists';
 
-type Filter = 'all' | 'stocks' | 'crypto' | 'forex' | 'index';
+type Filter = 'all' | 'spot' | WatchlistThemeId;
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'stocks', label: 'Stocks' },
-  { key: 'crypto', label: 'Crypto' },
-  { key: 'forex', label: 'Forex' },
-  { key: 'index', label: 'Index' },
+  ...WATCHLIST_THEMES.map((theme) => ({ key: theme.id, label: theme.name })),
+  { key: 'spot', label: 'Spot' },
 ];
-const STOCK_CLASSES = new Set<AssetClass>(['equity-perp', 'commodity']);
 
 function matchesFilter(i: Instrument, f: Filter): boolean {
   if (i.assetClass === 'outcome') return false;
   if (f === 'all') return true;
-  if (f === 'stocks') return STOCK_CLASSES.has(i.assetClass);
-  if (f === 'crypto') return i.assetClass === 'crypto-perp' || i.assetClass === 'crypto-spot';
-  if (f === 'forex') return i.assetClass === 'fx';
-  if (f === 'index') return i.assetClass === 'index';
-  return true;
+  if (f === 'spot') return i.assetClass === 'crypto-spot';
+  return watchlistThemeFor(i) === f;
 }
 
 const TYPE_LABEL: Record<AssetClass, string> = {
@@ -42,6 +37,7 @@ const TYPE_LABEL: Record<AssetClass, string> = {
   fx: 'forex',
   commodity: 'commodity',
   index: 'index',
+  rates: 'rates',
   outcome: 'outcome',
 };
 

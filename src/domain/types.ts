@@ -7,6 +7,7 @@ export type AssetClass =
   | 'equity-perp'
   | 'fx'
   | 'commodity'
+  | 'rates'
   | 'index';
 
 /** A tradable market shown in lists and on the chart screen. */
@@ -27,6 +28,8 @@ export interface Instrument {
   coinKey: string;
   /** Quote currency, e.g. `USD`, `USDC`. */
   quoteCurrency?: string;
+  /** False for quote-only venues not supported by the always-on alert monitor. */
+  supportsPriceAlerts?: false;
 }
 
 export interface Quote {
