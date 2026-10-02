@@ -16,6 +16,15 @@ interactive login and does not require the Codex desktop app or the laptop.
   maximum per day for ordinary failures. Usage-limit failures retry hourly so a
   same-day quota reset recovers automatically; they never regenerate an already
   published edition. The last published edition remains online.
+- A validated edition is saved before publication. Cloudflare or public-verification
+  failures retry that exact edition hourly for the rest of its London day, including
+  after a restart, without spending more research attempts. Yesterday's candidate
+  is never republished as today's brief.
+- KV operations retry transient authorization, network, rate-limit and server
+  failures after 1, 3 and 10 seconds. A 401 first runs Wrangler's supported auth
+  check so its renewable sign-in can recover. Only an explicit missing-key
+  response is treated as absent content; authentication failures cannot initialize
+  or replace the index.
 - A loopback-only process lock prevents overlapping research. A separate lock
   serializes publication. The OS releases both locks after termination/reboot.
 - Research has a 40-minute limit. Publication runs through the existing validated
@@ -29,6 +38,8 @@ the previous publication. It first runs the maintained `scripts/ct-pulse.mjs`
 collector, which overwrites only the latest CT source pack. It then runs Codex
 with live web search and a scratch workspace. The model returns a structured
 headline/Markdown result; the outer runner validates and publishes it.
+Probability validation reads the Base, Alternative and Tail case labels; market
+yields and returns inside their explanations do not count as scenario probabilities.
 
 The service reuses the Mac mini's Codex and Bird sign-ins. Wrangler has its own
 renewable Mac mini sign-in for account/user reads and KV storage. Credentials
@@ -69,7 +80,8 @@ the scheduled job does not pull or execute new repository code automatically.
 ## Evidence and troubleshooting
 
 State and verified candidates: `~/Library/Application Support/TradingView Daily Brief/`.
-`status.json` records the publication date, attempts, host and latest result;
+`status.json` records the publication date, attempts, host, latest result and any
+validated candidate awaiting publication, plus the next retry time;
 `verification.json` records the last successful research-only test.
 Logs: `~/Library/Logs/TradingView Daily Brief/service.log` and `service.error.log`.
 Check the exact public index and dated content at

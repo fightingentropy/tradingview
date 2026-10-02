@@ -37,7 +37,17 @@ export function validateFreshBrief(title: string, markdown: string, now = new Da
   const words = brief.raw.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').split(/\s+/).length;
   if (words < 700 || words > 1_100) throw new Error(`Standard brief length is 700–1,000 words (received ${words}).`);
   const bottomLine = brief.raw.split(/^## (?:\d+[.)]\s*)?PM Bottom Line\s*$/im)[1]?.split(/^## /m)[0] ?? '';
-  const probabilities = [...bottomLine.matchAll(/\b(\d{1,3})%/g)].map((match) => Number(match[1]));
-  if (probabilities.length !== 3 || probabilities.reduce((sum, value) => sum + value, 0) !== 100) throw new Error('PM Bottom Line needs three scenario probabilities totalling 100%.');
+  // Only the probability attached to each scenario label counts. Its explanation
+  // can legitimately contain yields, returns and other percentages.
+  const scenarios = bottomLine.split('\n').flatMap((line) => {
+    const label = line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '').replace(/\*\*|__/g, '').trim();
+    const match = label.match(/^(Base|Alternative|Tail)\s+case\s*(?:[—–:-]\s*)?\(?(\d{1,3}(?:\.\d+)?)\s*%/i);
+    return match ? [{ name: match[1]!.toLowerCase(), probability: Number(match[2]) }] : [];
+  });
+  if (scenarios.length !== 3 || new Set(scenarios.map(({ name }) => name)).size !== 3 ||
+      scenarios.some(({ probability }) => probability > 100) ||
+      Math.abs(scenarios.reduce((sum, { probability }) => sum + probability, 0) - 100) > 1e-9) {
+    throw new Error('PM Bottom Line needs Base, Alternative and Tail case probabilities totalling 100%.');
+  }
   return brief;
 }

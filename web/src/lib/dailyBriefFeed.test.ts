@@ -19,6 +19,22 @@ describe('daily publishing validation', () => {
     expect(() => validateFreshBrief(payload.title, markdown.replace('Regime Assessment', 'Missing section'), now)).toThrow('eight');
     expect(() => validateFreshBrief(payload.title, markdown.replace('55%', '56%'), now)).toThrow('100%');
   });
+  test('scenario explanations may contain yields and returns without changing the probabilities', () => {
+    const withMarketLevels = markdown.replace('uneven consolidation.', 'uneven consolidation with the 10-year above 5%, the 30-year at 5.225%, and a 20% drawdown risk.');
+    expect(validateFreshBrief(payload.title, withMarketLevels, now).id).toBe('2026-09-16');
+  });
+  test('accepts scenario label punctuation, spacing and fractional probabilities', () => {
+    const varied = markdown.replace('Base case — 55%', 'Base case (55.5 %)')
+      .replace('Alternative case — 25%', 'Alternative case: 24.5%')
+      .replace('Tail case — 20%', 'Tail case – 20%');
+    expect(validateFreshBrief(payload.title, varied, now).id).toBe('2026-09-16');
+  });
+  test('rejects duplicate cases and never substitutes a market yield for a missing probability', () => {
+    expect(() => validateFreshBrief(payload.title, markdown.replace('Alternative case', 'Base case'), now)).toThrow('probabilities');
+    const missing = markdown.replace('Base case — 55%:', 'Base case: the 10-year reaches 55%.');
+    expect(() => validateFreshBrief(payload.title, missing, now)).toThrow('probabilities');
+    expect(() => validateFreshBrief(payload.title, markdown.replace('55%', '-55%'), now)).toThrow('probabilities');
+  });
   test('rejects oversized editions and index/content mismatches', () => {
     const brief = parseBriefPayload(payload);
     expect(() => parseBriefPayload({ ...payload, markdown: 'x'.repeat(60_001) })).toThrow('Invalid');
