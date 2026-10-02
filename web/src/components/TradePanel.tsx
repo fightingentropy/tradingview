@@ -1,3 +1,4 @@
+import { usePageActive } from "./PageView";
 import {
   Component,
   For,
@@ -85,6 +86,7 @@ const loadHeight = () => {
 };
 
 const TradePanel: Component = () => {
+  const pageActive = usePageActive();
   const [activeTab, setTab] = createSignal<AccountTab>(loadTab());
   const setActiveTab = (tab: AccountTab) => {
     setTab(tab);
@@ -163,10 +165,14 @@ const TradePanel: Component = () => {
   });
 
   createEffect(() => {
-    const tab = activeTab();
+    activeTab();
     setSideFilter("all");
     setMarketFilter("all");
-    if (isHyperliquidExecution() && isAccountActivityTab(tab)) {
+  });
+
+  createEffect(() => {
+    const tab = activeTab();
+    if (pageActive() && isHyperliquidExecution() && isAccountActivityTab(tab)) {
       untrack(() => void refreshHyperliquidActivity());
       const refreshTimer = window.setInterval(
         () => untrack(() => void refreshHyperliquidActivity()),

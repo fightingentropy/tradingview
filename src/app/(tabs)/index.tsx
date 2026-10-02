@@ -347,7 +347,7 @@ export default function WatchlistScreen() {
       ) : null}
 
       {instruments.length > 0 && hasMarketFeedError(data?.marketErrors, isError || isPaused) ? <MarketFeedNotice busy={isFetching} onRetry={() => void refetch()} /> : null}
-      {isLoading || isRestoring ? (
+      {(isLoading || isRestoring) && !data ? (
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading watchlist" />
         </View>

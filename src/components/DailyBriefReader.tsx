@@ -64,7 +64,7 @@ export function DailyBriefReader() {
       <View style={styles.articleHeader}>
         {status !== 'today' && <AppText style={styles.status}>Latest available edition</AppText>}
         <AppText accessibilityRole="header" style={styles.headline}>{brief.title}</AppText>
-        {status !== 'today' && <AppText style={styles.cutoffNote}>A newer brief has not been published yet. Open the information button for data times.</AppText>}
+        {status !== 'today' && <AppText style={styles.cutoffNote}>Showing the latest loaded edition. Open the information button for data times.</AppText>}
         {metadataOpen && <View testID="brief-metadata" style={styles.metadata}>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>GENERATED</AppText><AppText style={styles.metadataValue}>{brief.generated.slice(11)} · Europe/London</AppText></View>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>MARKET STATE</AppText><AppText style={styles.metadataValue}>{brief.marketState}</AppText></View>

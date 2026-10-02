@@ -5,9 +5,33 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { QueryClient } from '@tanstack/react-query';
 import { DisplayReadCache, displayReadCache, acceptAccountSnapshot } from '../src/lib/hyperliquid/displayReadCache.ts';
-import { createQueryCheckpoint, publicCacheSnapshot } from '../src/lib/queryPersistence.ts';
+import { createQueryCheckpoint, publicCacheSnapshot, restoreQuerySnapshot, QUERY_CACHE_BUSTER } from '../src/lib/queryPersistence.ts';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('saved public values are available synchronously to the first screen, even after a failed refresh', async () => {
+  const options = { defaultOptions: { queries: { retry: false, gcTime: Infinity } } };
+  const source = new QueryClient(options), restored = new QueryClient(options);
+  try {
+    source.setQueryData(['instruments'], { quotes: { BTC: { last: 100 } } });
+    await assert.rejects(source.fetchQuery({ queryKey: ['instruments'], queryFn: async () => { throw new Error('offline'); } }));
+    const saved = JSON.stringify({ timestamp: 1_000, buster: QUERY_CACHE_BUSTER, clientState: publicCacheSnapshot(source) });
+    assert.equal(restoreQuerySnapshot(restored, saved, 60_000, 2_000), true);
+    assert.equal(restored.getQueryData(['instruments']).quotes.BTC.last, 100);
+    assert.equal(restored.getQueryState(['instruments']).fetchStatus, 'idle');
+  } finally { source.clear(); restored.clear(); }
+});
+
+test('expired, incompatible and corrupt snapshots never seed a screen', () => {
+  const client = new QueryClient();
+  try {
+    for (const saved of ['invalid JSON', 'null', JSON.stringify({ timestamp: 1, buster: QUERY_CACHE_BUSTER, clientState: { queries: [] } }),
+      JSON.stringify({ timestamp: 1000, buster: 'old', clientState: { queries: [] } })]) {
+      assert.equal(restoreQuerySnapshot(client, saved, 500, 1000), false);
+      assert.equal(client.getQueryCache().getAll().length, 0);
+    }
+  } finally { client.clear(); }
+});
 
 test('display reads share HTTP, separate networks/accounts and keep newer streamed state', async () => {
   const cache = new DisplayReadCache();

@@ -1,3 +1,4 @@
+import { usePageActive } from "./PageView";
 import { subscribeHyperliquid } from "../lib/hyperliquidStreams";
 import {
   Component,
@@ -53,6 +54,7 @@ const CANDLE_LOAD_DEBOUNCE_MS = 0;
 const CHART_GRID_COLOR = "rgba(38, 42, 47, 0.6)";
 
 const SymbolChart: Component<SymbolChartProps> = (props) => {
+  const pageActive = usePageActive();
   let containerRef: HTMLDivElement | undefined;
   let chart: IChartApi | undefined;
   let candleSeries: ISeriesApi<"Candlestick"> | undefined;
@@ -485,7 +487,7 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
     const symbol = props.symbol;
     const resolution = props.resolution;
     const ready = chartReady();
-    const visible = isTabVisible();
+    const visible = pageActive() && isTabVisible();
     const provider = dataProvider();
     hyperliquidDataNetwork();
     // Track marketType so the stream restarts on perp/spot switch and candles

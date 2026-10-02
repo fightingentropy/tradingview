@@ -202,7 +202,7 @@ export default function AddSymbolsScreen() {
         </View>
       ) : null}
 
-      {isLoading || isRestoring ? (
+      {(isLoading || isRestoring) && !data ? (
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} />
         </View>

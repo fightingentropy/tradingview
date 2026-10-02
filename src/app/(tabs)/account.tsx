@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 import { MarginSheet } from '@/components/MarginSheet';
 import { OrderRecoveryNotice } from '@/components/OrderRecoveryNotice';
@@ -121,7 +121,7 @@ export default function AccountScreen() {
   const tab = usePreferences((s) => s.accountTab);
   const setTab = usePreferences((s) => s.setAccountTab);
   const accountQuery = useHlAccount();
-  const { data: account, isLoading, isFetching, refetch } = accountQuery;
+  const { data: account, isFetching, refetch } = accountQuery;
   const identityQuery = useTradingIdentity();
   const { data: tradingIdentity } = identityQuery;
   const executionIdentity = signedIdentityBinding(tradingIdentity);
@@ -154,13 +154,13 @@ export default function AccountScreen() {
   const activityQuery = useHlAccountActivity(tab === 'transfers');
   const {
     data: fundingHistory,
-    isLoading: fundingHistoryLoading,
+    isPending: fundingHistoryLoading,
     isError: fundingHistoryError,
     refetch: refetchFundingHistory,
   } = useHlUserFunding(tab === 'funding');
   const {
     data: interestHistory,
-    isLoading: interestHistoryLoading,
+    isPending: interestHistoryLoading,
     isError: interestHistoryError,
     refetch: refetchInterestHistory,
   } = useHlBorrowLendInterest(tab === 'interest');
@@ -953,41 +953,6 @@ export default function AccountScreen() {
     );
   }
 
-  if ((isLoading || identityQuery.isPending) && !account) {
-    return (
-      <Screen>
-        <View style={styles.center}>
-          <ActivityIndicator color={Colors.accent} />
-        </View>
-      </Screen>
-    );
-  }
-
-  if (!account) {
-    return (
-      <Screen>
-        <View style={styles.center}>
-          <OrderRecoveryNotice network={network} address={tradingIdentity?.accountAddress} />
-          <AppText muted>{identityQuery.isError ? 'Couldn’t verify account identity' : 'Couldn’t load account'}</AppText>
-          <Pressable
-            style={styles.retryBtn}
-            onPress={() => { void (identityQuery.isError ? identityQuery.refetch() : refetch()); }}
-            disabled={isFetching}
-            accessibilityState={{ disabled: isFetching, busy: isFetching }}>
-            {isFetching ? (
-              <ActivityIndicator size="small" color={Colors.accent} />
-            ) : (
-              <AppText variant="label" color={Colors.accent}>
-                Retry
-              </AppText>
-            )}
-          </Pressable>
-        </View>
-      </Screen>
-    );
-  }
-
-
   return (
     <Screen>
       <ScrollView testID="account-screen" contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -1001,10 +966,13 @@ export default function AccountScreen() {
         ) : null}
 
         <OrderRecoveryNotice network={network} address={tradingIdentity?.accountAddress} />
-        <AccountReadStatus label="account" query={accountQuery} freshForMs={15_000} />
+        {identityQuery.isError ? <AccountReadStatus label="account identity" query={identityQuery} freshForMs={Infinity} /> : accountQuery.isError || account ? <AccountReadStatus label="account" query={accountQuery} freshForMs={15_000} /> : null}
 
-        <AccountSummary account={account} address={tradingIdentity?.accountAddress ?? address} refreshing={isFetching} onRefresh={() => { void refetch(); void ordersQuery.refetch(); }} />
-        {openOrders !== undefined ? <RiskStrip compact summary={riskSummary!} hidden={privacyMode} /> : null}
+        <AccountSummary account={account} address={tradingIdentity?.accountAddress ?? address} refreshing={isFetching || identityQuery.isFetching} onRefresh={() => {
+          if (!tradingIdentity) { void identityQuery.refetch(); return; }
+          void refetch(); void ordersQuery.refetch();
+        }} />
+        {riskSummary && openOrders !== undefined ? <RiskStrip compact summary={riskSummary} hidden={privacyMode} /> : null}
         {ordersQuery.isError ? <AccountReadStatus label="orders" query={ordersQuery} freshForMs={20_000} /> : null}
 
         {/* Positions / Orders / Balances / History tabs */}
@@ -1015,7 +983,7 @@ export default function AccountScreen() {
             contentContainerStyle={styles.tabBar}>
             <TabButton
               label="Positions"
-              count={account.positions.length}
+              count={account?.positions.length}
               active={tab === 'positions'}
               onPress={() => setTab('positions')}
             />
@@ -1027,7 +995,7 @@ export default function AccountScreen() {
             />
             <TabButton
               label="Balances"
-              count={account.spotBalancesLoaded ? visibleBalances.length : undefined}
+              count={account?.spotBalancesLoaded ? visibleBalances.length : undefined}
               active={tab === 'balances'}
               onPress={() => setTab('balances')}
             />
@@ -1055,7 +1023,7 @@ export default function AccountScreen() {
         </View>
 
         {tab === 'positions' ? (
-          sortedPositions.length === 0 ? (
+          !account ? <AccountReadStatus label="positions" query={identityQuery.isError ? identityQuery : accountQuery} freshForMs={15_000} /> : sortedPositions.length === 0 ? (
             <View style={styles.noPositions}>
               <AppText variant="body" muted>
                 No open positions
@@ -1113,7 +1081,7 @@ export default function AccountScreen() {
           )}
           </>
         ) : tab === 'balances' ? (
-          account.spotBalancesLoaded === false ? <HistoryError label="balances" detail={account.spotBalancesError ?? undefined} onRetry={() => { void refetch(); }} /> : visibleBalances.length > 0 ? (
+          !account ? <AccountReadStatus label="balances" query={identityQuery.isError ? identityQuery : accountQuery} freshForMs={15_000} /> : account.spotBalancesLoaded === false ? <HistoryError label="balances" detail={account.spotBalancesError ?? undefined} onRetry={() => { void refetch(); }} /> : visibleBalances.length > 0 ? (
             <View style={styles.list}>
               {visibleBalances.map((b) => (
                 <SpotCard
@@ -1163,7 +1131,7 @@ export default function AccountScreen() {
         ) : tab === 'funding' ? (
           fundingHistoryLoading && !fundingHistory ? (
             <HistoryLoading />
-          ) : fundingHistoryError ? (
+          ) : fundingHistoryError && !fundingHistory ? (
             <HistoryError label="funding history" onRetry={() => refetchFundingHistory()} />
           ) : (fundingHistory?.length ?? 0) === 0 ? (
             <HistoryEmpty
@@ -1177,6 +1145,7 @@ export default function AccountScreen() {
                 title="Funding history"
                 detail="Positive payments were received; negative payments were paid."
               />
+              {fundingHistoryError ? <HistoryError label="funding updates" onRetry={() => { void refetchFundingHistory(); }} /> : null}
               {fundingHistory!.map((row) => (
                 <FundingHistoryCard key={row.key} row={row} hidden={privacyMode} />
               ))}
@@ -1205,7 +1174,7 @@ export default function AccountScreen() {
           </>
         ) : interestHistoryLoading && !interestHistory ? (
           <HistoryLoading />
-        ) : interestHistoryError ? (
+        ) : interestHistoryError && !interestHistory ? (
           <HistoryError label="interest history" onRetry={() => refetchInterestHistory()} />
         ) : (interestHistory?.length ?? 0) === 0 ? (
           <HistoryEmpty
@@ -1219,6 +1188,7 @@ export default function AccountScreen() {
               title="Interest history"
               detail="Borrow interest is paid; idle supplied balances can earn interest."
             />
+            {interestHistoryError ? <HistoryError label="interest updates" onRetry={() => { void refetchInterestHistory(); }} /> : null}
             {interestHistory!.map((row) => (
               <InterestHistoryCard key={row.key} row={row} hidden={privacyMode} />
             ))}
@@ -1318,7 +1288,7 @@ export default function AccountScreen() {
         removalAllowed={
           marginTarget ? meta?.[marginTarget.coin]?.marginMode !== 'strictIsolated' : false
         }
-        available={account.freeCollateral}
+        available={account?.freeCollateral ?? 0}
         side={marginTarget?.side ?? 'long'}
         markPx={marginTarget?.markPx ?? 0}
         liquidationPx={marginTarget?.liquidationPx ?? null}

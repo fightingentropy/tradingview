@@ -1,4 +1,5 @@
-import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from 'solid-js';
+import { usePageActive } from "./PageView";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type Component } from 'solid-js';
 import { editionStatus, formatBriefDate, type DailyBrief } from '../lib/dailyBrief';
 import { parseBriefIndex, parseBriefPayload } from '../lib/dailyBriefFeed';
 import './Brief.css';
@@ -11,6 +12,7 @@ const ChevronDown: Component = () => (
 );
 
 const Brief: Component = () => {
+  const pageActive = usePageActive();
   let scroller!: HTMLElement;
   const headings = new Map<string, HTMLHeadingElement>();
   const [edition, setEdition] = createSignal<DailyBrief>();
@@ -49,8 +51,7 @@ const Brief: Component = () => {
       const latest = index.editions[0]!;
       const current = edition();
       if (!current || current.id !== latest.id || current.title !== latest.title || current.generated !== latest.generated) {
-        // Never substitute a bundled or older edition when the latest cannot load.
-        setEdition(undefined);
+        // Replace the displayed edition only after its successor validates.
         const next = parseBriefPayload(await fetchJson(`/api/daily-briefs/${latest.id}`), latest);
         if (disposed) return;
         headings.clear();
@@ -62,7 +63,7 @@ const Brief: Component = () => {
       }
       setFeedError('');
     } catch {
-      if (!disposed) setFeedError(edition() ? 'Couldn’t refresh this brief.' : 'Brief unavailable. Please try again.');
+      if (!disposed) setFeedError(edition() ? 'Couldn’t refresh · Showing saved edition.' : 'Brief unavailable. Please try again.');
     } finally {
       feedBusy = false;
       if (!disposed) setLoading(false);
@@ -71,10 +72,9 @@ const Brief: Component = () => {
 
   onMount(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
-    const refresh = () => { if (document.visibilityState === 'visible') void refreshEdition(); };
+    const refresh = () => { if (pageActive() && document.visibilityState === 'visible') void refreshEdition(); };
     const feedTimer = window.setInterval(refresh, 5 * 60_000);
     document.addEventListener('visibilitychange', refresh);
-    void refreshEdition();
     onCleanup(() => {
       disposed = true;
       window.clearInterval(timer);
@@ -83,6 +83,8 @@ const Brief: Component = () => {
       for (const request of requests) request.abort();
     });
   });
+
+  createEffect(() => { if (pageActive()) void refreshEdition(); });
 
   const updateReadingPosition = () => {
     const currentBrief = edition();
@@ -146,7 +148,7 @@ const Brief: Component = () => {
             <div class="brief-article-header">
               <div class="brief-publication-line"><span classList={{ 'brief-status': true, 'brief-status-today': status() === 'today' }}>{status() === 'today' ? "Today's edition" : 'Latest available edition'}</span></div>
               <h2 id="brief-title">{brief().title}</h2>
-              <Show when={status() !== 'today'}><p class="brief-cutoff-note">A newer brief has not been published yet. Open About this brief for data times.</p></Show>
+              <Show when={status() !== 'today'}><p class="brief-cutoff-note">Showing the latest loaded edition. Open About this brief for data times.</p></Show>
               <details class="brief-about">
                 <summary><span>About this brief</span><ChevronDown /></summary>
                 <dl class="brief-metadata">

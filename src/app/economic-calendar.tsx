@@ -362,8 +362,8 @@ export default function EconomicCalendarScreen() {
     [selectedDateKey],
   );
   const week = useMemo(() => weekForDate(selectedDate), [selectedDate]);
-  const { data = [], isLoading, isError, error, refetch, isRefetching } =
-    useEconomicCalendar(selectedDateKey);
+  const query = useEconomicCalendar(selectedDateKey);
+  const { data = [], isPending, isError, error, refetch, isRefetching } = query;
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30_000);
@@ -493,28 +493,6 @@ export default function EconomicCalendarScreen() {
           styles.content,
           { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 52 : 0) },
         ]}>
-        {isLoading ? (
-          <>
-            {header}
-            <View style={styles.center}>
-              <ActivityIndicator color={NewsColors.text} />
-            </View>
-          </>
-        ) : isError ? (
-          <>
-            {header}
-            <View style={styles.center}>
-              <Ionicons name="calendar-outline" size={32} color={NewsColors.textMuted} />
-              <AppText style={styles.stateTitle}>Calendar unavailable</AppText>
-              <AppText style={styles.stateBody}>
-                {error instanceof Error ? error.message : 'Could not load economic events.'}
-              </AppText>
-              <Pressable onPress={() => void refetch()} style={styles.retry}>
-                <AppText style={styles.retryText}>Try again</AppText>
-              </Pressable>
-            </View>
-          </>
-        ) : (
           <FlatList
             data={listItems}
             keyExtractor={(item) =>
@@ -523,9 +501,19 @@ export default function EconomicCalendarScreen() {
             renderItem={({ item }) =>
               item.type === 'now' ? <NowMarker now={now} /> : <EventRow event={item.event} />
             }
-            ListHeaderComponent={header}
+            ListHeaderComponent={<>{header}{isError && query.data !== undefined ? (
+              <Pressable onPress={() => void refetch()} style={styles.retry}>
+                <AppText style={styles.retryText}>Couldn’t refresh · Showing saved events · Retry</AppText>
+              </Pressable>
+            ) : null}</>}
             ListEmptyComponent={
-              <View style={styles.empty}>
+              isPending ? <View style={styles.center}><ActivityIndicator color={NewsColors.text} accessibilityLabel="Loading calendar events" /></View> :
+              isError && query.data === undefined ? <View style={styles.center}>
+                <Ionicons name="calendar-outline" size={32} color={NewsColors.textMuted} />
+                <AppText style={styles.stateTitle}>Calendar unavailable</AppText>
+                <AppText style={styles.stateBody}>{error instanceof Error ? error.message : 'Could not load economic events.'}</AppText>
+                <Pressable onPress={() => void refetch()} style={styles.retry}><AppText style={styles.retryText}>Try again</AppText></Pressable>
+              </View> : <View style={styles.empty}>
                 <Ionicons name="calendar-clear-outline" size={30} color={NewsColors.textMuted} />
                 <AppText style={styles.stateTitle}>No matching events</AppText>
                 <AppText style={styles.stateBody}>
@@ -544,7 +532,6 @@ export default function EconomicCalendarScreen() {
               />
             }
           />
-        )}
       </View>
       {filtersVisible ? (
         <CalendarFilters

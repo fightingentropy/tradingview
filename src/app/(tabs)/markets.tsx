@@ -194,7 +194,7 @@ export default function MarketsScreen() {
       </View>
 
       {feedUnavailable && results.length > 0 ? <MarketFeedNotice busy={isFetching} onRetry={() => void refetch()} /> : null}
-      {isLoading || isRestoring ? (
+      {(isLoading || isRestoring) && !data ? (
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} />
         </View>

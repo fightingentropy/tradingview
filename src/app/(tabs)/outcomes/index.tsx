@@ -202,7 +202,7 @@ export default function OutcomesScreen() {
   const openEvent = (event: OutcomeEvent) =>
     router.push({ pathname: '/outcomes/[id]' as never, params: { id: event.id } });
 
-  const loading = isLoading || isRestoring;
+  const loading = (isLoading || isRestoring) && !data;
   const outcomeError = data?.outcomeMarketsError ?? null;
 
   return (

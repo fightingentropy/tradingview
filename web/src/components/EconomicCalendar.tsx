@@ -1,3 +1,4 @@
+import { usePageActive } from "./PageView";
 import {
   For,
   Show,
@@ -171,6 +172,7 @@ type WeekData = {
 };
 
 const EconomicCalendar: Component = () => {
+  const pageActive = usePageActive();
   const countryOptions = calendarCountries.map((country) => ({
     value: country.code,
     label: country.name,
@@ -237,6 +239,9 @@ const EconomicCalendar: Component = () => {
         };
       }
     },
+    // A resolved empty seed keeps the page's layout outside the route Suspense
+    // fallback. Only the events area waits for the first week's values.
+    { initialValue: { week: "", events: [] } as WeekData },
   );
   const data = createMemo(() =>
     calendar.latest?.week === week() ? calendar.latest : undefined,
@@ -318,7 +323,7 @@ const EconomicCalendar: Component = () => {
     onCleanup(() => viewport.removeEventListener("change", updateViewport));
     const refreshCurrentWeek = () => {
       setNow(new Date());
-      if (!document.hidden && week() === currentWeek() && !calendar.loading)
+      if (pageActive() && !document.hidden && week() === currentWeek() && !calendar.loading)
         void refetch();
     };
     const timer = window.setInterval(refreshCurrentWeek, 60_000);

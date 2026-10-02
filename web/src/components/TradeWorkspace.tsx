@@ -1,3 +1,4 @@
+import { usePageActive } from "./PageView";
 import { type Component, Show, createSignal, onCleanup, onMount } from "solid-js";
 import MarketInfo from "./MarketInfo";
 import DeferredTradingViewChart from "./DeferredTradingViewChart";
@@ -19,6 +20,7 @@ const DEFAULT_WATCHLIST_WIDTH = 260;
 const MIN_WATCHLIST_WIDTH = 200;
 
 const TradeWorkspace: Component = () => {
+  const pageActive = usePageActive();
   const [isTabVisible, setIsTabVisible] = createSignal(!document.hidden);
   const [mobileTradePane, setMobileTradePane] = createSignal<
     "chart" | "book" | "order"
@@ -64,6 +66,7 @@ const TradeWorkspace: Component = () => {
   };
 
   const handleGlobalKeyDown = (event: KeyboardEvent) => {
+    if (!pageActive()) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
       event.preventDefault();
       setShowWatchlist((prev) => !prev);
@@ -122,10 +125,10 @@ const TradeWorkspace: Component = () => {
 
   // Start live price polling
   useLivePrices({
-    enabled: () => isTabVisible(),
+    enabled: () => pageActive() && isTabVisible(),
   });
 
-  useOrderBookFeed(isTabVisible);
+  useOrderBookFeed(() => pageActive() && isTabVisible());
 
   return (
     <>

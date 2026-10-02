@@ -1,5 +1,6 @@
 // The native and web readers share the same publication and safe Markdown parser.
 import { parseBriefIndex, parseBriefPayload, type BriefEntry } from '@tradingview/shared/brief-feed';
+import type { DailyBrief } from '@tradingview/shared/brief';
 
 export const DAILY_BRIEF_URL = 'https://trade.erlin.org/brief';
 const FEED_URL = 'https://trade.erlin.org/api/daily-briefs';
@@ -29,4 +30,12 @@ export async function loadBriefIndex(signal?: AbortSignal) {
 export async function loadBriefEdition(entry: BriefEntry, signal?: AbortSignal) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.id)) throw new Error('Invalid brief edition date.');
   return parseBriefPayload(await request(`/${entry.id}`, signal), entry);
+}
+
+/** Commit an edition only when its index and complete body have both validated. */
+export async function loadLatestBrief(previous?: DailyBrief, signal?: AbortSignal) {
+  const index = await loadBriefIndex(signal);
+  const latest = index.editions[0]!;
+  if (previous?.id === latest.id && previous.title === latest.title && previous.generated === latest.generated) return previous;
+  return loadBriefEdition(latest, signal);
 }

@@ -1,3 +1,4 @@
+import { usePageActive } from "./PageView";
 import {
   Component,
   For,
@@ -203,6 +204,7 @@ const shortAddress = (address: string) =>
   `${address.slice(0, 6)}...${address.slice(-4)}`;
 
 const Portfolio: Component = () => {
+  const pageActive = usePageActive();
   const [activeTab, setActiveTab] = createSignal<PortfolioTab>("balances");
   const [sideFilter, setSideFilter] = createSignal<AccountSideFilter>("all");
   const [marketFilter, setMarketFilter] = createSignal("all");
@@ -230,7 +232,7 @@ const Portfolio: Component = () => {
   });
 
   createEffect(() => {
-    if (!liveMode()) return;
+    if (!pageActive() || !liveMode()) return;
     untrack(() => void refreshHyperliquidPortfolio());
     const timer = window.setInterval(
       () => untrack(() => void refreshHyperliquidPortfolio()),
@@ -240,10 +242,14 @@ const Portfolio: Component = () => {
   });
 
   createEffect(() => {
-    const tab = activeTab();
+    activeTab();
     setSideFilter("all");
     setMarketFilter("all");
-    if (liveMode() && isCoreAccountTab(tab) && isAccountActivityTab(tab)) {
+  });
+
+  createEffect(() => {
+    const tab = activeTab();
+    if (pageActive() && liveMode() && isCoreAccountTab(tab) && isAccountActivityTab(tab)) {
       untrack(() => void refreshHyperliquidActivity());
       const timer = window.setInterval(
         () => untrack(() => void refreshHyperliquidActivity()),

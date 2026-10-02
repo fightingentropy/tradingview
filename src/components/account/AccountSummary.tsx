@@ -14,13 +14,13 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-nat
 const MASK = '••••••';
 
 export function AccountSummary({ account, address, refreshing, onRefresh }: {
-  account: HlAccount; address: string | null; refreshing: boolean; onRefresh: () => void;
+  account?: HlAccount; address: string | null; refreshing: boolean; onRefresh: () => void;
 }) {
   const router = useRouter();
   const hidden = usePreferences((s) => s.privacyMode);
   const setHidden = usePreferences((s) => s.setPrivacyMode);
   const [expanded, setExpanded] = useState(false);
-  const overview = useHlAccountOverview(account.abstractionMode, expanded);
+  const overview = useHlAccountOverview(account?.abstractionMode ?? 'standard', expanded && !!account);
   const busy = refreshing || (expanded && overview.isFetching);
   const money = (value: number | null) => value == null ? '—' : hidden ? MASK : `${value < 0 ? '−' : ''}${usd(value)}`;
   return <View style={styles.summary}>
@@ -37,21 +37,21 @@ export function AccountSummary({ account, address, refreshing, onRefresh }: {
     <View style={styles.values}>
       <View style={styles.value}>
         <AppText variant="caption" muted>Total value</AppText>
-        <AppText numeric style={styles.equity}>{money(account.totalEquityLoaded === true ? account.totalEquity : null)}</AppText>
+        <AppText numeric style={styles.equity}>{money(account?.totalEquityLoaded === true ? account.totalEquity : null)}</AppText>
       </View>
       <View style={styles.value}>
         <AppText variant="caption" muted>Open P&L</AppText>
-        <AppText numeric style={styles.pnl} color={account.unrealizedPnl >= 0 ? Colors.up : Colors.down}>{hidden ? MASK : signedUsd(account.unrealizedPnl)}</AppText>
+        <AppText numeric style={styles.pnl} color={!account ? Colors.textMuted : account.unrealizedPnl >= 0 ? Colors.up : Colors.down}>{!account ? '—' : hidden ? MASK : signedUsd(account.unrealizedPnl)}</AppText>
       </View>
     </View>
-    {account.totalEquityLoaded !== true ? <AppText variant="caption" color={Colors.warning}>Some balances couldn’t refresh.</AppText> : null}
+    {account && account.totalEquityLoaded !== true ? <AppText variant="caption" color={Colors.warning}>Some balances couldn’t refresh.</AppText> : null}
     <View style={styles.footer}>
-      <AppText variant="caption" muted>Available <AppText variant="caption" numeric>{money(account.totalEquityLoaded === true ? account.freeCollateral : null)}</AppText></AppText>
+      <AppText variant="caption" muted>Available <AppText variant="caption" numeric>{money(account?.totalEquityLoaded === true ? account.freeCollateral : null)}</AppText></AppText>
       <Pressable testID="account-overview-toggle" style={styles.overviewButton} accessibilityRole="button" accessibilityLabel="Account overview" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)}>
         <AppText variant="caption" muted>Overview</AppText><Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={Colors.textMuted} />
       </Pressable>
     </View>
-    {expanded ? <AccountOverview account={account} address={address} hidden={hidden} overview={overview.data} /> : null}
+    {expanded && account ? <AccountOverview account={account} address={address} hidden={hidden} overview={overview.data} /> : null}
   </View>;
 }
 

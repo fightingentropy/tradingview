@@ -65,6 +65,7 @@ export default function NewsScreen() {
   const paginationAttemptsRef = useRef(0);
   const [loadedListSource, setLoadedListSource] = useState<NewsSourceFilter | undefined>();
   const {
+    data,
     items,
     isLoading,
     isError,
@@ -207,15 +208,20 @@ export default function NewsScreen() {
           })}
       </ScrollView>
 
+      {!showBrief && isError && data ? (
+        <Pressable accessibilityRole="button" onPress={() => void refetch()} style={styles.refreshNotice}>
+          <AppText variant="caption" color={Colors.warning}>Couldn’t refresh · Showing saved feed · Retry</AppText>
+        </Pressable>
+      ) : null}
       {showBrief ? (
         <DailyBriefReader />
       ) : !isNewsFeedConfigured ? (
         <SetupState />
-      ) : isLoading ? (
+      ) : isLoading && !data ? (
         <View style={styles.center}>
           <ActivityIndicator color={NewsColors.text} />
         </View>
-      ) : isError ? (
+      ) : isError && !data ? (
         <View style={styles.stateWrap}>
           <Ionicons name="cloud-offline-outline" size={30} color={Colors.textMuted} />
           <AppText variant="heading" style={styles.stateTitle}>Feed unavailable</AppText>
@@ -302,6 +308,7 @@ export default function NewsScreen() {
 }
 
 const styles = StyleSheet.create({
+  refreshNotice: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
   filterScroller: {
     flexGrow: 0,
     backgroundColor: NewsColors.background,

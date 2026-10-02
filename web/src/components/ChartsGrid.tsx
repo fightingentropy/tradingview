@@ -1,3 +1,4 @@
+import { usePageActive } from "./PageView";
 import { type Component, Index, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import SymbolChart from "./SymbolChart";
 import WatchlistPanel from "./WatchlistPanel";
@@ -9,6 +10,7 @@ import { CHART_COUNTS, type ChartCount } from "../lib/chartLayout";
 import "./ChartsGrid.css";
 
 const ChartsGrid: Component = () => {
+  const pageActive = usePageActive();
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [watchlistOpen, setWatchlistOpen] = createSignal(false);
   const [desktop, setDesktop] = createSignal(window.matchMedia("(min-width: 900px)").matches);
@@ -51,7 +53,7 @@ const ChartsGrid: Component = () => {
     queueMicrotask(() => layoutMenu?.querySelector<HTMLSelectElement>(`[aria-label="Chart ${next + 1} symbol"]`)?.focus({ preventScroll: true }));
   };
 
-  useLivePrices({ enabled: visible });
+  useLivePrices({ enabled: () => pageActive() && visible() });
   onMount(() => {
     const media = window.matchMedia("(min-width: 900px)");
     const resize = () => setDesktop(media.matches);

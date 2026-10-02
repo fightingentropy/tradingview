@@ -1,4 +1,4 @@
-import { dehydrate, type Query, type QueryClient } from '@tanstack/react-query';
+import { dehydrate, hydrate, type Query, type QueryClient } from '@tanstack/react-query';
 import type { Persister } from '@tanstack/react-query-persist-client';
 
 export const QUERY_CACHE_BUSTER = '4';
@@ -13,11 +13,24 @@ const LIMITS: Record<string, number> = {
 export const isPersistableQuery = (query: Query) =>
   Object.hasOwn(LIMITS, String(query.queryKey[0]));
 
+/** MMKV is synchronous: hydrate before the first screen subscribes to queries. */
+export function restoreQuerySnapshot(client: QueryClient, saved: string | null, maxAge: number, now = Date.now()) {
+  if (!saved) return true;
+  try {
+    const snapshot = JSON.parse(saved);
+    if (!Number.isFinite(snapshot.timestamp) || snapshot.timestamp <= 0 ||
+      now - snapshot.timestamp > maxAge || snapshot.buster !== QUERY_CACHE_BUSTER ||
+      !Array.isArray(snapshot.clientState?.queries)) return false;
+    hydrate(client, snapshot.clientState);
+    return true;
+  } catch { return false; }
+}
+
 /** Keep recent public data for cold starts; never persist account/auth/news data. */
 export function publicCacheSnapshot(client: QueryClient) {
   const counts = new Map<string, number>();
   const selected = new Set(client.getQueryCache().getAll()
-    .filter(query => isPersistableQuery(query) && query.state.status === 'success')
+    .filter(query => isPersistableQuery(query) && query.state.data !== undefined)
     .sort((a, b) => Number(b.isActive()) - Number(a.isActive()) || b.state.dataUpdatedAt - a.state.dataUpdatedAt)
     .filter(query => {
       const group = String(query.queryKey[0]);

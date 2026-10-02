@@ -2,6 +2,7 @@ import type { Persister } from '@tanstack/react-query-persist-client';
 import { QueryClient } from '@tanstack/react-query';
 
 import { mmkvStorage } from '@/lib/mmkv';
+import { restoreQuerySnapshot } from '@/lib/queryPersistence';
 
 /** How long a persisted cache entry stays usable on a cold start. */
 export const PERSIST_MAX_AGE = 1000 * 60 * 60 * 24; // 24h
@@ -25,6 +26,11 @@ export const queryClient = new QueryClient({
  * background. MMKV is synchronous, so restore happens within a tick.
  */
 const CACHE_KEY = 'tradingview.rq-cache';
+try {
+  if (!restoreQuerySnapshot(queryClient, mmkvStorage.getItem(CACHE_KEY), PERSIST_MAX_AGE)) {
+    mmkvStorage.removeItem(CACHE_KEY);
+  }
+} catch { /* Storage failure must not prevent the app from opening. */ }
 // QueryPersistence schedules snapshots before doing any synchronous work here.
 export const queryPersister: Persister = {
   persistClient: client => { mmkvStorage.setItem(CACHE_KEY, JSON.stringify(client)); },

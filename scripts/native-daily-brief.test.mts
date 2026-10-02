@@ -1,11 +1,40 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { afterEach, mock, test } from 'node:test';
-import { loadBriefEdition, loadBriefIndex } from '../src/providers/briefs/client.ts';
+import { loadBriefEdition, loadBriefIndex, loadLatestBrief } from '../src/providers/briefs/client.ts';
+import { QueryClient } from '@tanstack/react-query';
+import { parseBriefPayload } from '@tradingview/shared/brief-feed';
 
 const entry = { id: '2026-09-16', title: 'The Fed restarts tightening; breadth weakens.', generated: '2026-09-16 21:59' };
 const markdown = readFileSync(new URL('../web/src/data/briefs/2026-09-16.md', import.meta.url), 'utf8');
 afterEach(() => mock.restoreAll());
+
+test('a slow or failed new edition keeps the complete previous edition in the reader cache', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  const previous = parseBriefPayload({ title: entry.title, markdown }, entry);
+  const next = { ...entry, id: '2026-09-17', generated: '2026-09-17 08:00' };
+  const key = ['daily-brief', 'latest'];
+  let finish!: (response: Response) => void;
+  const body = new Promise<Response>(resolve => { finish = resolve; });
+  mock.method(globalThis, 'fetch', async (url: string) => url.endsWith(next.id) ? body : Response.json({ version: 1, publishedAt: '2026-09-17T07:00:00Z', editions: [next] }));
+  try {
+    client.setQueryData(key, previous);
+    const refresh = client.fetchQuery({ queryKey: key, queryFn: () => loadLatestBrief(previous) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(client.getQueryData(key), previous);
+    finish(new Response('', { status: 503 }));
+    await assert.rejects(refresh, /503/);
+    assert.equal(client.getQueryData(key), previous);
+    assert.equal(client.getQueryState(key)?.status, 'error');
+  } finally { client.clear(); }
+});
+
+test('returning to an unchanged edition refreshes its index without downloading its body again', async () => {
+  const previous = parseBriefPayload({ title: entry.title, markdown }, entry);
+  const request = mock.method(globalThis, 'fetch', async () => Response.json({ version: 1, publishedAt: '2026-09-16T21:00:00Z', editions: [entry] }));
+  assert.equal(await loadLatestBrief(previous), previous);
+  assert.equal(request.mock.callCount(), 1);
+});
 
 test('native reader selects only the latest report from a legacy archive and receives its exact content', async () => {
   const urls: string[] = [];

@@ -9,6 +9,7 @@ import {
   onMount,
 } from "solid-js";
 import Header from "./components/Header";
+import PageView from "./components/PageView";
 import Spinner from "./components/Spinner";
 import ModalHost from "./components/ModalHost";
 import AccountConnectionControl from "./components/AccountConnectionControl";
@@ -269,14 +270,14 @@ const App: Component = () => {
       </Show>
 
       {/* Trade View */}
-      <Show when={currentPage() === "trade"}>
+      <PageView name="trade" active={currentPage() === "trade"}>
         <Suspense fallback={<div class="flex flex-1 items-center justify-center"><Spinner label="Loading trading view" /></div>}>
           <TradeWorkspace />
         </Suspense>
-      </Show>
+      </PageView>
 
       {/* Portfolio View */}
-      <Show when={currentPage() === "portfolio"}>
+      <PageView name="portfolio" active={currentPage() === "portfolio"}>
         <div class="flex-1 overflow-hidden">
           <Suspense
             fallback={
@@ -288,10 +289,10 @@ const App: Component = () => {
             <Portfolio />
           </Suspense>
         </div>
-      </Show>
+      </PageView>
 
       {/* Brief View */}
-      <Show when={currentPage() === "brief"}>
+      <PageView name="brief" active={currentPage() === "brief"}>
         <div class="flex-1 overflow-hidden">
           <Suspense
             fallback={
@@ -303,10 +304,10 @@ const App: Component = () => {
             <Brief />
           </Suspense>
         </div>
-      </Show>
+      </PageView>
 
       {/* Calendar View */}
-      <Show when={currentPage() === "calendar"}>
+      <PageView name="calendar" active={currentPage() === "calendar"}>
         <div class="flex-1 overflow-hidden">
           <Suspense
             fallback={
@@ -318,10 +319,10 @@ const App: Component = () => {
             <EconomicCalendar />
           </Suspense>
         </div>
-      </Show>
+      </PageView>
 
       {/* Charts View */}
-      <Show when={currentPage() === "charts"}>
+      <PageView name="charts" active={currentPage() === "charts"}>
         <div class="flex-1 overflow-hidden">
           <Suspense
             fallback={
@@ -333,7 +334,7 @@ const App: Component = () => {
             <ChartsGrid />
           </Suspense>
         </div>
-      </Show>
+      </PageView>
 
       {/* Admin View */}
       <Show when={currentPage() === "admin"}>
