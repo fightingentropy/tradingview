@@ -40,3 +40,10 @@ test('an uncertain write retries the identical payload after transport or rate-l
   expect(await runBriefStorageCommand(command, (args) => { calls.push(args); return responses.shift()!; }, noWait)).toBe('written');
   expect(calls).toEqual([command, command, command]);
 });
+
+test('cf missing-key errors match the requested key and never hide missing namespaces', async () => {
+  const missing = "[10009] get: 'key not found'\n404 Not Found · HTTP /accounts/account/storage/kv/namespaces/namespace/values/index%3Av1";
+  expect(await runBriefStorageCommand(['get', 'index:v1'], () => failure(missing), noWait)).toBeNull();
+  await expect(runBriefStorageCommand(['get', 'edition:v1'], () => failure(missing), noWait)).rejects.toThrow('publication stopped');
+  await expect(runBriefStorageCommand(['get', 'index:v1'], () => failure('404 Not Found · HTTP /accounts/account/storage/kv/namespaces/missing'), noWait)).rejects.toThrow('publication stopped');
+});

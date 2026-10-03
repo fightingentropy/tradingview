@@ -47,3 +47,6 @@ example
 /android
 
 .env
+
+# Cloudflare CLI generated build output
+.cloudflare/

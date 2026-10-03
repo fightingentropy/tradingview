@@ -24,20 +24,20 @@ if (values['dry-run']) {
   await new Promise<void>((accept, reject) => { lock.once('error', reject); lock.listen(3403, '127.0.0.1', accept); });
   const staging = mkdtempSync(resolve(tmpdir(), 'tradingview-brief-'));
   try {
-    const wrangler = (args: string[]) => runBriefStorageCommand(args, (command) => spawnSync(
-      process.env.DAILY_BRIEF_WRANGLER ?? resolve(root, 'node_modules/.bin/wrangler'),
-      [...(command[0] === 'whoami' ? command : ['kv', 'key', ...command, '--binding', 'DAILY_BRIEFS', '--remote']), '--config', resolve(root, 'wrangler.web.jsonc')],
-      { cwd: root, encoding: 'utf8', timeout: 30_000, maxBuffer: 5_000_000, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_SANITIZE: 'true' } },
+    const cf = (args: string[]) => runBriefStorageCommand(args, (command) => spawnSync(
+      process.env.DAILY_BRIEF_CF ?? resolve(root, 'node_modules/.bin/cf'),
+      command[0] === 'whoami' ? ['auth', 'whoami'] : ['kv', 'keys', ...command, '--namespace-id', 'a61b65da42314097857d47cc813a6d82'],
+      { cwd: root, encoding: 'utf8', timeout: 30_000, maxBuffer: 5_000_000, env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: '9349e7e9527ec0aad29368255a686ec4' } },
     ));
     const get = async (key: string): Promise<unknown | null> => {
-      const value = await wrangler(['get', key, '--text']);
+      const value = await cf(['get', key, '--text']);
       // Only an explicit missing-key result can initialize storage. Auth/network errors throw.
       return value === null || value === 'Value not found' ? null : JSON.parse(value);
     };
     const put = async (key: string, value: unknown) => {
       const path = resolve(staging, 'payload.json');
       writeFileSync(path, JSON.stringify(value));
-      await wrangler(['put', key, '--path', path]);
+      await cf(['put', key, '--file', path]);
     };
     const existing = await get('index:v1');
     if (existing === null && !values.initialize) throw new Error('No publication index. Use --initialize only for the first publication.');

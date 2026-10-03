@@ -14,15 +14,17 @@ export async function runBriefStorageCommand(
     const result = execute(args);
     if (!result.error && result.status === 0) return result.stdout.trim();
     const error = result.error?.message ?? result.stderr;
-    if (!result.error && args[0] === 'get' &&
-        error.includes(`/values/${encodeURIComponent(args[1]!)} - 404: Not Found`)) return null;
+    const requestedValue = `/values/${encodeURIComponent(args[1]!)}`;
+    if (!result.error && args[0] === 'get' && (
+      error.includes(`${requestedValue} - 404: Not Found`) ||
+      (error.includes('[10009]') && /404 Not Found/.test(error) && error.split('\n').some(line => line.trim().endsWith(requestedValue)))
+    )) return null;
     const retryable = /\b(?:401|408|429|500|502|503|504)\b|fetch failed|ECONNRESET|ETIMEDOUT|ENETUNREACH|EAI_AGAIN|UND_ERR_|timed out|Authentication error/i.test(error);
     if (!retryable || attempt >= retryDelays.length) {
       throw new Error(`Cloudflare operation failed; publication stopped. ${error.trim()}`);
     }
-    // The raw KV value endpoint can reject credentials without Wrangler's usual
-    // API error handling. Exercise its supported OAuth refresh/auth check before
-    // retrying the same operation. Credentials and whoami output stay in Wrangler.
+    // Exercise the CLI's OAuth refresh/auth check before retrying the same
+    // operation. Credentials and whoami output stay inside the CLI subprocess.
     if (/\b401\b|Authentication error/i.test(error)) execute(['whoami', '--json']);
     await wait(retryDelays[attempt]!);
   }

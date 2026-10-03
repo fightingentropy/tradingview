@@ -11,7 +11,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const plist = `/Library/LaunchDaemons/${label}.plist`;
 const logs = path.join(taskUser.homedir, 'Library/Logs/TradingView Daily Brief');
 const runtime = path.join(taskUser.homedir, 'Library/Application Support/TradingView Daily Brief/runtime');
-const wrangler = process.env.DAILY_BRIEF_WRANGLER ?? path.join(runtime, 'node_modules/.bin/wrangler');
+const cf = process.env.DAILY_BRIEF_CF ?? path.join(runtime, 'node_modules/.bin/cf');
 const escaped = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const sudo = args => execFileSync('/usr/bin/sudo', ['-n', ...args], { stdio: 'inherit' });
 const stop = () => { try { sudo(['/bin/launchctl', 'bootout', `system/${label}`]); } catch { /* May not be installed yet. */ } };
@@ -19,7 +19,7 @@ if (process.platform !== 'darwin' || taskUser.uid === 0) throw new Error('Run as
 if (action === 'status') { execFileSync('/bin/launchctl', ['print', `system/${label}`], { stdio: 'inherit' }); process.exit(0); }
 if (action === 'stop') { stop(); process.exit(0); }
 if (action !== 'install') throw new Error('Usage: daily-brief-service.mjs [install|status|stop]');
-if (!existsSync('/opt/homebrew/bin/bun') || !existsSync(wrangler)) throw new Error('Install Bun and the dedicated Wrangler runtime first.');
+if (!existsSync('/opt/homebrew/bin/bun') || !existsSync('/opt/homebrew/bin/node') || !existsSync(cf)) throw new Error('Install Bun, Node 22.18+, and the dedicated cf runtime first.');
 mkdirSync(logs, { recursive: true, mode: 0o700 });
 const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -33,8 +33,8 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <key>PATH</key><string>${escaped(path.join(taskUser.homedir, '.local/bin'))}:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
 <key>TZ</key><string>Europe/London</string>
 <key>NODE_OPTIONS</key><string>--dns-result-order=ipv4first</string>
-<key>DAILY_BRIEF_WRANGLER</key><string>${escaped(wrangler)}</string>
-<key>WRANGLER_SEND_METRICS</key><string>false</string>
+<key>DAILY_BRIEF_CF</key><string>${escaped(cf)}</string>
+<key>CLOUDFLARE_ACCOUNT_ID</key><string>9349e7e9527ec0aad29368255a686ec4</string>
 </dict>
 <key>RunAtLoad</key><true/>
 <key>StartCalendarInterval</key><dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
