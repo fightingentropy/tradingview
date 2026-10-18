@@ -122,4 +122,4 @@ scripts/hl-probe.mjs  Dev script to inspect live Hyperliquid response shapes
 
 The Node-based `cf@1.0.0-beta.17` CLI deploys both Workers from `cloudflare.config.ts`: the default mode is the news relay, and `--mode web` selects the web app. Use `npm run relay:dry-run`, `npm run web:dry-run`, `npm run relay:deploy`, and `npm run web:deploy`. Existing generated Worker types retain Wrangler. The relay deployment stages Keychain secrets in a private temporary file for `cf deploy --secrets-file` and removes it afterward.
 
-Daily-brief storage uses `cf kv keys get/put` with the existing namespace ID and explicit account. The Mini service runtime needs its own `cf auth login`; set `DAILY_BRIEF_CF` to the dedicated Node-based CLI. Run the service installer only after a successful read of `index:v1`. Do not copy CLI credential files.
+The daily brief is published by the `tradingview-web` Workflow through its KV binding. The manual publisher, `web/scripts/publish-daily-brief.ts`, uses `cf kv keys get/put` with the existing namespace ID and explicit account. Do not copy CLI credential files.

@@ -72,16 +72,6 @@ Pages → Workflows → tradingview-daily-brief** in the Cloudflare dashboard. C
 exact public index and dated content at `https://trade.erlin.org/api/daily-briefs`
 before claiming a publication succeeded.
 
-## Retiring the Mac mini job
-
-The old `com.erlinhoxha.tradingview-daily-brief` LaunchDaemon ran Codex on the Mac
-mini. On the Mac mini, from the service checkout, as the service user with sudo
-access:
-
-```sh
-node scripts/daily-brief-service.mjs uninstall
-```
-
 ## Native iPhone reader
 
 The iPhone app opens **News → Daily brief** by default. It reads the same public
