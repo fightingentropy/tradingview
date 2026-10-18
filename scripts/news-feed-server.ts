@@ -590,5 +590,6 @@ server.listen(PORT, HOST, () => {
     `Paste ${NEWS_SOURCE_REFRESH_INTERVAL_MS.paste / 60_000}m`,
   );
   void pollForPushNotifications();
-  setInterval(() => void pollForPushNotifications(), NEWS_SCHEDULER_INTERVAL_MS).unref();
+  // The DOM lib's setInterval signature returns a number; the runtime returns a Node timer.
+  (setInterval(() => void pollForPushNotifications(), NEWS_SCHEDULER_INTERVAL_MS) as unknown as NodeJS.Timeout).unref();
 });
