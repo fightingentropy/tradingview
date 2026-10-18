@@ -11,7 +11,9 @@ import {
 export const MAIN_PAGES = [
   { id: "trade", label: "Trade" },
   { id: "portfolio", label: "Portfolio" },
+  { id: "stats", label: "Stats" },
   { id: "brief", label: "Brief" },
+  { id: "news", label: "News" },
   { id: "calendar", label: "Calendar" },
   { id: "charts", label: "Charts" },
 ] as const;

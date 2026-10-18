@@ -9,7 +9,6 @@ const ALLOWED_COUNTRIES = new Set([
 const LEGACY_ROUTES = new Map([
   ['/account', '/portfolio'],
   ['/economic-calendar', '/calendar'],
-  ['/news', '/brief'],
   ['/markets', '/trade'],
 ]);
 
@@ -177,6 +176,50 @@ export async function handleDailyBriefRequest(request, storage) {
   }
 }
 
+const NEWS_FEED_PATH = '/api/news';
+const NEWS_SOURCES = new Set(['all', 'x', 'telegram', 'digg', 'paste']);
+const MAX_NEWS_ITEMS = 200;
+
+/**
+ * Serves the relay's latest snapshot from its KV namespace, so the site needs
+ * no relay access token. The bridge and relay remain the only writers.
+ */
+export async function handleNewsFeedRequest(request, storage) {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return Response.json({ error: 'method_not_allowed' }, { status: 405, headers: { Allow: 'GET, HEAD' } });
+  }
+  const url = new URL(request.url);
+  const source = url.searchParams.get('source') ?? 'all';
+  if (!NEWS_SOURCES.has(source)) return Response.json({ error: 'invalid_source' }, { status: 400 });
+  const requested = Number(url.searchParams.get('limit') ?? 40);
+  const limit = Number.isFinite(requested) ? Math.min(MAX_NEWS_ITEMS, Math.max(1, Math.floor(requested))) : 40;
+  try {
+    if (!storage) throw new Error('Missing news binding');
+    const [snapshot, summary] = await Promise.all([
+      storage.get('feed:all', { type: 'json', cacheTtl: 30 }),
+      storage.get('summary:executive', { type: 'json', cacheTtl: 30 }),
+    ]);
+    if (!snapshot || !Array.isArray(snapshot.items)) {
+      return Response.json({ error: 'news_unavailable' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    }
+    const matches = (entry) => source === 'all' || entry?.source === source;
+    const body = JSON.stringify({
+      items: snapshot.items.filter(matches).slice(0, limit),
+      notices: Array.isArray(snapshot.notices) ? snapshot.notices.filter(matches) : [],
+      executiveSummary: source === 'all' ? summary ?? snapshot.executiveSummary : undefined,
+      updatedAt: snapshot.updatedAt,
+    });
+    return new Response(request.method === 'HEAD' ? null : body, { headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'public, max-age=30, stale-while-revalidate=30',
+      'X-Content-Type-Options': 'nosniff',
+    } });
+  } catch (error) {
+    console.error(JSON.stringify({ message: 'news feed storage unavailable', error: error instanceof Error ? error.message : String(error) }));
+    return Response.json({ error: 'news_unavailable' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -186,6 +229,10 @@ export default {
 
     if (url.pathname === '/api/daily-briefs' || url.pathname.startsWith('/api/daily-briefs/')) {
       return handleDailyBriefRequest(request, env.DAILY_BRIEFS);
+    }
+
+    if (url.pathname === NEWS_FEED_PATH) {
+      return handleNewsFeedRequest(request, env.NEWS_RELAY_KV);
     }
 
     if (url.pathname.startsWith('/api/')) {

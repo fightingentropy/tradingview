@@ -25,18 +25,22 @@ import {
   loadTrade,
   loadAdminDashboard,
   loadBrief,
+  loadNews,
   loadChartsGrid,
   loadEconomicCalendar,
   loadPortfolio,
+  loadStats,
   prefetchPage,
 } from "./lib/routeModules";
 
 const TradeWorkspace = lazy(loadTrade);
 const SymbolSearch = lazy(() => import("./components/SymbolSearch"));
 const Portfolio = lazy(loadPortfolio);
+const Stats = lazy(loadStats);
 const ChartsGrid = lazy(loadChartsGrid);
 const AdminDashboard = lazy(loadAdminDashboard);
 const Brief = lazy(loadBrief);
+const News = lazy(loadNews);
 const EconomicCalendar = lazy(loadEconomicCalendar);
 
 const CHARTS_NAV_HIDE_DELAY_MS = 2000;
@@ -291,6 +295,12 @@ const App: Component = () => {
         </div>
       </PageView>
 
+      <PageView name="stats" active={currentPage() === "stats"}>
+        <Suspense fallback={<div class="flex flex-1 items-center justify-center"><Spinner label="Loading stats" /></div>}>
+          <Stats />
+        </Suspense>
+      </PageView>
+
       {/* Brief View */}
       <PageView name="brief" active={currentPage() === "brief"}>
         <div class="flex-1 overflow-hidden">
@@ -304,6 +314,13 @@ const App: Component = () => {
             <Brief />
           </Suspense>
         </div>
+      </PageView>
+
+      {/* News View */}
+      <PageView name="news" active={currentPage() === "news"}>
+        <Suspense fallback={<div class="flex flex-1 items-center justify-center"><Spinner label="Loading news" /></div>}>
+          <News />
+        </Suspense>
       </PageView>
 
       {/* Calendar View */}
@@ -401,6 +418,14 @@ const App: Component = () => {
           </svg>
           <span class="text-xs">Portfolio</span>
         </button>
+        <button
+          class={`flex flex-col items-center gap-1 ${currentPage() === "stats" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          onPointerEnter={() => prefetchPage("stats")} onFocus={() => prefetchPage("stats")}
+          onClick={() => setCurrentPage("stats")} aria-current={currentPage() === "stats" ? "page" : undefined}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V5M17 16V8" /></svg>
+          <span class="text-xs">Stats</span>
+        </button>
 
         <button
           class={`flex flex-col items-center gap-1 ${currentPage() === "brief" ? "text-brand-accent" : "text-brand-slate-400"}`}
@@ -425,6 +450,18 @@ const App: Component = () => {
             <path d="M8 16h5" />
           </svg>
           <span class="text-xs">Brief</span>
+        </button>
+        <button
+          class={`flex flex-col items-center gap-1 ${currentPage() === "news" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          onPointerEnter={() => prefetchPage("news")}
+          onFocus={() => prefetchPage("news")}
+          onClick={() => setCurrentPage("news")}
+          aria-current={currentPage() === "news" ? "page" : undefined}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 4h16v16H4zM8 8h8M8 12h3M8 16h3M15 12h1M15 16h1" />
+          </svg>
+          <span class="text-xs">News</span>
         </button>
         <button
           class={`flex flex-col items-center gap-1 ${currentPage() === "calendar" ? "text-brand-accent" : "text-brand-slate-400"}`}

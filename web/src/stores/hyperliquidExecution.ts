@@ -314,6 +314,14 @@ const ensureClients = () => {
   return { exchangeConfig, infoClient, symbolConverter };
 };
 
+export async function loadHyperliquidStatsHistory(signal: AbortSignal, previous?: import('../lib/accountStats').StatsHistory) {
+  const activeConnection = connection();
+  if (!activeConnection) throw new Error('Connect your Hyperliquid account first.');
+  const { infoClient: client, symbolConverter: converter } = ensureClients();
+  const { fetchAccountStatsHistory } = await import('../lib/accountStatsHistory');
+  return fetchAccountStatsHistory(client, { user: activeConnection.masterAddress, converter, signal, previous });
+}
+
 const {
   connection,
   connectionStatus,

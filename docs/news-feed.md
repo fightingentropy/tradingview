@@ -20,9 +20,9 @@ history and therefore needs an authenticated Telegram user session. Run
 `npm run telegram:login` once; the API ID, hash, and reusable session are stored
 in macOS Keychain.
 
-Digg stories are read from the ranked Top Tech Stories at `https://digg.com/tech`.
+Digg stories are read from the ranked Trending All Topics Stories at `https://digg.com/`.
 The bridge extracts each story's stable cluster ID, headline, summary, creation time,
-and canonical Digg link. No Digg account or credential is required.
+and canonical category-specific Digg link. No Digg account or credential is required.
 
 Paste trade calls are read from the public show index and show-detail endpoints at
 `https://app.paste.trade`. The signed-in global feed is not used. The bridge selects shows
@@ -47,6 +47,18 @@ credentials, the Telegram session, and the relay ingest secret never ship in the
 Deploy or update the relay with `npm run relay:deploy`. Wrangler validates the
 Worker, provisions its KV namespace, uploads the encrypted secrets, and stores the
 workers.dev URL in Keychain for the background bridge.
+
+## Web reader
+
+The web terminal has a dedicated `/news` page with All, X, Telegram, Digg, and
+Paste tabs. `/brief` remains a separate daily briefing reader. News requests the
+latest 200 relay items, filters source tabs locally, and initially renders 40
+stories with a Show more control. It refreshes on focus and once per minute while
+visible, preserves loaded stories when a refresh fails, and displays source notices.
+
+The page reads `/api/news` on its own origin. The `tradingview-web` Worker serves
+it from the relay's KV namespace (`feed:all` plus the stored pulse), so the website
+never carries the relay access token.
 
 ## Request
 
@@ -104,12 +116,12 @@ cache is separate from the regular 40-post news feed. The local bridge also allo
       "id": "b9d9b03b-3021-4391-9ba6-0342072f8e96",
       "source": "digg",
       "author": {
-        "name": "Digg Tech",
-        "handle": "tech"
+        "name": "Digg",
+        "handle": "digg"
       },
-      "text": "Tech story headline and summary",
+      "text": "Story headline and summary",
       "publishedAt": "2026-07-10T10:30:00.000Z",
-      "url": "https://digg.com/tech/example-story",
+      "url": "https://digg.com/world-business/example-story",
       "media": []
     }
   ],
@@ -131,7 +143,7 @@ The included bridge:
 - Never logs tweet bodies or browser-cookie credentials.
 - Fetches the configured Telegram public feeds independently, so one unavailable
   channel does not blank the others.
-- Fetches Digg Tech independently, so a temporary Digg failure does not blank X or Telegram.
+- Fetches the Digg homepage independently, so a temporary Digg failure does not blank X or Telegram.
 - Fetches Paste independently and reuses unchanged show histories, so its larger public payloads
   are not downloaded on every scheduler tick.
 - Runs a lightweight scheduler once per minute when installed with `npm run news:install`.

@@ -11,6 +11,7 @@ future-dated oracle data fails closed.
 ## Features
 - Trade view with market stats, chart, order book, and order form
 - Portfolio view and simple mobile navigation
+- Account statistics with daily funding, realized futures/spot earnings, and CSV export
 - Brief, economic-calendar, and multi-chart views
 - Symbol search modal with keyboard shortcuts
 - Candlestick chart with volume and moving averages
@@ -314,11 +315,86 @@ VITE_CONVEX_URL=https://qualified-zebra-483.eu-west-1.convex.cloud
 Keep private keys and Convex secrets in the Convex dashboard, not in frontend
 env files.
 
+## News
+
+`/news` is a separate live feed with All, X, Telegram, Digg, and Paste tabs.
+`/brief` continues to show the published daily market brief. News reads the same
+normalized relay snapshot as the native app, refreshes once per minute while the
+page is active, and keeps the last loaded stories visible if a refresh fails.
+
+The page reads the same-origin `/api/news`, which the web Worker serves straight
+from the relay's KV namespace. No relay access token is built into the site, so the
+site cannot register push devices or price alerts. `bun run dev` proxies
+`/api/news` to production, like the brief and calendar APIs.
+
+The security policies in `public/_headers` and `index.html` permit the source
+image CDNs. Update both `img-src` allowlists when adding a source that uses a new
+image host. The web checks verify that no relay token is configured and that both
+policies stay in sync.
+
+## Portfolio performance
+
+`/portfolio` has synchronized 24h, 7D, 30D, and All-time controls on the
+performance card and chart. Combined account and perps-only scopes select the
+matching exchange history. Account Value and PNL charts support pointer and
+keyboard inspection. The browser remembers the selected period, scope, and chart.
+
+Exchange PNL is the change between the first and last cumulative PnL samples in
+the chosen range, including unrealized changes. Volume comes from that same
+exchange period and scope. Max drawdown is the largest peak-to-trough decrease
+in the selected account value series; transfers can affect it. Equity figures
+remain current when the historical range changes. Missing history shows as
+unavailable. `/stats` provides the separate realized funding/trading breakdown.
+
+Paper PNL and volume use trades within the rolling period. Paper accounts show
+combined history because their ledger does not reliably distinguish spot and
+perpetual trades. Equity charts reconstructed from paper trades are
+explicitly marked estimated, and drawdown is unavailable without real historical
+equity snapshots. Ranges beyond the loaded 500-trade history are marked
+incomplete rather than presented as full-period results.
+
+## Stats
+
+`/stats` reads the connected Hyperliquid account without submitting transactions.
+It works while live execution is paused. Funding cards show today, the last 7
+days, and the last 30 days. Performance, daily charts/tables, market breakdowns,
+and CSV export also support a 90-day range. All ranges use London calendar days,
+include today, and refresh once per minute while visible.
+
+Funding is signed USDC received minus paid. Futures results use closed PnL minus
+fees (including opening fees on their trade date and maker rebates). Spot results
+use FIFO purchase costs, including fees attributed to sold units; purchases from
+before the selected range are retained for cost basis. Trading volume, fees,
+closing-fill win rate, and current unrealized futures PnL are shown separately.
+The performance cards separate **Before interest**, USDC borrowing costs, USDC
+lending income, and **Net after interest**. Before interest includes funding and
+realized trading after fees; net subtracts borrowing and adds lending. Charts,
+daily and market breakdowns, and CSV use the same calculations. Funding cards
+remain received minus paid and are explicitly labeled before borrowing costs.
+Interest in other assets stays in native units in the Interest by asset table;
+it is never silently converted to USDC. Transfers and unrealized gains remain
+excluded. Portfolio includes open-position value changes and uses exchange
+snapshot boundaries, so its PnL can differ from these calendar-day results.
+The fee summary is informational and is not deducted a second time.
+
+Funding, fills, and borrow/lend interest are paginated with inclusive timestamp
+boundaries and deduplication. Older funding/interest entries can be daily
+aggregates; the charts use their exchange entry timestamps. If interest cannot
+be refreshed, before-interest results remain available while dependent net and
+interest totals show as unavailable. Hyperliquid exposes only its most recent 10,000 fills through this
+endpoint; ranges beyond available history, incomplete pages, missing spot
+purchase costs, and unsupported settlement/fee currencies show as unavailable
+rather than zero. CSV uses blank cells for unavailable results. Refresh errors
+retain the last successful snapshot. History stays in page memory and is cleared
+when the connected account changes.
+
 ## Notes
 - Routes are handled manually via `window.history`:
   - `/trade` or `/trade/SYMBOL`
   - `/portfolio`
+  - `/stats`
   - `/brief`
+  - `/news`
   - `/calendar`
   - `/charts`
 - The app expects network access to the selected Hyperliquid endpoint for live

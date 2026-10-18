@@ -5,6 +5,11 @@ import { parseBriefIndex, parseBriefPayload } from '../lib/dailyBriefFeed';
 import './Brief.css';
 import BriefContent from './BriefContent';
 
+const generationTime = (generated: string) => {
+  const hour = Number(generated.slice(11, 13));
+  return `${hour % 12 || 12}:${generated.slice(14, 16)} ${hour < 12 ? 'am' : 'pm'}`;
+};
+
 const ChevronDown: Component = () => (
   <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
     <path d="m6 9 6 6 6-6" />
@@ -127,7 +132,11 @@ const Brief: Component = () => {
 
         <Show when={edition()}>{(brief) => <>
         <div class="brief-edition-bar">
-          <time class="brief-edition-date" dateTime={brief().id}>{formatBriefDate(brief().id, 'short')}</time>
+          <div class="brief-edition-stamp">
+            <time class="brief-edition-date" dateTime={brief().id}>{formatBriefDate(brief().id, 'short')}</time>
+            <span aria-hidden="true">·</span>
+            <span class="brief-edition-time">Generated at {generationTime(brief().generated)} (London)</span>
+          </div>
           <div class="brief-edition-details"><span>{brief().readingMinutes} min read</span><span aria-hidden="true">·</span><span>{brief().sources.length} sources</span></div>
         </div>
 
@@ -152,7 +161,7 @@ const Brief: Component = () => {
               <details class="brief-about">
                 <summary><span>About this brief</span><ChevronDown /></summary>
                 <dl class="brief-metadata">
-                <div><dt>Generated</dt><dd>{brief().generated.slice(11)} <span>Europe/London</span></dd></div>
+                <div><dt>Generated</dt><dd>{generationTime(brief().generated)} <span>Europe/London</span></dd></div>
                 <div><dt>Market state</dt><dd>{brief().marketState}</dd></div>
                 <div class="brief-cutoff"><dt>Data cutoff</dt><dd>{brief().cutoff}</dd></div>
                 </dl>

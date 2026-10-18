@@ -101,7 +101,13 @@ input[type="checkbox"] {
   align-items: center;
   height: 100%;
   gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.app-header > div:first-child { min-width: 0; }
+.app-wordmark { flex-shrink: 0; }
+.primary-nav::-webkit-scrollbar { display: none; }
 .nav-link {
   position: relative;
   padding: 9px 14px;
@@ -109,6 +115,8 @@ input[type="checkbox"] {
   color: var(--color-brand-slate-400);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition:
     color 120ms ease,
     background-color 120ms ease;
@@ -347,7 +355,8 @@ input[type="checkbox"] {
   background: #13171c;
 }
 .mobile-nav > button {
-  min-width: 60px;
+  min-width: 0;
+  flex: 1;
 }
 .mobile-nav > button > span {
   font-size: 10px;

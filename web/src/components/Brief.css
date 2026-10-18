@@ -23,6 +23,8 @@
 .brief-download { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #30363e; border-radius: var(--radius-control); font-size: 12px; color: #c1c9d0; text-decoration: none; transition: background .15s, border-color .15s; }
 .brief-download:hover { background: #1b2126; border-color: #59636c; }
 .brief-edition-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid #30353d; border-bottom: 1px solid #30353d; }
+.brief-edition-stamp { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: #a9b4bc; font-size: 12px; }
+.brief-edition-time { color: #d8dee3; white-space: nowrap; }
 .brief-edition-date { color: #d8dee3; font-size: 12px; font-weight: 500; }
 .daily-brief-page option { color: #d8dee3; background: #191e25; }
 .brief-loading { display: flex; justify-content: center; padding: 64px 0; }

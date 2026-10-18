@@ -6,7 +6,8 @@ test('old web links resolve to the imported terminal without guessing unsupporte
   for (const [path, expected] of [
     ['/account/', '/portfolio'],
     ['/economic-calendar', '/calendar'],
-    ['/news', '/brief'],
+    ['/news', null],
+    ['/news/', null],
     ['/markets', '/trade'],
     ['/symbol/hl%3Aperp%3ABTC', '/trade/BTC'],
     ['/symbol/hl:xyz:NVDA', '/trade/NVDA'],
@@ -38,7 +39,7 @@ test('unknown API paths stay JSON errors instead of falling through to the tradi
 });
 
 test('terminal routes and assets are handed to the SPA asset binding unchanged', async () => {
-  for (const path of ['/trade/BTC', '/portfolio', '/brief', '/calendar', '/assets/app.js']) {
+  for (const path of ['/trade/BTC', '/portfolio', '/stats', '/stats/', '/brief', '/news', '/news/', '/calendar', '/assets/app.js']) {
     const request = new Request(`https://terminal.example${path}`);
     const expected = new Response('asset', { headers: { 'X-Content-Type-Options': 'nosniff' } });
     const actual = await worker.fetch(request, { ASSETS: { fetch: (incoming) => {
