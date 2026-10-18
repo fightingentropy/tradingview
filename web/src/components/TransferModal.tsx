@@ -105,35 +105,37 @@ const TransferModal: Component = () => {
 
   return (
     <Show when={transferModalOpen()}>
-      <div
-        class="symbol-search-overlay is-open"
-        onClick={() => closeTransferModal()}
-      >
+      <div class="modal-backdrop" onClick={() => closeTransferModal()}>
         <div
-          class="w-[min(420px,95vw)] rounded-2xl border border-brand-border bg-brand-surface shadow-2xl overflow-hidden"
+          role="dialog"
+          aria-labelledby="transfer-dialog-title"
+          class="modal-panel"
           onClick={(event) => event.stopPropagation()}
         >
-          {/* Header */}
-          <div class="flex items-center justify-between px-5 py-4 border-b border-brand-border bg-brand-screen/70">
-            <div class="flex-1 text-center">
-              <h2 class="text-lg font-semibold text-slate-100">Transfer USDC</h2>
-              <p class="text-xs text-brand-slate-500">
+          <header class="modal-header">
+            <div class="min-w-0">
+              <h2 id="transfer-dialog-title" class="modal-title">
+                Transfer USDC
+              </h2>
+              <p class="modal-subtitle">
                 Transfer USDC between your Perps and Spot balances.
               </p>
             </div>
             <button
               type="button"
-              class="text-brand-slate-400 hover:text-slate-100 absolute right-4"
+              aria-label="Close"
+              class="icon-btn modal-close"
               onClick={() => closeTransferModal()}
             >
               <svg
+                aria-hidden="true"
                 xmlns="http://www.w3.org/2000/svg"
                 width="20"
                 height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2"
+                stroke-width="1.8"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
@@ -141,23 +143,23 @@ const TransferModal: Component = () => {
                 <path d="M6 6 18 18" />
               </svg>
             </button>
-          </div>
+          </header>
 
-          <form class="px-5 py-5 space-y-5" onSubmit={handleSubmit}>
-            {/* Direction Toggle */}
-            <div class="flex items-center justify-center gap-3">
+          <form class="modal-body" onSubmit={handleSubmit}>
+            {/* Direction */}
+            <div class="transfer-legs">
+              <div class="transfer-leg">
+                <span>From</span>
+                <span>{fromLabel()}</span>
+              </div>
               <button
                 type="button"
-                class="px-4 py-2 rounded-lg bg-brand-screen border border-brand-border text-sm font-medium text-slate-100"
-              >
-                {fromLabel()}
-              </button>
-              <button
-                type="button"
+                aria-label="Swap direction"
                 onClick={toggleDirection}
-                class="p-2 rounded-lg bg-brand-screen border border-brand-border text-brand-accent hover:bg-brand-accent/10 transition-colors"
+                class="icon-btn transfer-swap"
               >
                 <svg
+                  aria-hidden="true"
                   xmlns="http://www.w3.org/2000/svg"
                   width="18"
                   height="18"
@@ -168,43 +170,37 @@ const TransferModal: Component = () => {
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 >
-                  <path d="M7 16V4M7 4L3 8M7 4L11 8" />
-                  <path d="M17 8V20M17 20L21 16M17 20L13 16" />
+                  <path d="M17 4l4 4-4 4" />
+                  <path d="M21 8H7" />
+                  <path d="M7 20l-4-4 4-4" />
+                  <path d="M3 16h14" />
                 </svg>
               </button>
-              <button
-                type="button"
-                class="px-4 py-2 rounded-lg bg-brand-screen border border-brand-border text-sm font-medium text-slate-100"
-              >
-                {toLabel()}
-              </button>
+              <div class="transfer-leg">
+                <span>To</span>
+                <span>{toLabel()}</span>
+              </div>
             </div>
 
             {/* Amount Input */}
-            <div class="rounded-xl border border-brand-border bg-brand-screen overflow-hidden">
-              <div class="flex items-center gap-2 px-4 py-3">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="Amount"
-                  value={amount()}
-                  onInput={(e) => setAmount(e.currentTarget.value)}
-                  disabled={loading()}
-                  class="flex-1 bg-transparent text-slate-100 text-sm placeholder:text-brand-slate-500 outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={handleMax}
-                  class="text-brand-accent text-sm font-medium hover:underline whitespace-nowrap"
-                >
-                  MAX: {formatBalance(maxBalance())}
-                </button>
-              </div>
+            <div class="amount-field">
+              <input
+                type="text"
+                inputMode="decimal"
+                aria-label="Amount"
+                placeholder="Amount"
+                value={amount()}
+                onInput={(e) => setAmount(e.currentTarget.value)}
+                disabled={loading()}
+              />
+              <button type="button" onClick={handleMax} class="chip-btn">
+                MAX: {formatBalance(maxBalance())}
+              </button>
             </div>
 
             {/* Error */}
             <Show when={error()}>
-              <div class="text-xs text-brand-red-400 text-center">
+              <div role="alert" class="notice notice-error">
                 {error()}
               </div>
             </Show>
@@ -213,7 +209,7 @@ const TransferModal: Component = () => {
             <button
               type="submit"
               disabled={loading() || !amount()}
-              class="w-full rounded-xl bg-brand-accent/90 py-3 text-sm font-semibold text-brand-screen hover:bg-brand-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              class="btn btn-primary btn-lg btn-block"
             >
               {loading() ? "Transferring..." : "Confirm"}
             </button>

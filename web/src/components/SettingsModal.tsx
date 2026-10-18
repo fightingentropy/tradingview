@@ -79,38 +79,19 @@ const ToggleRow: Component<ToggleRowProps> = (props) => (
     aria-checked={props.checked}
     aria-busy={props.busy ? "true" : undefined}
     disabled={props.disabled}
-    class="flex min-h-16 w-full items-center justify-between gap-6 px-5 py-3.5 text-left transition-colors hover:bg-white/[0.025] disabled:cursor-not-allowed disabled:opacity-50"
+    class="toggle-row"
     onClick={props.onChange}
   >
     <span class="min-w-0">
-      <span class="block text-sm font-medium text-slate-100">
-        {props.label}
-      </span>
-      <span class="mt-1 block text-xs leading-5 text-brand-slate-500">
-        {props.description}
-      </span>
+      <span class="toggle-label">{props.label}</span>
+      <span class="toggle-desc">{props.description}</span>
     </span>
-    <span
-      aria-hidden="true"
-      class={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
-        props.checked
-          ? "border-brand-accent bg-brand-accent"
-          : "border-brand-slate-600 bg-brand-border"
-      }`}
-    >
-      <span
-        class={`absolute top-[3px] h-3 w-3 rounded-full bg-white transition-transform ${
-          props.checked ? "translate-x-[18px]" : "translate-x-[3px]"
-        }`}
-      />
-    </span>
+    <span aria-hidden="true" class="switch" />
   </button>
 );
 
 const SectionTitle: Component<{ children: string }> = (props) => (
-  <h3 class="border-b border-brand-border bg-brand-screen px-5 py-2.5 text-xs font-medium text-brand-slate-400">
-    {props.children}
-  </h3>
+  <h3 class="settings-section-title">{props.children}</h3>
 );
 
 const formatTimestamp = (value: number | undefined) => {
@@ -558,18 +539,14 @@ const SettingsModal: Component = () => {
     hyperliquidConnectionStatus() === "connecting";
   const savedConnectionSupported = () =>
     apiWalletVaultMetadata()?.network === "mainnet";
-  const primaryButton =
-    "min-h-11 w-full rounded-full bg-brand-accent px-4 text-sm font-semibold text-brand-screen transition-colors hover:bg-brand-accent/90 disabled:cursor-not-allowed disabled:opacity-45";
-  const secondaryButton =
-    "min-h-10 rounded-full border border-brand-border px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-50";
-  const summaryClass =
-    "cursor-pointer py-4 text-sm font-medium text-slate-300 marker:text-brand-slate-500";
+  const primaryButton = "btn btn-primary btn-lg btn-block";
+  const secondaryButton = "btn btn-secondary btn-sm";
 
   return (
     <Show when={settingsOpen()}>
       <Portal>
         <div
-          class="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3"
+          class="modal-backdrop"
           onClick={(event) => {
             if (event.target === event.currentTarget) closeSettings();
           }}
@@ -580,21 +557,18 @@ const SettingsModal: Component = () => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="settings-dialog-title"
-            class="flex max-h-[calc(100dvh-1.5rem)] w-[min(560px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-brand-border bg-[#111418] shadow-[0_16px_40px_rgba(0,0,0,0.35)]"
+            class="modal-panel modal-panel-lg"
           >
-            <header class="shrink-0 border-b border-brand-border px-6 pt-5">
-              <div class="flex items-center justify-between gap-4">
-                <h2
-                  id="settings-dialog-title"
-                  class="text-xl font-semibold text-slate-100"
-                >
+            <header class="shrink-0 pb-4 shadow-[inset_0_-1px_0_var(--color-brand-hairline)]">
+              <div class="modal-header">
+                <h2 id="settings-dialog-title" class="modal-title">
                   Settings
                 </h2>
                 <button
                   ref={closeButtonRef}
                   type="button"
                   aria-label="Close settings"
-                  class="flex h-10 w-10 items-center justify-center rounded-full text-brand-slate-400 hover:bg-white/5 hover:text-slate-100"
+                  class="icon-btn modal-close"
                   onClick={closeSettings}
                 >
                   <svg
@@ -613,12 +587,11 @@ const SettingsModal: Component = () => {
               </div>
               <nav
                 aria-label="Settings sections"
-                class="my-4 flex w-fit gap-1 rounded-full bg-brand-screen p-1"
+                class="segmented mx-6 mt-3 w-fit"
               >
                 <button
                   type="button"
                   aria-pressed={section() === "account"}
-                  class={`rounded-full px-4 py-2 text-sm font-medium ${section() === "account" ? "bg-brand-border text-slate-100" : "text-brand-slate-400"}`}
                   onClick={() => setSection("account")}
                 >
                   Account
@@ -626,7 +599,6 @@ const SettingsModal: Component = () => {
                 <button
                   type="button"
                   aria-pressed={section() === "appearance"}
-                  class={`rounded-full px-4 py-2 text-sm font-medium ${section() === "appearance" ? "bg-brand-border text-slate-100" : "text-brand-slate-400"}`}
                   onClick={() => setSection("appearance")}
                 >
                   Appearance
@@ -676,7 +648,7 @@ const SettingsModal: Component = () => {
                       checked={reduceMotion()}
                       onChange={() => setReduceMotion((value) => !value)}
                     />
-                    <div class="border-t border-brand-border px-5 py-4">
+                    <div class="px-6 pb-6 pt-4">
                       <button
                         type="button"
                         class={secondaryButton}
@@ -688,11 +660,11 @@ const SettingsModal: Component = () => {
                   </div>
                 }
               >
-                <div class="px-6 py-6">
+                <div class="px-6 pb-6 pt-5">
                   <Show
                     when={apiWalletVaultReady()}
                     fallback={
-                      <p class="text-sm text-brand-slate-400">
+                      <p class="settings-copy">
                         Checking your saved connection…
                       </p>
                     }
@@ -705,18 +677,16 @@ const SettingsModal: Component = () => {
                           fallback={
                             <form onSubmit={handleConnect} class="space-y-5">
                               <div>
-                                <h3 class="text-lg font-medium text-slate-100">
+                                <h3 class="settings-heading">
                                   Connect Hyperliquid
                                 </h3>
-                                <p class="mt-2 text-sm leading-6 text-brand-slate-400">
+                                <p class="settings-copy mt-1.5">
                                   Paste your API key. We’ll find your account
                                   and load your balances automatically.
                                 </p>
                               </div>
-                              <label class="block">
-                                <span class="mb-2 flex items-center justify-between gap-3 text-sm font-medium text-slate-200">
-                                  API key
-                                </span>
+                              <label class="field">
+                                <span class="field-label">API key</span>
                                 <input
                                   name="api-key"
                                   type="password"
@@ -727,7 +697,7 @@ const SettingsModal: Component = () => {
                                   disabled={busy()}
                                   placeholder="Paste your Hyperliquid API key"
                                   aria-describedby="api-key-help"
-                                  class="h-12 w-full rounded-lg border border-brand-border bg-brand-screen px-3.5 text-sm text-slate-100 outline-none transition-colors placeholder:text-brand-slate-500 focus:border-brand-accent disabled:opacity-50"
+                                  class="field-input"
                                   onInput={(event) => {
                                     setApiWalletPrivateKey(
                                       event.currentTarget.value,
@@ -736,10 +706,7 @@ const SettingsModal: Component = () => {
                                   }}
                                 />
                               </label>
-                              <p
-                                id="api-key-help"
-                                class="!mt-2 text-xs leading-5 text-brand-slate-500"
-                              >
+                              <p id="api-key-help" class="field-hint !mt-2">
                                 Use a trading API key, never your wallet’s
                                 recovery phrase or private key.{" "}
                                 <a
@@ -751,14 +718,14 @@ const SettingsModal: Component = () => {
                                   Get an API key ↗
                                 </a>
                               </p>
-                              <label class="flex cursor-pointer items-start gap-3">
+                              <label class="flex cursor-pointer items-start gap-3 rounded-md bg-brand-screen p-3.5">
                                 <input
                                   type="checkbox"
                                   checked={protectWithTouchId()}
                                   disabled={
                                     touchIdSupported() !== true || busy()
                                   }
-                                  class="mt-1 h-4 w-4 shrink-0 accent-brand-accent disabled:opacity-40"
+                                  class="mt-0.5 h-[18px] w-[18px] shrink-0 accent-brand-accent disabled:opacity-40"
                                   onChange={(event) =>
                                     setProtectWithTouchId(
                                       event.currentTarget.checked,
@@ -766,10 +733,10 @@ const SettingsModal: Component = () => {
                                   }
                                 />
                                 <span>
-                                  <span class="block text-sm text-slate-200">
+                                  <span class="block text-[15px] font-medium text-brand-slate-100">
                                     Remember on this device
                                   </span>
-                                  <span class="mt-1 block text-xs leading-5 text-brand-slate-500">
+                                  <span class="mt-1 block text-[13px] leading-5 text-brand-slate-500">
                                     {touchIdSupported() === undefined
                                       ? "Checking secure storage…"
                                       : touchIdSupported()
@@ -787,7 +754,7 @@ const SettingsModal: Component = () => {
                                 >
                                   {busy() ? "Connecting…" : "Connect account"}
                                 </button>
-                                <p class="mt-2 text-center text-xs leading-5 text-brand-slate-500">
+                                <p class="mt-3 text-center text-[13px] leading-5 text-brand-slate-500">
                                   Connects to your real Hyperliquid account.
                                 </p>
                               </div>
@@ -795,12 +762,12 @@ const SettingsModal: Component = () => {
                           }
                         >
                           <div class="space-y-4">
-                            <h3 class="text-lg font-medium text-slate-100">
+                            <h3 class="settings-heading">
                               {savedConnectionSupported()
                                 ? "Your account is saved"
                                 : "Reconnect your account"}
                             </h3>
-                            <p class="text-sm leading-6 text-brand-slate-400">
+                            <p class="settings-copy">
                               {!savedConnectionSupported()
                                 ? "This saved connection is no longer supported. Remove it, then connect with a key from your live Hyperliquid account."
                                 : busy()
@@ -808,7 +775,7 @@ const SettingsModal: Component = () => {
                                   : "Unlock to reconnect and load your balances."}
                             </p>
                             <Show when={savedConnectionSupported()}>
-                              <p class="break-all rounded-lg bg-brand-screen px-3 py-3 font-mono text-xs text-slate-300">
+                              <p class="break-all rounded-md bg-brand-screen px-3.5 py-3 font-mono text-[13px] text-brand-slate-400">
                                 {apiWalletVaultMetadata()?.masterAddress}
                               </p>
                               <button
@@ -824,7 +791,7 @@ const SettingsModal: Component = () => {
                             <button
                               type="button"
                               disabled={busy()}
-                              class={`${secondaryButton} w-full`}
+                              class="btn btn-secondary btn-block"
                               onClick={() => void handleForgetVault()}
                             >
                               {vaultAction() === "forgetting"
@@ -837,17 +804,15 @@ const SettingsModal: Component = () => {
                     >
                       <div class="space-y-4">
                         <div class="flex items-center justify-between gap-3">
-                          <h3 class="text-lg font-medium text-slate-100">
-                            Hyperliquid
-                          </h3>
-                          <span class="rounded-full bg-brand-accent/10 px-2.5 py-1 text-xs font-medium text-brand-accent">
+                          <h3 class="settings-heading">Hyperliquid</h3>
+                          <span class="badge badge-accent">
                             {connectionStatusLabel()}
                           </span>
                         </div>
-                        <p class="break-all font-mono text-sm text-slate-200">
+                        <p class="break-all rounded-md bg-brand-screen px-3.5 py-3 font-mono text-[13px] text-brand-slate-100">
                           {hyperliquidConnection()?.masterAddress}
                         </p>
-                        <p class="text-sm leading-6 text-brand-slate-400">
+                        <p class="settings-copy">
                           {isHyperliquidExecution()
                             ? "Orders use your real account balance."
                             : "Orders use practice funds. Your real balance is unchanged."}{" "}
@@ -881,17 +846,14 @@ const SettingsModal: Component = () => {
                     {(error) => (
                       <p
                         role="alert"
-                        class="mt-4 rounded-lg border border-brand-red-400/25 bg-brand-red-400/5 px-3 py-3 text-sm leading-6 text-brand-red-400"
+                        class="notice notice-error mt-4"
                       >
                         {error()}
                       </p>
                     )}
                   </Show>
                   <Show when={passkeyNameNotice()}>
-                    <p
-                      role="status"
-                      class="mt-3 text-xs leading-5 text-brand-accent"
-                    >
+                    <p role="status" class="notice notice-success mt-3">
                       {passkeyNameNotice()}
                     </p>
                   </Show>
@@ -901,18 +863,14 @@ const SettingsModal: Component = () => {
                       hasSavedApiWalletVault() && savedConnectionSupported()
                     }
                   >
-                    <details class="mt-5 border-t border-brand-border">
-                      <summary class={summaryClass}>
-                        Security preferences
-                      </summary>
-                      <label class="block pb-4">
-                        <span class="mb-2 block text-sm text-slate-200">
-                          Ask me to unlock again
-                        </span>
+                    <details class="disclosure">
+                      <summary>Security preferences</summary>
+                      <label class="field pb-4">
+                        <span class="field-label">Ask me to unlock again</span>
                         <select
                           value={passkeyRequirement()}
                           disabled={busy()}
-                          class="h-11 w-full rounded-lg border border-brand-border bg-brand-screen px-3 text-sm text-slate-200"
+                          class="field-input"
                           onChange={(event) =>
                             void handlePasskeyRequirementChange(
                               event.currentTarget.value as PasskeyRequirement,
@@ -925,7 +883,7 @@ const SettingsModal: Component = () => {
                             Every time I refresh
                           </option>
                         </select>
-                        <span class="mt-2 block text-xs leading-5 text-brand-slate-500">
+                        <span class="field-hint">
                           {passkeyRequirementDescription()}
                         </span>
                       </label>
@@ -943,25 +901,25 @@ const SettingsModal: Component = () => {
                   </Show>
 
                   <Show when={isHyperliquidConnected()}>
-                    <details class="mt-5 border-t border-brand-border">
-                      <summary class={summaryClass}>Account details</summary>
-                      <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 text-xs">
+                    <details class="disclosure">
+                      <summary>Account details</summary>
+                      <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 text-[13px]">
                         <dt class="text-brand-slate-500">API key name</dt>
-                        <dd class="break-all text-right text-slate-200">
+                        <dd class="break-all text-right text-brand-slate-100">
                           {hyperliquidConnection()?.agentName ?? "Trading key"}
                         </dd>
                         <dt class="text-brand-slate-500">Key expires</dt>
-                        <dd class="text-right text-slate-200">
+                        <dd class="text-right text-brand-slate-100">
                           {formatTimestamp(
                             hyperliquidConnection()?.agentValidUntil,
                           )}
                         </dd>
                         <dt class="text-brand-slate-500">Account type</dt>
-                        <dd class="text-right text-slate-200">
+                        <dd class="text-right text-brand-slate-100">
                           {hyperliquidAccountModeLabel()}
                         </dd>
                         <dt class="text-brand-slate-500">Last updated</dt>
-                        <dd class="text-right text-slate-200">
+                        <dd class="text-right text-brand-slate-100">
                           {formatRefreshTime(hyperliquidLastRefreshAt())}
                         </dd>
                       </dl>
@@ -969,11 +927,11 @@ const SettingsModal: Component = () => {
                         href={hyperliquidAppUrl("mainnet", "settings")}
                         target="_blank"
                         rel="noreferrer"
-                        class="my-4 inline-flex text-xs font-medium text-brand-accent hover:underline"
+                        class="my-4 inline-flex text-[13px] font-medium text-brand-accent hover:underline"
                       >
                         Manage account on Hyperliquid ↗
                       </a>
-                      <div class="-mx-5">
+                      <div class="-mx-6">
                         <ToggleRow
                           label="Practice trading"
                           description="Try orders with practice funds instead of your real balance."
@@ -988,11 +946,9 @@ const SettingsModal: Component = () => {
                     </details>
                   </Show>
                   <Show when={!isHyperliquidExecution() && isAuthenticated()}>
-                    <details class="mt-5 border-t border-brand-border">
-                      <summary class={summaryClass}>
-                        Practice trading settings
-                      </summary>
-                      <div class="-mx-5">
+                    <details class="disclosure">
+                      <summary>Practice trading settings</summary>
+                      <div class="-mx-6">
                         <ToggleRow
                           label="Share practice funds across positions"
                           description={marginDescription()}
@@ -1003,17 +959,15 @@ const SettingsModal: Component = () => {
                         />
                       </div>
                       <Show when={marginError()}>
-                        <p role="alert" class="pb-3 text-xs text-brand-red-400">
+                        <p role="alert" class="pb-3 text-[13px] text-brand-red-400">
                           {marginError()}
                         </p>
                       </Show>
                     </details>
                   </Show>
-                  <details class="mt-5 border-t border-brand-border">
-                    <summary class={summaryClass}>
-                      How your key is protected
-                    </summary>
-                    <div class="space-y-3 pb-1 text-xs leading-5 text-brand-slate-400">
+                  <details class="disclosure">
+                    <summary>How your key is protected</summary>
+                    <div class="space-y-3 pb-2 text-[13px] leading-5 text-brand-slate-400">
                       <p>
                         Your key stays in this browser and is never sent to our
                         servers. Without “Remember on this device”, you’ll need
@@ -1048,7 +1002,7 @@ const SettingsModal: Component = () => {
                 </div>
               </Show>
             </div>
-            <footer class="shrink-0 border-t border-brand-border px-6 py-3 text-xs text-brand-slate-500">
+            <footer class="modal-footer">
               Preferences save automatically on this browser.
             </footer>
           </div>

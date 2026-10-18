@@ -10,11 +10,8 @@ const SettingsModal = lazy(() => import("./SettingsModal"));
 const TransferModal = lazy(() => import("./TransferModal"));
 
 const ModalFallback: Component = () => (
-  <div class="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4">
-    <div
-      role="status"
-      class="rounded-lg border border-brand-border bg-brand-surface px-4 py-3 text-sm text-brand-slate-400"
-    >
+  <div class="modal-backdrop">
+    <div role="status" class="modal-loading">
       Loading…
     </div>
   </div>

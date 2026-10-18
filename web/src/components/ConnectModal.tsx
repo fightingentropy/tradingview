@@ -136,7 +136,7 @@ const ConnectModal: Component = () => {
     <Show when={connectOpen()}>
       <Portal>
         <div
-          class="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
+          class="modal-backdrop"
           onClick={(event) => {
             if (event.target === event.currentTarget) closeConnect();
           }}
@@ -148,20 +148,14 @@ const ConnectModal: Component = () => {
             aria-modal="true"
             aria-labelledby="connect-dialog-title"
             aria-describedby="connect-dialog-description"
-            class="w-[min(460px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-brand-border bg-[#111418] shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
+            class="modal-panel"
           >
-            <header class="flex items-start justify-between gap-4 border-b border-brand-border bg-brand-screen px-5 py-4">
-              <div>
-                <h2
-                  id="connect-dialog-title"
-                  class="text-lg font-semibold text-slate-100"
-                >
+            <header class="modal-header">
+              <div class="min-w-0">
+                <h2 id="connect-dialog-title" class="modal-title">
                   Connect
                 </h2>
-                <p
-                  id="connect-dialog-description"
-                  class="mt-1 text-xs leading-5 text-brand-slate-500"
-                >
+                <p id="connect-dialog-description" class="modal-subtitle">
                   Choose how you want to use TradingView.
                 </p>
               </div>
@@ -169,17 +163,17 @@ const ConnectModal: Component = () => {
                 ref={closeButtonRef}
                 type="button"
                 aria-label="Close connection chooser"
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border text-brand-slate-400 transition-colors hover:border-brand-slate-600 hover:text-slate-100"
+                class="icon-btn modal-close"
                 onClick={closeConnect}
               >
                 <svg
                   aria-hidden="true"
-                  width="18"
-                  height="18"
+                  width="20"
+                  height="20"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  stroke-width="2"
+                  stroke-width="1.8"
                   stroke-linecap="round"
                 >
                   <path d="M18 6 6 18M6 6l12 12" />
@@ -187,7 +181,7 @@ const ConnectModal: Component = () => {
               </button>
             </header>
 
-            <div class="space-y-2 p-4">
+            <div class="modal-body">
               <button
                 type="button"
                 disabled={
@@ -195,18 +189,18 @@ const ConnectModal: Component = () => {
                   hyperliquidConnectionStatus() === "connecting"
                 }
                 aria-busy={apiWalletVaultUnlockPending()}
-                class="flex w-full items-start gap-3 rounded-lg border border-brand-border bg-brand-screen/50 p-4 text-left transition-colors hover:border-brand-slate-600 hover:bg-white/[0.025] disabled:cursor-wait disabled:opacity-70"
+                class="option-card"
                 onClick={() => void handleApiWalletSelection()}
               >
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border text-brand-accent">
+                <span class="option-icon">
                   <svg
                     aria-hidden="true"
-                    width="18"
-                    height="18"
+                    width="20"
+                    height="20"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="2"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                   >
@@ -217,30 +211,19 @@ const ConnectModal: Component = () => {
                 </span>
                 <span class="min-w-0 flex-1">
                   <span class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-semibold text-slate-100">
-                      Hyperliquid
-                    </span>
+                    <span class="option-title">Hyperliquid</span>
                     <span
-                      class={`shrink-0 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${
-                        isHyperliquidExecution()
-                          ? "border-brand-accent/50 text-brand-accent"
-                          : "border-brand-border text-brand-slate-400"
-                      }`}
+                      class={`badge ${isHyperliquidExecution() ? "badge-accent" : ""}`}
                     >
                       {apiWalletConnectionLabel()}
                     </span>
                   </span>
-                  <span class="mt-1 block text-xs leading-5 text-brand-slate-500">
-                    {apiWalletDescription()}
-                  </span>
+                  <span class="option-desc">{apiWalletDescription()}</span>
                 </span>
               </button>
               <Show when={quickUnlockError()}>
                 {(message) => (
-                  <p
-                    role="alert"
-                    class="rounded-lg border border-brand-red-400/30 bg-brand-red-400/5 px-3 py-2 text-xs leading-5 text-brand-red-400"
-                  >
+                  <p role="alert" class="notice notice-error">
                     {message()}
                   </p>
                 )}
@@ -249,18 +232,18 @@ const ConnectModal: Component = () => {
               <button
                 type="button"
                 disabled={!authReady() || isAuthenticated()}
-                class="flex w-full items-start gap-3 rounded-lg border border-brand-border bg-brand-screen/50 p-4 text-left transition-colors hover:border-brand-slate-600 hover:bg-white/[0.025] disabled:cursor-not-allowed disabled:opacity-60"
+                class="option-card"
                 onClick={() => handOffTo(login)}
               >
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border text-brand-slate-300">
+                <span class="option-icon">
                   <svg
                     aria-hidden="true"
-                    width="18"
-                    height="18"
+                    width="20"
+                    height="20"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="2"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                   >
@@ -270,21 +253,15 @@ const ConnectModal: Component = () => {
                 </span>
                 <span class="min-w-0 flex-1">
                   <span class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-semibold text-slate-100">
-                      Sign in
-                    </span>
+                    <span class="option-title">Sign in</span>
                     <Show when={!authReady()}>
-                      <span class="rounded border border-brand-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-brand-slate-500">
-                        Checking
-                      </span>
+                      <span class="badge">Checking</span>
                     </Show>
                     <Show when={authReady() && isAuthenticated()}>
-                      <span class="rounded border border-brand-accent/50 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-brand-accent">
-                        Signed in
-                      </span>
+                      <span class="badge badge-accent">Signed in</span>
                     </Show>
                   </span>
-                  <span class="mt-1 block text-xs leading-5 text-brand-slate-500">
+                  <span class="option-desc">
                     {isAuthenticated()
                       ? "Your TradingView account is already signed in."
                       : "Use your TradingView email account for the paper ledger and profile."}

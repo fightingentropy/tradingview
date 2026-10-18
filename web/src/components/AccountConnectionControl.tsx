@@ -106,12 +106,8 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
               apiWalletVaultUnlockPending() ||
               hyperliquidConnectionStatus() === "connecting"
             }
-            class={`rounded-full border px-4 py-1.5 font-semibold transition-colors disabled:cursor-wait disabled:opacity-70 ${
-              props.compact ? "text-[11px]" : "text-sm"
-            } ${
-              isHyperliquidConnected()
-                ? "border-brand-border text-brand-slate-300 hover:border-brand-slate-600 hover:text-slate-100"
-                : "border-brand-accent bg-brand-accent text-brand-screen hover:bg-brand-accent/80"
+            class={`btn btn-sm ${props.compact ? "btn-compact" : ""} ${
+              isHyperliquidConnected() ? "btn-secondary" : "btn-primary"
             }`}
             onPointerEnter={preloadHyperliquidExecutionSdk}
             onFocus={preloadHyperliquidExecutionSdk}
@@ -123,13 +119,13 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
             {(message) => (
               <div
                 role="alert"
-                class="absolute right-0 top-full z-[80] mt-2 flex w-80 max-w-[calc(100vw-2rem)] items-start gap-3 rounded-lg border border-brand-border bg-brand-surface p-3 text-xs leading-5 text-brand-slate-300 shadow-xl"
+                class="absolute right-0 top-full z-[80] mt-2 flex w-80 max-w-[calc(100vw-2rem)] items-start gap-3 rounded-lg border border-brand-border bg-brand-raised p-3.5 text-[13px] leading-5 text-brand-slate-400 shadow-[0_16px_40px_rgba(0,0,0,0.5)]"
               >
                 <span class="min-w-0 flex-1">{message()}</span>
                 <button
                   type="button"
                   aria-label="Dismiss connection error"
-                  class="shrink-0 text-brand-slate-500 hover:text-slate-100"
+                  class="-m-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-base text-brand-slate-500 transition-colors hover:text-brand-slate-100"
                   onClick={() => setUnlockError(undefined)}
                 >
                   ×
@@ -140,7 +136,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
         </div>
       }
     >
-      <div class="flex h-9 items-stretch overflow-hidden rounded-full border border-brand-border bg-brand-surface">
+      <div class="account-chip">
         <button
           type="button"
           aria-label={`Manage ${networkLabel()} ${hyperliquidConnection()?.masterAddress}`}
@@ -148,15 +144,13 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
           aria-expanded={settingsOpen()}
           aria-controls="settings-dialog"
           title={networkLabel()}
-          class={`flex min-w-0 items-center gap-2 px-3 transition-colors hover:bg-brand-border/30 ${
-            props.compact ? "text-xs" : "text-sm"
-          }`}
+          class={`account-chip-main ${props.compact ? "is-compact" : ""}`}
           onClick={handleOpenConnect}
         >
           <Show when={!props.compact}>
-            <span class="font-medium text-brand-slate-400">Account</span>
+            <span class="account-chip-label max-[1199px]:sr-only">Account</span>
           </Show>
-          <span class="font-mono font-medium text-slate-100">
+          <span class="account-chip-address font-mono">
             {shortAddress(hyperliquidConnection()?.masterAddress ?? "")}
           </span>
         </button>
@@ -170,7 +164,7 @@ const AccountConnectionControl: Component<AccountConnectionControlProps> = (
                 ? "Copy failed"
                 : "Copy account address"
           }
-          class={`flex w-9 shrink-0 items-center justify-center border-l border-brand-border transition-colors hover:bg-brand-border/30 ${
+          class={`account-chip-copy ${
             copyState() === "failed"
               ? "text-brand-red-400"
               : "text-brand-accent"

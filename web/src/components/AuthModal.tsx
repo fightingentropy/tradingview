@@ -96,33 +96,35 @@ const AuthModal: Component = () => {
 
   return (
     <Show when={authOpen()}>
-      <div class="symbol-search-overlay is-open" onClick={() => closeAuth()}>
+      <div class="modal-backdrop" onClick={() => closeAuth()}>
         <div
-          class="w-[min(420px,95vw)] rounded-2xl border border-brand-border bg-brand-surface shadow-2xl overflow-hidden"
+          role="dialog"
+          aria-labelledby="auth-dialog-title"
+          class="modal-panel"
           onClick={(event) => event.stopPropagation()}
         >
-          <div class="flex items-center justify-between px-5 py-4 border-b border-brand-border bg-brand-screen/70">
-            <div>
-              <h2 class="text-lg font-semibold text-slate-100">
+          <header class="modal-header">
+            <div class="min-w-0">
+              <h2 id="auth-dialog-title" class="modal-title">
                 {mode() === "signIn" ? "Sign in" : "Create account"}
               </h2>
-              <p class="text-xs text-brand-slate-500">
-                Custom auth for TradingView
-              </p>
+              <p class="modal-subtitle">Custom auth for TradingView</p>
             </div>
             <button
               type="button"
-              class="text-brand-slate-400 hover:text-slate-100"
+              aria-label="Close"
+              class="icon-btn modal-close"
               onClick={() => closeAuth()}
             >
               <svg
+                aria-hidden="true"
                 xmlns="http://www.w3.org/2000/svg"
                 width="20"
                 height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2"
+                stroke-width="1.8"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
@@ -130,46 +132,39 @@ const AuthModal: Component = () => {
                 <path d="M6 6 18 18" />
               </svg>
             </button>
-          </div>
+          </header>
 
-          <div class="px-5 pt-4">
-            <div class="rounded-xl border border-brand-border bg-brand-screen/80 p-1 flex gap-1">
+          <form class="modal-body" onSubmit={submit}>
+            <div class="segmented segmented-fill">
               <button
                 type="button"
-                class={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
-                  mode() === "signIn"
-                    ? "bg-brand-accent text-brand-screen"
-                    : "text-brand-slate-400 hover:text-slate-100"
-                }`}
+                aria-pressed={mode() === "signIn"}
                 onClick={() => switchMode("signIn")}
               >
                 Sign in
               </button>
               <button
                 type="button"
-                class={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
-                  mode() === "signUp"
-                    ? "bg-brand-accent text-brand-screen"
-                    : "text-brand-slate-400 hover:text-slate-100"
-                }`}
+                aria-pressed={mode() === "signUp"}
                 onClick={() => switchMode("signUp")}
               >
                 Create account
               </button>
             </div>
-          </div>
 
-          <form class="px-5 py-4 space-y-4" onSubmit={submit}>
             <Show when={mode() === "signUp"}>
-              <div class="space-y-1">
-                <label class="text-xs text-brand-slate-500">Name</label>
+              <div class="field">
+                <label for="auth-name" class="field-label">
+                  Name
+                </label>
                 <input
+                  id="auth-name"
                   type="text"
                   autocomplete="name"
                   value={name()}
                   onInput={(event) => setName(event.currentTarget.value)}
                   disabled={authLoading()}
-                  class="w-full rounded-lg border border-brand-border bg-brand-screen px-3 py-2 text-sm text-slate-100 placeholder:text-brand-slate-500 focus:border-brand-accent"
+                  class="field-input"
                   placeholder="Demo Trader"
                 />
               </div>
@@ -183,22 +178,28 @@ const AuthModal: Component = () => {
               />
             </Show>
 
-            <div class="space-y-1">
-              <label class="text-xs text-brand-slate-500">Email</label>
+            <div class="field">
+              <label for="auth-email" class="field-label">
+                Email
+              </label>
               <input
+                id="auth-email"
                 type="email"
                 autocomplete="email"
                 value={email()}
                 onInput={(event) => setEmail(event.currentTarget.value)}
                 disabled={authLoading()}
-                class="w-full rounded-lg border border-brand-border bg-brand-screen px-3 py-2 text-sm text-slate-100 placeholder:text-brand-slate-500 focus:border-brand-accent"
+                class="field-input"
                 placeholder="you@trader.xyz"
               />
             </div>
 
-            <div class="space-y-1">
-              <label class="text-xs text-brand-slate-500">Password</label>
+            <div class="field">
+              <label for="auth-password" class="field-label">
+                Password
+              </label>
               <input
+                id="auth-password"
                 type="password"
                 autocomplete={
                   mode() === "signIn" ? "current-password" : "new-password"
@@ -206,13 +207,13 @@ const AuthModal: Component = () => {
                 value={password()}
                 onInput={(event) => setPassword(event.currentTarget.value)}
                 disabled={authLoading()}
-                class="w-full rounded-lg border border-brand-border bg-brand-screen px-3 py-2 text-sm text-slate-100 placeholder:text-brand-slate-500 focus:border-brand-accent"
+                class="field-input"
                 placeholder="********"
               />
             </div>
 
             <Show when={localError() || authError()}>
-              <div class="text-xs text-brand-red-400">
+              <div role="alert" class="notice notice-error">
                 {localError() ?? authError()}
               </div>
             </Show>
@@ -220,7 +221,7 @@ const AuthModal: Component = () => {
             <button
               type="submit"
               disabled={authLoading()}
-              class="w-full rounded-xl bg-brand-accent py-2.5 text-sm font-semibold text-brand-screen hover:brightness-105 disabled:opacity-60"
+              class="btn btn-primary btn-lg btn-block"
             >
               {authLoading()
                 ? "Working..."

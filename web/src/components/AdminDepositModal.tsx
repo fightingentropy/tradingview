@@ -68,36 +68,35 @@ const AdminDepositModal: Component<{
 
   return (
     <Show when={props.open}>
-      <div
-        class="symbol-search-overlay is-open"
-        onClick={() => props.onClose()}
-      >
+      <div class="modal-backdrop" onClick={() => props.onClose()}>
         <div
-          class="w-[min(420px,95vw)] rounded-2xl border border-brand-border bg-brand-surface shadow-2xl overflow-hidden"
+          role="dialog"
+          aria-labelledby="admin-deposit-dialog-title"
+          class="modal-panel"
           onClick={(event) => event.stopPropagation()}
         >
-          <div class="flex items-center justify-between px-5 py-4 border-b border-brand-border bg-brand-screen/70">
-            <div class="flex-1 text-center">
-              <h2 class="text-lg font-semibold text-slate-100">
+          <header class="modal-header">
+            <div class="min-w-0">
+              <h2 id="admin-deposit-dialog-title" class="modal-title">
                 Admin Deposit USDC
               </h2>
-              <p class="text-xs text-brand-slate-500">
-                Mint demo USDC into your perps balance.
-              </p>
+              <p class="modal-subtitle">Mint demo USDC into your perps balance.</p>
             </div>
             <button
               type="button"
-              class="text-brand-slate-400 hover:text-slate-100 absolute right-4"
+              aria-label="Close"
+              class="icon-btn modal-close"
               onClick={() => props.onClose()}
             >
               <svg
+                aria-hidden="true"
                 xmlns="http://www.w3.org/2000/svg"
                 width="20"
                 height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2"
+                stroke-width="1.8"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
@@ -105,26 +104,24 @@ const AdminDepositModal: Component<{
                 <path d="M6 6 18 18" />
               </svg>
             </button>
-          </div>
+          </header>
 
-          <form class="px-5 py-5 space-y-5" onSubmit={handleSubmit}>
-            <div class="rounded-xl border border-brand-border bg-brand-screen overflow-hidden">
-              <div class="flex items-center gap-2 px-4 py-3">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="USDC amount"
-                  value={amount()}
-                  onInput={(e) => setAmount(e.currentTarget.value)}
-                  disabled={loading()}
-                  class="flex-1 bg-transparent text-slate-100 text-sm placeholder:text-brand-slate-500 outline-none"
-                />
-                <span class="text-xs text-brand-slate-500">USDC</span>
-              </div>
+          <form class="modal-body" onSubmit={handleSubmit}>
+            <div class="amount-field">
+              <input
+                type="text"
+                inputMode="decimal"
+                aria-label="USDC amount"
+                placeholder="USDC amount"
+                value={amount()}
+                onInput={(e) => setAmount(e.currentTarget.value)}
+                disabled={loading()}
+              />
+              <span class="amount-unit">USDC</span>
             </div>
 
             <Show when={error()}>
-              <div class="text-xs text-brand-red-400 text-center">
+              <div role="alert" class="notice notice-error">
                 {error()}
               </div>
             </Show>
@@ -132,7 +129,7 @@ const AdminDepositModal: Component<{
             <button
               type="submit"
               disabled={loading() || !amount()}
-              class="w-full rounded-xl bg-brand-accent/90 py-3 text-sm font-semibold text-brand-screen hover:bg-brand-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              class="btn btn-primary btn-lg btn-block"
             >
               {loading() ? "Depositing..." : "Deposit USDC"}
             </button>

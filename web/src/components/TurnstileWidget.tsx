@@ -85,5 +85,11 @@ export const TurnstileWidget: Component<{
     });
   });
 
-  return <div ref={container} class="min-h-[65px]" aria-label="Bot verification" />;
+  return (
+    <div
+      ref={container}
+      class="flex min-h-[65px] items-center justify-center overflow-hidden rounded-md bg-brand-screen"
+      aria-label="Bot verification"
+    />
+  );
 };

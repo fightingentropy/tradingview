@@ -5,6 +5,24 @@ import { openSettings, settingsOpen } from "../stores/settings";
 import { prefetchPage } from "../lib/routeModules";
 import AccountConnectionControl from "./AccountConnectionControl";
 
+export const WordmarkIcon: Component = () => (
+  <svg
+    aria-hidden="true"
+    width="22"
+    height="22"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+  >
+    <path d="M6 3v18M12 6v13M18 2v18" />
+    <path
+      d="M3.5 7h5v7h-5zM9.5 10h5v5h-5zM15.5 5h5v8h-5z"
+      fill="var(--color-brand-screen)"
+    />
+  </svg>
+);
+
 const Header: Component = () => {
   const [profileOpen, setProfileOpen] = createSignal(false);
 
@@ -20,23 +38,9 @@ const Header: Component = () => {
 
   return (
     <header class="app-header hidden md:flex">
-      <div class="flex h-full items-center gap-5 lg:gap-8">
+      <div class="flex h-full items-center gap-6 lg:gap-10">
         <button onClick={() => setCurrentPage("trade")} class="app-wordmark">
-          <svg
-            aria-hidden="true"
-            width="23"
-            height="23"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.7"
-          >
-            <path d="M6 3v18M12 6v13M18 2v18" />
-            <path
-              d="M3.5 7h5v7h-5zM9.5 10h5v5h-5zM15.5 5h5v8h-5z"
-              fill="var(--color-brand-screen)"
-            />
-          </svg>
+          <WordmarkIcon />
           <span>TradingView</span>
         </button>
         <nav class="primary-nav" aria-label="Main navigation">
@@ -55,16 +59,13 @@ const Header: Component = () => {
           </For>
           <Show when={isAdmin()}>
             <button
-              class={
-                currentPage() === "admin"
-                  ? "text-brand-accent"
-                  : "text-brand-slate-400 hover:text-brand-slate-100"
-              }
+              class="nav-link"
+              aria-current={currentPage() === "admin" ? "page" : undefined}
               onPointerEnter={() => prefetchPage("admin")}
               onFocus={() => prefetchPage("admin")}
               onClick={() => setCurrentPage("admin")}
             >
-              <p class="truncate">Admin</p>
+              Admin
             </button>
           </Show>
         </nav>
@@ -77,10 +78,12 @@ const Header: Component = () => {
         <Show when={isAuthenticated()}>
           <div class="relative">
             <button
-              class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-slate-100 border border-brand-border rounded-full hover:border-brand-accent hover:text-brand-accent transition-colors"
+              class="btn btn-ghost btn-sm"
+              aria-expanded={profileOpen()}
               onClick={toggleProfileMenu}
             >
               <svg
+                aria-hidden="true"
                 xmlns="http://www.w3.org/2000/svg"
                 width="16"
                 height="16"
@@ -94,8 +97,9 @@ const Header: Component = () => {
                 <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
-              <span>Profile</span>
+              <span class="max-[1199px]:sr-only">Profile</span>
               <svg
+                aria-hidden="true"
                 xmlns="http://www.w3.org/2000/svg"
                 width="14"
                 height="14"
@@ -116,15 +120,16 @@ const Header: Component = () => {
                   class="fixed inset-0 z-40"
                   onClick={() => setProfileOpen(false)}
                 />
-                <div class="absolute right-0 top-full mt-2 w-56 bg-brand-surface border border-brand-border rounded-lg shadow-xl z-50 py-2">
+                <div class="menu">
                   <button
-                    class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-brand-red-400 hover:bg-brand-border/30 transition-colors"
+                    class="menu-item menu-item-danger"
                     onClick={() => {
                       setProfileOpen(false);
                       logout();
                     }}
                   >
                     <svg
+                      aria-hidden="true"
                       xmlns="http://www.w3.org/2000/svg"
                       width="16"
                       height="16"
@@ -154,18 +159,18 @@ const Header: Component = () => {
           aria-haspopup="dialog"
           aria-expanded={settingsOpen()}
           aria-controls="settings-dialog"
-          class="flex h-9 w-9 items-center justify-center rounded-full border border-brand-border bg-brand-surface text-brand-slate-400 transition-colors hover:text-brand-slate-100"
+          class="icon-btn"
           onClick={handleOpenSettings}
         >
           <svg
             aria-hidden="true"
             xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
+            width="20"
+            height="20"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            stroke-width="2"
+            stroke-width="1.8"
             stroke-linecap="round"
             stroke-linejoin="round"
           >

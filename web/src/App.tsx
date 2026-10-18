@@ -8,10 +8,11 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
-import Header from "./components/Header";
+import Header, { WordmarkIcon } from "./components/Header";
 import PageView from "./components/PageView";
 import Spinner from "./components/Spinner";
 import ModalHost from "./components/ModalHost";
+import "./components/Chrome.css";
 import AccountConnectionControl from "./components/AccountConnectionControl";
 import { reduceMotion, searchOpen, setSearchOpen } from "./stores/market";
 import { currentPage, setCurrentPage } from "./stores/page";
@@ -98,7 +99,7 @@ const ChartsHeaderOverlay: Component = () => {
         data-visible={isVisible() ? "true" : "false"}
         aria-hidden={!isVisible()}
         inert={!isVisible()}
-        class={`fixed inset-x-0 top-0 z-50 hidden border-b border-brand-border bg-brand-screen shadow-[0_12px_30px_rgba(0,0,0,0.35)] transition-[transform,opacity] duration-200 ease-out md:block ${
+        class={`fixed inset-x-0 top-0 z-50 hidden bg-brand-screen shadow-[0_16px_32px_rgba(0,0,0,0.4)] transition-[transform,opacity] duration-200 ease-out md:block ${
           isVisible()
             ? "translate-y-0 opacity-100"
             : "pointer-events-none -translate-y-full opacity-0"
@@ -158,7 +159,7 @@ const App: Component = () => {
   });
 
   return (
-    <div class="app-shell flex w-full flex-col bg-brand-screen text-slate-200">
+    <div class="app-shell flex w-full flex-col bg-brand-screen text-brand-slate-100">
       {/* Header */}
       <Show when={currentPage() !== "charts"}>
         <Header />
@@ -170,13 +171,12 @@ const App: Component = () => {
 
       {/* Mobile Header */}
       <Show when={currentPage() !== "charts"}>
-        <header class="mobile-header flex md:hidden items-center justify-between px-4 py-3 border-b border-brand-border">
-          <button onClick={() => setCurrentPage("trade")}>
-            <span class="text-base font-semibold tracking-tight text-brand-slate-100">
-              Trading<span class="text-brand-slate-100">View</span>
-            </span>
+        <header class="mobile-header flex md:hidden items-center justify-between">
+          <button type="button" class="app-wordmark" onClick={() => setCurrentPage("trade")}>
+            <WordmarkIcon />
+            <span>TradingView</span>
           </button>
-          <div class="flex items-center gap-2">
+          <div class="flex min-w-0 items-center gap-1">
             <AccountConnectionControl
               compact
               onBeforeOpen={() => setMobileProfileOpen(false)}
@@ -184,24 +184,27 @@ const App: Component = () => {
             <Show when={isAuthenticated()}>
               <div class="relative">
                 <button
-                  class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-slate-100 border border-brand-border rounded-full hover:border-brand-accent hover:text-brand-accent transition-colors"
+                  type="button"
+                  class="icon-btn"
+                  aria-expanded={mobileProfileOpen()}
                   onClick={() => setMobileProfileOpen(!mobileProfileOpen())}
                 >
                   <svg
+                    aria-hidden="true"
                     xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
+                    width="20"
+                    height="20"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="2"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                   >
                     <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
                     <circle cx="12" cy="7" r="4" />
                   </svg>
-                  <span>Profile</span>
+                  <span class="sr-only">Profile</span>
                 </button>
 
                 {mobileProfileOpen() && (
@@ -210,15 +213,16 @@ const App: Component = () => {
                       class="fixed inset-0 z-40"
                       onClick={() => setMobileProfileOpen(false)}
                     />
-                    <div class="absolute right-0 top-full mt-2 w-48 bg-brand-surface border border-brand-border rounded-lg shadow-xl z-50 py-2">
+                    <div class="menu">
                       <button
-                        class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-brand-red-400 hover:bg-brand-border/30 transition-colors"
+                        class="menu-item menu-item-danger"
                         onClick={() => {
                           setMobileProfileOpen(false);
                           logout();
                         }}
                       >
                         <svg
+                          aria-hidden="true"
                           xmlns="http://www.w3.org/2000/svg"
                           width="16"
                           height="16"
@@ -247,7 +251,7 @@ const App: Component = () => {
               aria-haspopup="dialog"
               aria-expanded={settingsOpen()}
               aria-controls="settings-dialog"
-              class="flex h-9 w-9 items-center justify-center rounded-full border border-brand-border bg-brand-surface text-brand-slate-400"
+              class="icon-btn"
               onClick={() => {
                 setMobileProfileOpen(false);
                 openSettings();
@@ -256,12 +260,12 @@ const App: Component = () => {
               <svg
                 aria-hidden="true"
                 xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2"
+                stroke-width="1.8"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
@@ -370,14 +374,16 @@ const App: Component = () => {
 
       {/* Mobile Bottom Nav */}
       <nav
-        class="mobile-nav flex md:hidden items-center justify-around border-t border-brand-border"
+        class="mobile-nav flex md:hidden"
         aria-label="Main navigation"
       >
         <button
-          class={`flex flex-col items-center gap-1 ${currentPage() === "trade" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          type="button"
+          aria-current={currentPage() === "trade" ? "page" : undefined}
           onClick={() => setCurrentPage("trade")}
         >
           <svg
+            aria-hidden="true"
             xmlns="http://www.w3.org/2000/svg"
             width="20"
             height="20"
@@ -392,16 +398,18 @@ const App: Component = () => {
             <path d="m3 17 9 4 9-4" />
             <path d="M12 10v12" />
           </svg>
-          <span class="text-xs">Trade</span>
+          <span>Trade</span>
         </button>
 
         <button
-          class={`flex flex-col items-center gap-1 ${currentPage() === "portfolio" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          type="button"
+          aria-current={currentPage() === "portfolio" ? "page" : undefined}
           onPointerEnter={() => prefetchPage("portfolio")}
           onFocus={() => prefetchPage("portfolio")}
           onClick={() => setCurrentPage("portfolio")}
         >
           <svg
+            aria-hidden="true"
             xmlns="http://www.w3.org/2000/svg"
             width="20"
             height="20"
@@ -416,24 +424,27 @@ const App: Component = () => {
             <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
             <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
           </svg>
-          <span class="text-xs">Portfolio</span>
+          <span>Portfolio</span>
         </button>
         <button
-          class={`flex flex-col items-center gap-1 ${currentPage() === "stats" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          type="button"
+          aria-current={currentPage() === "stats" ? "page" : undefined}
           onPointerEnter={() => prefetchPage("stats")} onFocus={() => prefetchPage("stats")}
-          onClick={() => setCurrentPage("stats")} aria-current={currentPage() === "stats" ? "page" : undefined}
+          onClick={() => setCurrentPage("stats")}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V5M17 16V8" /></svg>
-          <span class="text-xs">Stats</span>
+          <span>Stats</span>
         </button>
 
         <button
-          class={`flex flex-col items-center gap-1 ${currentPage() === "brief" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          type="button"
+          aria-current={currentPage() === "brief" ? "page" : undefined}
           onPointerEnter={() => prefetchPage("brief")}
           onFocus={() => prefetchPage("brief")}
           onClick={() => setCurrentPage("brief")}
         >
           <svg
+            aria-hidden="true"
             xmlns="http://www.w3.org/2000/svg"
             width="20"
             height="20"
@@ -449,27 +460,29 @@ const App: Component = () => {
             <path d="M8 12h8" />
             <path d="M8 16h5" />
           </svg>
-          <span class="text-xs">Brief</span>
+          <span>Brief</span>
         </button>
         <button
-          class={`flex flex-col items-center gap-1 ${currentPage() === "news" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          type="button"
+          aria-current={currentPage() === "news" ? "page" : undefined}
           onPointerEnter={() => prefetchPage("news")}
           onFocus={() => prefetchPage("news")}
           onClick={() => setCurrentPage("news")}
-          aria-current={currentPage() === "news" ? "page" : undefined}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 4h16v16H4zM8 8h8M8 12h3M8 16h3M15 12h1M15 16h1" />
           </svg>
-          <span class="text-xs">News</span>
+          <span>News</span>
         </button>
         <button
-          class={`flex flex-col items-center gap-1 ${currentPage() === "calendar" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          type="button"
+          aria-current={currentPage() === "calendar" ? "page" : undefined}
           onPointerEnter={() => prefetchPage("calendar")}
           onFocus={() => prefetchPage("calendar")}
           onClick={() => setCurrentPage("calendar")}
         >
           <svg
+            aria-hidden="true"
             xmlns="http://www.w3.org/2000/svg"
             width="20"
             height="20"
@@ -484,15 +497,17 @@ const App: Component = () => {
             <path d="M16 3v4M8 3v4M3 10h18" />
             <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
           </svg>
-          <span class="text-xs">Calendar</span>
+          <span>Calendar</span>
         </button>
         <button
-          class={`flex flex-col items-center gap-1 ${currentPage() === "charts" ? "text-brand-accent" : "text-brand-slate-400"}`}
+          type="button"
+          aria-current={currentPage() === "charts" ? "page" : undefined}
           onPointerEnter={() => prefetchPage("charts")}
           onFocus={() => prefetchPage("charts")}
           onClick={() => setCurrentPage("charts")}
         >
           <svg
+            aria-hidden="true"
             xmlns="http://www.w3.org/2000/svg"
             width="20"
             height="20"
@@ -506,16 +521,18 @@ const App: Component = () => {
             <path d="M3 3v18h18" />
             <path d="m7 14 3-3 3 3 5-6" />
           </svg>
-          <span class="text-xs">Charts</span>
+          <span>Charts</span>
         </button>
         <Show when={isAdmin()}>
           <button
-            class={`flex flex-col items-center gap-1 ${currentPage() === "admin" ? "text-brand-accent" : "text-brand-slate-400"}`}
+            type="button"
+          aria-current={currentPage() === "admin" ? "page" : undefined}
             onPointerEnter={() => prefetchPage("admin")}
             onFocus={() => prefetchPage("admin")}
             onClick={() => setCurrentPage("admin")}
           >
             <svg
+              aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               width="20"
               height="20"
@@ -529,7 +546,7 @@ const App: Component = () => {
               <path d="M12 3l8 4v4c0 5.55-3.84 10.74-8 12-4.16-1.26-8-6.45-8-12V7l8-4Z" />
               <path d="M9 12l2 2 4-4" />
             </svg>
-            <span class="text-xs">Admin</span>
+            <span>Admin</span>
           </button>
         </Show>
       </nav>
