@@ -67,25 +67,34 @@ async function fixture(t, outbound) {
   const directory = await mkdtemp(path.join(tmpdir(), 'tradingview-alert-relay-test-'));
   const sends = [];
   const receipts = [];
+  const outboundService = async (request) => {
+    const url = new URL(request.url);
+    assert.equal(url.origin, 'https://exp.host', 'unexpected outbound network request');
+    const payload = await request.json();
+    if (url.pathname.endsWith('/push/send')) {
+      sends.push(payload);
+      return outbound ? outbound({ type: 'send', payload, count: sends.length }) : MockResponse.json({ data: { status: 'ok', id: `receipt-${sends.length}` } });
+    }
+    assert.equal(url.pathname, '/--/api/v2/push/getReceipts');
+    receipts.push(payload);
+    return outbound ? outbound({ type: 'receipt', payload, count: receipts.length }) : MockResponse.json({ data: Object.fromEntries(payload.ids.map((id) => [id, { status: 'ok' }])) });
+  };
   const options = {
-    name: 'price-alert-test', script: bundle, modules: true,
-    compatibilityDate: '2026-07-10', compatibilityFlags: ['nodejs_compat'],
-    bindings: { APP_ACCESS_TOKEN: APP_KEY, BRIDGE_SECRET: MONITOR_KEY },
-    kvNamespaces: ['NEWS_RELAY_KV'],
-    durableObjects: { PRICE_ALERTS: { className: 'TestRelay', useSQLite: true } },
     resourcePersistencePath: path.join(directory, 'state'),
-    outboundService: async (request) => {
-      const url = new URL(request.url);
-      assert.equal(url.origin, 'https://exp.host', 'unexpected outbound network request');
-      const payload = await request.json();
-      if (url.pathname.endsWith('/push/send')) {
-        sends.push(payload);
-        return outbound ? outbound({ type: 'send', payload, count: sends.length }) : MockResponse.json({ data: { status: 'ok', id: `receipt-${sends.length}` } });
-      }
-      assert.equal(url.pathname, '/--/api/v2/push/getReceipts');
-      receipts.push(payload);
-      return outbound ? outbound({ type: 'receipt', payload, count: receipts.length }) : MockResponse.json({ data: Object.fromEntries(payload.ids.map((id) => [id, { status: 'ok' }])) });
-    },
+    workers: [{
+      config: {
+        name: 'price-alert-test', compatibilityDate: '2026-07-10', compatibilityFlags: ['nodejs_compat'],
+        manifest: { mainModule: 'relay.mjs', modules: { 'relay.mjs': { type: 'esm', contents: bundle } } },
+        env: {
+          APP_ACCESS_TOKEN: { type: 'text', value: APP_KEY },
+          BRIDGE_SECRET: { type: 'text', value: MONITOR_KEY },
+          NEWS_RELAY_KV: { type: 'kv' },
+          PRICE_ALERTS: { type: 'durable-object', worker: 'price-alert-test', exportName: 'TestRelay' },
+        },
+        exports: { TestRelay: { type: 'durable-object', storage: 'sqlite' } },
+      },
+      dev: { outboundService: { type: 'fetcher', handler: outboundService } },
+    }],
   };
   let runtime = new Miniflare(options);
   t.after(async () => { await runtime.dispose(); await rm(directory, { recursive: true, force: true }); });

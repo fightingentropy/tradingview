@@ -1,4 +1,4 @@
-import { bindings, defineConfig, exports } from "cf/config";
+import { bindings, defineConfig, defineWorker, exports } from "cf/config";
 
 // --mode web selects the web app; the default is the existing news relay.
 export default defineConfig((ctx) => {
@@ -6,7 +6,7 @@ export default defineConfig((ctx) => {
     throw new Error("Use --mode web or --mode relay");
   return ctx.mode === "web"
     ? {
-        worker: {
+        worker: defineWorker({
           name: "tradingview-web",
           compatibilityDate: "2026-08-06",
           compatibilityFlags: ["nodejs_compat"],
@@ -39,10 +39,10 @@ export default defineConfig((ctx) => {
             }),
             ASSETS: bindings.assets(),
           },
-        },
+        }),
       }
     : {
-        worker: {
+        worker: defineWorker({
           name: "tradingview-news-relay",
           compatibilityDate: "2026-07-10",
           compatibilityFlags: ["nodejs_compat"],
@@ -67,6 +67,6 @@ export default defineConfig((ctx) => {
               exportName: "MacMiniAlertRelay",
             }),
           },
-        },
+        }),
       };
 });
