@@ -40,7 +40,7 @@ function SetupState() {
       </AppText>
       <AppText muted style={styles.stateBody}>
         Add the feed service URL to receive posts from your X timeline or lists, messages from
-        your Telegram channels, Paste trade calls, and Digg Tech stories. Account credentials
+        your Telegram channels, Paste trade calls, and Digg stories. Account credentials
         stay on the service, not in this app.
       </AppText>
       <View style={styles.privacyRow}>

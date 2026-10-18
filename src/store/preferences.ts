@@ -21,6 +21,9 @@ interface PreferencesState {
   /** Last Account section, restored immediately when returning or relaunching. */
   accountTab: AccountTab;
   setAccountTab: (value: AccountTab) => void;
+  /** Funding-history coin keys. An empty selection shows every ticker. */
+  fundingTickers: string[];
+  setFundingTickers: (value: string[]) => void;
   /** Show the optional CLOB depth panel in the web trading workspace. Off by default. */
   showClobOrderBook: boolean;
   setShowClobOrderBook: (value: boolean) => void;
@@ -62,6 +65,8 @@ export const usePreferences = create<PreferencesState>()(
     (set) => ({
       accountTab: 'positions',
       setAccountTab: (value) => set({ accountTab: value }),
+      fundingTickers: [],
+      setFundingTickers: (value) => set({ fundingTickers: value }),
       showClobOrderBook: false,
       setShowClobOrderBook: (value) => set({ showClobOrderBook: value }),
       showOutcomeMarkets: false,

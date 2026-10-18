@@ -59,6 +59,7 @@ import { SMALL_BALANCE_USD, usePreferences } from '@/store/preferences';
 import { AccountReadStatus, FillCard, FundingHistoryCard, HistoryEmpty, HistoryError, HistoryIntro, HistoryLoading, InterestHistoryCard, OrderCard, PositionCard, RiskStrip, SpotCard, TabButton } from '@/components/account/AccountRows';
 import { styles } from '@/components/account/accountStyles';
 import { AccountSummary } from '@/components/account/AccountSummary';
+import { FundingTickerFilter } from '@/components/account/FundingTickerFilter';
 import { AccountMutationStatusUnknownError, AccountPreflightError, cleanCoin, displayPriceDecimals, fullWhen, ISOLATED_MARGIN_BUFFER_USD, isolatedMarginRemovalSafetyLimit, LIQUIDATION_REVIEW_DRIFT_PCT, MARKET_ACTION_SLIPPAGE, marketCoinKey, MASK, orderAssetMeta, positionLiquidationDistancePct, PositionProtectionLevels, protectionAckIsAccepted, protectionAckLabel, protectionLevelsForPosition, ProtectionPreflightError, qty, tokenAmt } from '@/lib/accountPresentation';
 
 interface PositionMarketActionRequest {
@@ -120,6 +121,8 @@ export default function AccountScreen() {
   const connectDemo = useHlConnection((s) => s.connectDemo);
   const tab = usePreferences((s) => s.accountTab);
   const setTab = usePreferences((s) => s.setAccountTab);
+  const fundingTickers = usePreferences((s) => s.fundingTickers);
+  const setFundingTickers = usePreferences((s) => s.setFundingTickers);
   const accountQuery = useHlAccount();
   const { data: account, isFetching, refetch } = accountQuery;
   const identityQuery = useTradingIdentity();
@@ -158,6 +161,12 @@ export default function AccountScreen() {
     isError: fundingHistoryError,
     refetch: refetchFundingHistory,
   } = useHlUserFunding(tab === 'funding');
+  const visibleFundingHistory = useMemo(
+    () => fundingTickers.length > 0
+      ? fundingHistory?.filter((row) => fundingTickers.includes(row.coin))
+      : fundingHistory,
+    [fundingHistory, fundingTickers],
+  );
   const {
     data: interestHistory,
     isPending: interestHistoryLoading,
@@ -1007,7 +1016,7 @@ export default function AccountScreen() {
             />
             <TabButton
               label="Funding"
-              count={fundingHistory?.length}
+              count={visibleFundingHistory?.length}
               active={tab === 'funding'}
               onPress={() => setTab('funding')}
             />
@@ -1133,11 +1142,6 @@ export default function AccountScreen() {
             <HistoryLoading />
           ) : fundingHistoryError && !fundingHistory ? (
             <HistoryError label="funding history" onRetry={() => refetchFundingHistory()} />
-          ) : (fundingHistory?.length ?? 0) === 0 ? (
-            <HistoryEmpty
-              title="No recent funding payments"
-              detail="Funding settlements appear here after a perp position crosses an hourly interval."
-            />
           ) : (
             <View style={styles.historyList}>
               <HistoryIntro
@@ -1146,7 +1150,20 @@ export default function AccountScreen() {
                 detail="Positive payments were received; negative payments were paid."
               />
               {fundingHistoryError ? <HistoryError label="funding updates" onRetry={() => { void refetchFundingHistory(); }} /> : null}
-              {fundingHistory!.map((row) => (
+              <FundingTickerFilter
+                rows={fundingHistory ?? []}
+                selected={fundingTickers}
+                visibleCount={visibleFundingHistory?.length ?? 0}
+                onChange={setFundingTickers}
+              />
+              {(visibleFundingHistory?.length ?? 0) === 0 ? (
+                <HistoryEmpty
+                  title={fundingTickers.length > 0 ? 'No payments for these tickers' : 'No recent funding payments'}
+                  detail={fundingTickers.length > 0
+                    ? 'Choose different tickers or reset the filter to see all recent payments.'
+                    : 'Funding settlements appear here after a perp position crosses an hourly interval.'}
+                />
+              ) : visibleFundingHistory!.map((row) => (
                 <FundingHistoryCard key={row.key} row={row} hidden={privacyMode} />
               ))}
             </View>
