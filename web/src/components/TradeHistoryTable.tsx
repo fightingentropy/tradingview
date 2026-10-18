@@ -1,4 +1,5 @@
 import { Component, For, Show, createMemo } from "solid-js";
+import "./AccountTables.css";
 import { formatPrice } from "../lib/hyperliquid";
 import {
   hyperliquidActivityRefreshError,
@@ -40,14 +41,19 @@ type TradeRow = {
   closedPnl: number;
 };
 
+const numericColumns = new Set([
+  "Price",
+  "Size",
+  "Trade Value",
+  "Fee",
+  "Closed PNL",
+]);
+
 const TradeHistoryTable: Component<{
   compact?: boolean;
   sideFilter?: AccountSideFilter;
   marketFilter?: string;
 }> = (props) => {
-  const rowPadding = props.compact ? "py-1.5" : "py-2";
-  const headerPadding = props.compact ? "py-2" : "py-2.5";
-  const textSize = props.compact ? "text-xs" : "text-sm";
   const rows = createMemo<TradeRow[]>(() => {
     const source = isHyperliquidExecution()
       ? hyperliquidTradeFills()
@@ -110,14 +116,14 @@ const TradeHistoryTable: Component<{
 
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[1080px]">
+      <table
+        class={`account-table min-w-[1080px] ${props.compact ? "is-compact" : ""}`}
+      >
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(column) => (
-                <th
-                  class={`px-3 ${headerPadding} whitespace-nowrap text-left text-xs font-medium text-brand-slate-400`}
-                >
+                <th class={numericColumns.has(column) ? "num" : undefined}>
                   {column}
                 </th>
               )}
@@ -129,10 +135,7 @@ const TradeHistoryTable: Component<{
             when={rows().length > 0}
             fallback={
               <tr>
-                <td
-                  class={`px-3 ${rowPadding} ${textSize} text-brand-slate-400`}
-                  colSpan={columns.length}
-                >
+                <td class="account-empty" colSpan={columns.length}>
                   {emptyText()}
                 </td>
               </tr>
@@ -142,36 +145,34 @@ const TradeHistoryTable: Component<{
               {(trade) => {
                 const market = formatAccountMarket(trade.symbol);
                 return (
-                  <tr class="border-b border-brand-border/40">
-                    <td
-                      class={`px-3 ${rowPadding} ${textSize} whitespace-nowrap font-mono text-brand-slate-400`}
-                    >
+                  <tr>
+                    <td class="whitespace-nowrap font-mono text-brand-slate-400">
                       {formatAccountTime(trade.time)}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize}`}>
+                    <td>
                       <span class="font-semibold">{market}</span>
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize}`}>
+                    <td>
                       <span
                         class={`font-semibold ${trade.side === "buy" ? "text-brand-green-400" : "text-brand-red-400"}`}
                       >
                         {trade.direction}
                       </span>
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {formatPrice(trade.price)}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountSize(trade.size)} {market}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountUsd(trade.tradeValue)}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountUsd(trade.fee)} {trade.feeToken}
                     </td>
                     <td
-                      class={`px-3 ${rowPadding} ${textSize} font-mono ${trade.closedPnl >= 0 ? "text-brand-green-400" : "text-brand-red-400"}`}
+                      class={`num font-mono ${trade.closedPnl >= 0 ? "text-brand-green-400" : "text-brand-red-400"}`}
                     >
                       {formatAccountUsd(trade.closedPnl, true)}
                     </td>
@@ -182,10 +183,10 @@ const TradeHistoryTable: Component<{
           </Show>
         </tbody>
       </table>
-      <div class="flex justify-end border-t border-brand-border px-3 py-2">
+      <div class="account-table-footer">
         <button
           type="button"
-          class="text-xs font-medium text-brand-slate-300 hover:text-slate-100 disabled:opacity-50"
+          class="account-link-button"
           disabled={rows().length === 0}
           onClick={exportCsv}
         >
@@ -199,7 +200,7 @@ const TradeHistoryTable: Component<{
           hyperliquidActivityRefreshError()
         }
       >
-        <div class="border-t border-brand-border px-3 py-2 text-xs text-brand-red-400">
+        <div class="account-notice">
           {hyperliquidActivityRefreshError()}
         </div>
       </Show>

@@ -1,4 +1,5 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import "./AccountTables.css";
 import { formatPrice } from "../lib/hyperliquid";
 import {
   type Order,
@@ -29,14 +30,19 @@ const columns = [
   "Cancel All",
 ];
 
+const numericColumns = new Set([
+  "Size",
+  "Original Size",
+  "Order Value",
+  "Price",
+  "Trigger Conditions",
+]);
+
 const OpenOrdersTable: Component<{
   compact?: boolean;
   sideFilter?: AccountSideFilter;
   marketFilter?: string;
 }> = (props) => {
-  const rowPadding = props.compact ? "py-1.5" : "py-2";
-  const headerPadding = props.compact ? "py-2" : "py-2.5";
-  const textSize = props.compact ? "text-xs" : "text-sm";
   const [cancelingOrderId, setCancelingOrderId] = createSignal<string | null>(
     null,
   );
@@ -87,14 +93,14 @@ const OpenOrdersTable: Component<{
 
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[1500px]">
+      <table
+        class={`account-table min-w-[1500px] ${props.compact ? "is-compact" : ""}`}
+      >
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(column) => (
-                <th
-                  class={`px-3 ${headerPadding} whitespace-nowrap text-left text-xs font-medium text-brand-slate-400`}
-                >
+                <th class={numericColumns.has(column) ? "num" : undefined}>
                   {column}
                 </th>
               )}
@@ -106,10 +112,7 @@ const OpenOrdersTable: Component<{
             when={activeOrders().length > 0}
             fallback={
               <tr>
-                <td
-                  class={`px-3 ${rowPadding} ${textSize} text-brand-slate-400`}
-                  colSpan={columns.length}
-                >
+                <td class="account-empty" colSpan={columns.length}>
                   No open orders
                 </td>
               </tr>
@@ -127,49 +130,47 @@ const OpenOrdersTable: Component<{
                     ? "Limit"
                     : "Market";
                 return (
-                  <tr class="border-b border-brand-border/40">
-                    <td
-                      class={`px-3 ${rowPadding} ${textSize} whitespace-nowrap font-mono text-brand-slate-400`}
-                    >
+                  <tr>
+                    <td class="whitespace-nowrap font-mono text-brand-slate-400">
                       {formatAccountTime(order.createdAt)}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize}`}>
+                    <td>
                       {typeLabel}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize}`}>
+                    <td>
                       <span class="font-semibold">{market}</span>
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize}`}>
+                    <td>
                       <span
                         class={`font-semibold ${order.side === "buy" ? "text-brand-green-400" : "text-brand-red-400"}`}
                       >
                         {order.side === "buy" ? "Buy" : "Sell"}
                       </span>
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountSize(remainingSize)} {market}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountSize(order.size)} {market}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {price > 0 ? formatAccountUsd(order.size * price) : "--"}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {price > 0 ? formatPrice(price) : "--"}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize}`}>
+                    <td>
                       {isLive && order.reduceOnly ? "Yes" : "No"}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize} font-mono`}>
+                    <td class="num font-mono">
                       {isLive && order.isTrigger && order.triggerPrice
                         ? `@ ${formatPrice(order.triggerPrice)}`
                         : "--"}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize}`}>
+                    <td>
                       {isLive && order.isPositionTpsl ? typeLabel : "--"}
                     </td>
-                    <td class={`px-3 ${rowPadding} ${textSize}`}>
+                    <td>
                       <div class="max-w-64 space-y-1">
                         <div class="flex items-center gap-3">
                           <Show when={!isLive}>
@@ -207,7 +208,7 @@ const OpenOrdersTable: Component<{
                         >
                           {(message) => (
                             <div
-                              class="whitespace-normal text-[10px] leading-4 text-brand-red-400"
+                              class="whitespace-normal text-[12px] leading-4 text-brand-red-400"
                               role="alert"
                             >
                               {message()}

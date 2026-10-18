@@ -1,4 +1,5 @@
 import { Component, For, Show, createMemo } from "solid-js";
+import "./AccountTables.css";
 import { formatPrice } from "../lib/hyperliquid";
 import {
   hyperliquidActivityRefreshError,
@@ -26,11 +27,8 @@ type ActivityTableProps = {
   marketFilter?: string;
 };
 
-const tableLayout = (compact?: boolean) => ({
-  header: compact ? "px-3 py-2" : "px-3 py-2.5",
-  cell: compact ? "px-3 py-1.5" : "px-3 py-2",
-  text: compact ? "text-xs" : "text-sm",
-});
+const tableClass = (minWidth: string, compact?: boolean) =>
+  `account-table ${minWidth} ${compact ? "is-compact" : ""}`;
 
 const sideMatches = (
   selected: AccountSideFilter | undefined,
@@ -51,9 +49,7 @@ const emptyMessage = (label: string) => {
 const ActivityNotice: Component = () => (
   <Show when={hyperliquidActivityRefreshError()}>
     {(message) => (
-      <div class="border-t border-brand-border px-3 py-2 text-xs text-brand-red-400">
-        {message()}
-      </div>
+      <div class="account-notice">{message()}</div>
     )}
   </Show>
 );
@@ -61,21 +57,15 @@ const ActivityNotice: Component = () => (
 const TableEmptyRow: Component<{
   columns: number;
   label: string;
-  cellClass: string;
-  textClass: string;
 }> = (props) => (
   <tr>
-    <td
-      class={`${props.cellClass} ${props.textClass} text-brand-slate-400`}
-      colSpan={props.columns}
-    >
+    <td class="account-empty" colSpan={props.columns}>
       {emptyMessage(props.label)}
     </td>
   </tr>
 );
 
 const TwapTable: Component<ActivityTableProps> = (props) => {
-  const layout = tableLayout(props.compact);
   const columns = [
     "Market",
     "Size",
@@ -88,6 +78,7 @@ const TwapTable: Component<ActivityTableProps> = (props) => {
     "Creation Time",
     "Terminate",
   ];
+  const numericColumns = new Set(["Size", "Executed Size", "Average Price", "Running Time / Total", "Trigger Price", "Max/Min Price"]);
   const rows = createMemo(() =>
     hyperliquidTwapOrders().filter(
       (order) =>
@@ -98,14 +89,12 @@ const TwapTable: Component<ActivityTableProps> = (props) => {
 
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[1260px]">
+      <table class={tableClass("min-w-[1260px]", props.compact)}>
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(column) => (
-                <th
-                  class={`${layout.header} whitespace-nowrap text-left text-xs font-medium text-brand-slate-400`}
-                >
+                <th class={numericColumns.has(column) ? "num" : undefined}>
                   {column}
                 </th>
               )}
@@ -119,8 +108,6 @@ const TwapTable: Component<ActivityTableProps> = (props) => {
               <TableEmptyRow
                 columns={columns.length}
                 label="TWAP orders"
-                cellClass={layout.cell}
-                textClass={layout.text}
               />
             }
           >
@@ -135,47 +122,45 @@ const TwapTable: Component<ActivityTableProps> = (props) => {
                 );
                 const market = formatAccountMarket(order.symbol);
                 return (
-                  <tr class="border-b border-brand-border/40">
-                    <td class={`${layout.cell} ${layout.text}`}>
+                  <tr>
+                    <td>
                       <span
                         class={`font-semibold ${order.side === "buy" ? "text-brand-green-400" : "text-brand-red-400"}`}
                       >
                         {market}
                       </span>
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountSize(order.size)} {market}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountSize(order.executedSize)} {market}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {order.averagePrice === undefined
                         ? "--"
                         : formatPrice(order.averagePrice)}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {elapsedMinutes}m / {order.totalMinutes}m
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {order.triggerPrice === undefined
                         ? "--"
                         : formatPrice(order.triggerPrice)}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {order.stopPrice === undefined
                         ? "--"
                         : formatPrice(order.stopPrice)}
                     </td>
-                    <td class={`${layout.cell} ${layout.text}`}>
+                    <td>
                       {order.reduceOnly ? "Yes" : "No"}
                     </td>
-                    <td
-                      class={`${layout.cell} ${layout.text} whitespace-nowrap font-mono text-brand-slate-400`}
-                    >
+                    <td class="whitespace-nowrap font-mono text-brand-slate-400">
                       {formatAccountTime(order.createdAt)}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} text-brand-slate-500`}>
+                    <td class="text-brand-slate-500">
                       --
                     </td>
                   </tr>
@@ -193,7 +178,6 @@ const TwapTable: Component<ActivityTableProps> = (props) => {
 };
 
 const ChaseTable: Component<ActivityTableProps> = (props) => {
-  const layout = tableLayout(props.compact);
   const columns = [
     "Market",
     "Size",
@@ -205,16 +189,15 @@ const ChaseTable: Component<ActivityTableProps> = (props) => {
     "Creation Time",
     "Terminate",
   ];
+  const numericColumns = new Set(["Size", "Executed Size", "Average Price", "Max Distance", "% Completed"]);
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[1040px]">
+      <table class={tableClass("min-w-[1040px]", props.compact)}>
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(column) => (
-                <th
-                  class={`${layout.header} whitespace-nowrap text-left text-xs font-medium text-brand-slate-400`}
-                >
+                <th class={numericColumns.has(column) ? "num" : undefined}>
                   {column}
                 </th>
               )}
@@ -225,8 +208,6 @@ const ChaseTable: Component<ActivityTableProps> = (props) => {
           <TableEmptyRow
             columns={columns.length}
             label="Chase orders"
-            cellClass={layout.cell}
-            textClass={layout.text}
           />
         </tbody>
       </table>
@@ -235,7 +216,6 @@ const ChaseTable: Component<ActivityTableProps> = (props) => {
 };
 
 const FundingHistoryTable: Component<ActivityTableProps> = (props) => {
-  const layout = tableLayout(props.compact);
   const columns = [
     "Time",
     "Market",
@@ -244,6 +224,7 @@ const FundingHistoryTable: Component<ActivityTableProps> = (props) => {
     "Payment",
     "Rate (Annualized)",
   ];
+  const numericColumns = new Set(["Size", "Payment", "Rate (Annualized)"]);
   const rows = createMemo(() =>
     hyperliquidFundingPayments().filter(
       (payment) =>
@@ -267,14 +248,12 @@ const FundingHistoryTable: Component<ActivityTableProps> = (props) => {
 
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[820px]">
+      <table class={tableClass("min-w-[820px]", props.compact)}>
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(column) => (
-                <th
-                  class={`${layout.header} whitespace-nowrap text-left text-xs font-medium text-brand-slate-400`}
-                >
+                <th class={numericColumns.has(column) ? "num" : undefined}>
                   {column}
                 </th>
               )}
@@ -288,8 +267,6 @@ const FundingHistoryTable: Component<ActivityTableProps> = (props) => {
               <TableEmptyRow
                 columns={columns.length}
                 label="Funding history"
-                cellClass={layout.cell}
-                textClass={layout.text}
               />
             }
           >
@@ -297,30 +274,24 @@ const FundingHistoryTable: Component<ActivityTableProps> = (props) => {
               {(payment) => {
                 const market = formatAccountMarket(payment.symbol);
                 return (
-                  <tr class="border-b border-brand-border/40">
-                    <td
-                      class={`${layout.cell} ${layout.text} whitespace-nowrap font-mono text-brand-slate-400`}
-                    >
+                  <tr>
+                    <td class="whitespace-nowrap font-mono text-brand-slate-400">
                       {formatAccountTime(payment.time)}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-semibold`}>
+                    <td class="font-semibold">
                       {market}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountSize(payment.size)} {market}
                     </td>
-                    <td
-                      class={`${layout.cell} ${layout.text} font-semibold ${payment.side === "long" ? "text-brand-green-400" : "text-brand-red-400"}`}
-                    >
+                    <td class={`font-semibold ${payment.side === "long" ? "text-brand-green-400" : "text-brand-red-400"}`}>
                       {payment.side === "long" ? "Long" : "Short"}
                     </td>
-                    <td
-                      class={`${layout.cell} ${layout.text} font-mono ${payment.payment >= 0 ? "text-brand-green-400" : "text-brand-red-400"}`}
-                    >
+                    <td class={`num font-mono ${payment.payment >= 0 ? "text-brand-green-400" : "text-brand-red-400"}`}>
                       {formatAccountUsd(payment.payment, true)}
                     </td>
                     <td
-                      class={`${layout.cell} ${layout.text} font-mono`}
+                      class="num font-mono"
                       title={`Hourly rate ${(payment.rate * 100).toFixed(6)}%`}
                     >
                       {formatAnnualizedFundingRate(payment.rate)}
@@ -332,10 +303,10 @@ const FundingHistoryTable: Component<ActivityTableProps> = (props) => {
           </Show>
         </tbody>
       </table>
-      <div class="flex justify-end border-t border-brand-border px-3 py-2">
+      <div class="account-table-footer">
         <button
           type="button"
-          class="text-xs font-medium text-brand-slate-300 hover:text-slate-100 disabled:opacity-50"
+          class="account-link-button"
           disabled={rows().length === 0}
           onClick={exportCsv}
         >
@@ -350,7 +321,6 @@ const FundingHistoryTable: Component<ActivityTableProps> = (props) => {
 };
 
 const OrderHistoryTable: Component<ActivityTableProps> = (props) => {
-  const layout = tableLayout(props.compact);
   const columns = [
     "Time",
     "Type",
@@ -366,6 +336,7 @@ const OrderHistoryTable: Component<ActivityTableProps> = (props) => {
     "Status",
     "Order ID",
   ];
+  const numericColumns = new Set(["Size", "Filled Size", "Order Value", "Price"]);
   const rows = createMemo(() =>
     hyperliquidHistoricalOrders().filter(
       (order) =>
@@ -376,14 +347,12 @@ const OrderHistoryTable: Component<ActivityTableProps> = (props) => {
 
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[1540px]">
+      <table class={tableClass("min-w-[1540px]", props.compact)}>
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(column) => (
-                <th
-                  class={`${layout.header} whitespace-nowrap text-left text-xs font-medium text-brand-slate-400`}
-                >
+                <th class={numericColumns.has(column) ? "num" : undefined}>
                   {column}
                 </th>
               )}
@@ -397,8 +366,6 @@ const OrderHistoryTable: Component<ActivityTableProps> = (props) => {
               <TableEmptyRow
                 columns={columns.length}
                 label="Order history"
-                cellClass={layout.cell}
-                textClass={layout.text}
               />
             }
           >
@@ -406,50 +373,44 @@ const OrderHistoryTable: Component<ActivityTableProps> = (props) => {
               {(order) => {
                 const market = formatAccountMarket(order.symbol);
                 return (
-                  <tr class="border-b border-brand-border/40">
-                    <td
-                      class={`${layout.cell} ${layout.text} whitespace-nowrap font-mono text-brand-slate-400`}
-                    >
+                  <tr>
+                    <td class="whitespace-nowrap font-mono text-brand-slate-400">
                       {formatAccountTime(order.time)}
                     </td>
-                    <td class={`${layout.cell} ${layout.text}`}>
+                    <td>
                       {order.type}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-semibold`}>
+                    <td class="font-semibold">
                       {market}
                     </td>
-                    <td
-                      class={`${layout.cell} ${layout.text} font-semibold ${order.side === "buy" ? "text-brand-green-400" : "text-brand-red-400"}`}
-                    >
+                    <td class={`font-semibold ${order.side === "buy" ? "text-brand-green-400" : "text-brand-red-400"}`}>
                       {order.side === "buy" ? "Buy" : "Sell"}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountSize(order.size)} {market}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountSize(order.filledSize)} {market}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {formatAccountUsd(order.orderValue)}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="num font-mono">
                       {order.price > 0 ? formatPrice(order.price) : "--"}
                     </td>
-                    <td class={`${layout.cell} ${layout.text}`}>
+                    <td>
                       {order.reduceOnly ? "Yes" : "No"}
                     </td>
-                    <td class={`${layout.cell} ${layout.text} font-mono`}>
+                    <td class="font-mono">
                       {order.triggerCondition}
                     </td>
-                    <td class={`${layout.cell} ${layout.text}`}>
+                    <td>
                       {order.tpsl}
                     </td>
-                    <td class={`${layout.cell} ${layout.text}`}>
+                    <td>
                       {formatAccountStatus(order.status)}
                     </td>
-                    <td
-                      class={`${layout.cell} ${layout.text} font-mono text-brand-slate-400`}
-                    >
+                    <td class="font-mono text-brand-slate-400">
                       {order.orderId}
                     </td>
                   </tr>

@@ -42,6 +42,7 @@ import {
 import { createLatestAnimationFrameBatcher } from "../lib/animationFrameBatcher";
 import { createMovingAverages } from "../lib/movingAverages";
 import { maEnabled } from "../stores/chartIndicators";
+import { CHART_COLORS, CHART_FONT_FAMILY } from "./chartTheme";
 
 interface SymbolChartProps {
   symbol: string;
@@ -51,7 +52,7 @@ interface SymbolChartProps {
 
 const MAX_LOCAL_CANDLES = 1000;
 const CANDLE_LOAD_DEBOUNCE_MS = 0;
-const CHART_GRID_COLOR = "rgba(38, 42, 47, 0.6)";
+const CHART_GRID_COLOR = CHART_COLORS.grid;
 
 const SymbolChart: Component<SymbolChartProps> = (props) => {
   const pageActive = usePageActive();
@@ -104,8 +105,8 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
       value: c.volume,
       color:
         c.close >= c.open
-          ? "rgba(80, 227, 171, 0.5)"
-          : "rgba(255, 85, 114, 0.5)",
+          ? CHART_COLORS.volumeUp
+          : CHART_COLORS.volumeDown,
     }));
   };
 
@@ -176,8 +177,8 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
         value: candle.volume,
         color:
           candle.close >= candle.open
-            ? "rgba(80, 227, 171, 0.5)"
-            : "rgba(255, 85, 114, 0.5)",
+            ? CHART_COLORS.volumeUp
+            : CHART_COLORS.volumeDown,
       });
     },
   );
@@ -344,10 +345,10 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
 
     chart = createChart(containerRef, {
       layout: {
-        background: { type: ColorType.Solid, color: "#101317" },
-        textColor: "#6b7280",
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
+        background: { type: ColorType.Solid, color: CHART_COLORS.background },
+        textColor: CHART_COLORS.text,
+        fontFamily: CHART_FONT_FAMILY,
+        fontSize: 12,
         attributionLogo: false,
       },
       grid: {
@@ -362,28 +363,28 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
         mode: CrosshairMode.Normal,
         vertLine: {
           visible: true,
-          color: "#6b7280",
+          color: CHART_COLORS.crosshair,
           width: 1,
           style: 2,
-          labelBackgroundColor: "#262a2f",
+          labelBackgroundColor: CHART_COLORS.crosshairLabel,
         },
         horzLine: {
           visible: true,
-          color: "#6b7280",
+          color: CHART_COLORS.crosshair,
           width: 1,
           style: 2,
-          labelBackgroundColor: "#262a2f",
+          labelBackgroundColor: CHART_COLORS.crosshairLabel,
         },
       },
       rightPriceScale: {
-        borderColor: "rgba(38, 42, 47, 0.8)",
+        borderColor: CHART_COLORS.scaleBorder,
         scaleMargins: {
           top: 0.12,
           bottom: 0.1,
         },
       },
       timeScale: {
-        borderColor: "rgba(38, 42, 47, 0.8)",
+        borderColor: CHART_COLORS.scaleBorder,
         timeVisible: true,
         secondsVisible: false,
         barSpacing: 10,
@@ -410,12 +411,12 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
     });
 
     candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#43c6a1",
-      downColor: "#e87887",
-      borderUpColor: "#43c6a1",
-      borderDownColor: "#e87887",
-      wickUpColor: "#43c6a1",
-      wickDownColor: "#e87887",
+      upColor: CHART_COLORS.up,
+      downColor: CHART_COLORS.down,
+      borderUpColor: CHART_COLORS.up,
+      borderDownColor: CHART_COLORS.down,
+      wickUpColor: CHART_COLORS.up,
+      wickDownColor: CHART_COLORS.down,
     });
 
     volumeSeries = chart.addSeries(HistogramSeries, {
@@ -564,14 +565,14 @@ const SymbolChart: Component<SymbolChartProps> = (props) => {
       />
       {contextMenu() && (
         <div
-          class="fixed z-50 bg-brand-surface border border-brand-border rounded shadow-lg py-1 min-w-35"
+          class="context-menu"
           style={{
             left: `${contextMenu()!.x}px`,
             top: `${contextMenu()!.y}px`,
           }}
         >
           <button
-            class="w-full px-3 py-1.5 text-left text-sm text-brand-slate-300 hover:bg-brand-border/50 transition-colors flex items-center gap-2"
+            class="context-menu-item"
             onClick={resetChart}
           >
             <svg

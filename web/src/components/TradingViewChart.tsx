@@ -28,6 +28,7 @@ import { CHART_RESOLUTIONS, resolutionToMs, type Candle, type ChartResolution as
 import { createMovingAverages } from "../lib/movingAverages";
 import { maEnabled } from "../stores/chartIndicators";
 import ChartControls from "./ChartControls";
+import { CHART_COLORS, CHART_FONT_FAMILY } from "./chartTheme";
 import {
   fetchHyperliquidCandles,
   resolveHyperliquidMarketCoin,
@@ -60,7 +61,7 @@ import {
 
 const DEFAULT_RESOLUTION: Resolution = "5";
 const RESOLUTION_STORAGE_KEY = "trade-xyz-chart-resolution";
-const CHART_GRID_COLOR = "rgba(38, 42, 47, 0.6)";
+const CHART_GRID_COLOR = CHART_COLORS.grid;
 
 const isResolution = (value: string): value is Resolution =>
   CHART_RESOLUTIONS.includes(value as Resolution);
@@ -206,8 +207,8 @@ const TradingViewChart: Component = () => {
       value: c.volume,
       color:
         c.close >= c.open
-          ? "rgba(80, 227, 171, 0.5)"
-          : "rgba(255, 85, 114, 0.5)",
+          ? CHART_COLORS.volumeUp
+          : CHART_COLORS.volumeDown,
     }));
   };
 
@@ -280,8 +281,8 @@ const TradingViewChart: Component = () => {
         value: candle.volume,
         color:
           candle.close >= candle.open
-            ? "rgba(80, 227, 171, 0.5)"
-            : "rgba(255, 85, 114, 0.5)",
+            ? CHART_COLORS.volumeUp
+            : CHART_COLORS.volumeDown,
       });
     },
   );
@@ -497,10 +498,10 @@ const TradingViewChart: Component = () => {
 
     const chartInstance = createChart(containerRef, {
       layout: {
-        background: { type: ColorType.Solid, color: "#101317" },
-        textColor: "#6b7280",
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
+        background: { type: ColorType.Solid, color: CHART_COLORS.background },
+        textColor: CHART_COLORS.text,
+        fontFamily: CHART_FONT_FAMILY,
+        fontSize: 12,
         attributionLogo: false,
       },
       grid: {
@@ -514,27 +515,27 @@ const TradingViewChart: Component = () => {
       crosshair: {
         mode: 0, // Normal mode - follows cursor freely
         vertLine: {
-          color: "#6b7280",
+          color: CHART_COLORS.crosshair,
           width: 1,
           style: 2,
-          labelBackgroundColor: "#262a2f",
+          labelBackgroundColor: CHART_COLORS.crosshairLabel,
         },
         horzLine: {
-          color: "#6b7280",
+          color: CHART_COLORS.crosshair,
           width: 1,
           style: 2,
-          labelBackgroundColor: "#262a2f",
+          labelBackgroundColor: CHART_COLORS.crosshairLabel,
         },
       },
       rightPriceScale: {
-        borderColor: "rgba(38, 42, 47, 0.8)",
+        borderColor: CHART_COLORS.scaleBorder,
         scaleMargins: {
           top: 0.1,
           bottom: 0.2,
         },
       },
       timeScale: {
-        borderColor: "rgba(38, 42, 47, 0.8)",
+        borderColor: CHART_COLORS.scaleBorder,
         timeVisible: true,
         secondsVisible: false,
         barSpacing: 12,
@@ -564,12 +565,12 @@ const TradingViewChart: Component = () => {
 
     // Add candlestick series
     candleSeries = chartInstance.addSeries(CandlestickSeries, {
-      upColor: "#43c6a1",
-      downColor: "#e87887",
-      borderUpColor: "#43c6a1",
-      borderDownColor: "#e87887",
-      wickUpColor: "#43c6a1",
-      wickDownColor: "#e87887",
+      upColor: CHART_COLORS.up,
+      downColor: CHART_COLORS.down,
+      borderUpColor: CHART_COLORS.up,
+      borderDownColor: CHART_COLORS.down,
+      wickUpColor: CHART_COLORS.up,
+      wickDownColor: CHART_COLORS.down,
     });
 
     // Add volume series
@@ -740,7 +741,7 @@ const TradingViewChart: Component = () => {
     const isLong = position.size > 0;
     entryPriceLine = candleSeries.createPriceLine({
       price: position.entryPrice,
-      color: isLong ? "#43c6a1" : "#e87887",
+      color: isLong ? CHART_COLORS.up : CHART_COLORS.down,
       lineWidth: 1,
       lineStyle: 2, // Dashed
       axisLabelVisible: true,
@@ -751,7 +752,7 @@ const TradingViewChart: Component = () => {
     if (Number.isFinite(takeProfit ?? NaN) && (takeProfit as number) > 0) {
       takeProfitLine = candleSeries.createPriceLine({
         price: takeProfit as number,
-        color: "#43c6a1",
+        color: CHART_COLORS.up,
         lineWidth: 1,
         lineStyle: 0,
         axisLabelVisible: true,
@@ -763,7 +764,7 @@ const TradingViewChart: Component = () => {
     if (Number.isFinite(stopLoss ?? NaN) && (stopLoss as number) > 0) {
       stopLossLine = candleSeries.createPriceLine({
         price: stopLoss as number,
-        color: "#e87887",
+        color: CHART_COLORS.down,
         lineWidth: 1,
         lineStyle: 0,
         axisLabelVisible: true,
@@ -775,13 +776,13 @@ const TradingViewChart: Component = () => {
   return (
     <div class="chart-container trade-chart bg-brand-screen relative flex flex-col flex-1 min-h-0">
       {/* Watchlist toolbar */}
-      <div class="market-ticker flex items-center border-b border-brand-border">
-        <div class="flex-1 overflow-x-auto">
-          <div class="flex items-center whitespace-nowrap divide-x divide-brand-border/70">
+      <div class="market-ticker">
+        <div class="market-ticker-scroll">
+          <div class="market-ticker-list">
             <Show
               when={watchlistMarkets().length > 0}
               fallback={
-                <span class="px-3 py-2 text-xs text-brand-slate-500">
+                <span class="market-ticker-empty">
                   Add symbols to your watchlist to show them here.
                 </span>
               }
@@ -789,7 +790,7 @@ const TradingViewChart: Component = () => {
               <For each={watchlistMarkets()}>
                 {(market) => (
                   <button
-                    class="ticker-item flex items-center gap-2 px-4 py-2 text-xs text-slate-200 hover:bg-brand-border/40"
+                    class="ticker-item"
                     aria-pressed={currentSymbol() === market.symbol}
                     onClick={() => selectMarket(market)}
                   >
@@ -820,14 +821,14 @@ const TradingViewChart: Component = () => {
       {/* Context menu */}
       {contextMenu() && (
         <div
-          class="fixed z-50 bg-brand-surface border border-brand-border rounded-lg shadow-lg py-1 min-w-35"
+          class="context-menu"
           style={{
             left: `${contextMenu()!.x}px`,
             top: `${contextMenu()!.y}px`,
           }}
         >
           <button
-            class="w-full px-3 py-1.5 text-left text-sm text-brand-slate-300 hover:bg-brand-border/50 transition-colors flex items-center gap-2"
+            class="context-menu-item"
             onClick={resetChart}
           >
             <svg
