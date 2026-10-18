@@ -219,7 +219,7 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
       ? Math.max(0, Math.floor(summary.analyzedItems))
       : 0,
     sourceCounts: { x: count('x'), telegram: count('telegram'), digg: count('digg'), paste: count('paste') },
-    model: typeof summary.model === 'string' ? summary.model : 'gpt-5.6-sol',
+    model: typeof summary.model === 'string' ? summary.model : 'claude-opus-5-5',
     reasoningEffort: typeof summary.reasoningEffort === 'string' ? summary.reasoningEffort : 'xhigh',
   };
 }

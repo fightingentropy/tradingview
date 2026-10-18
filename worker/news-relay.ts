@@ -9,6 +9,13 @@ import {
   normalizeNewsNotificationSeenKeys,
   normalizeNewsNotificationSourceIds,
 } from '../src/domain/newsNotificationSources';
+import {
+  EXECUTIVE_SUMMARY_KEY,
+  runScheduledExecutiveSummary,
+  type NewsExecutiveSummary,
+  type NewsItem,
+  type NewsSource,
+} from './news-pulse';
 
 const FEED_KEY = 'feed:all';
 const RECEIPTS_KEY = 'push:receipts';
@@ -21,36 +28,8 @@ const MAX_FEED_ITEMS = 200;
 const MAX_PUSH_TOKENS = 25;
 const MAX_SEEN_ITEMS = 1_000;
 const MAX_INGEST_BODY_BYTES = 2_000_000;
-const EXECUTIVE_SUMMARY_TIME_ZONE = 'America/New_York';
-const EXECUTIVE_SUMMARY_SCHEDULE = [
-  { id: 'open', hour: 9, minute: 35 },
-  { id: 'close', hour: 16, minute: 5 },
-] as const;
-const executiveSummaryWeekdays = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
-const executiveSummaryClock = new Intl.DateTimeFormat('en-US', {
-  timeZone: EXECUTIVE_SUMMARY_TIME_ZONE,
-  weekday: 'short',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-
-type NewsSource = 'x' | 'telegram' | 'digg' | 'paste';
-
-interface NewsItem {
-  id: string;
-  source: NewsSource;
-  text: string;
-  publishedAt: string;
-  author: { name: string; handle?: string; avatarUrl?: string };
-  url?: string;
-  media?: Array<{ type: 'image' | 'video'; previewUrl: string }>;
-}
 
 interface NewsNotice {
   id: string;
@@ -58,48 +37,10 @@ interface NewsNotice {
   message: string;
 }
 
-interface NewsSummarySourceReference {
-  itemKey: string;
-  source: NewsSource;
-  title: string;
-  author: string;
-  publishedAt: string;
-  url: string;
-}
-
-interface NewsExecutiveSummary {
-  formatVersion: number;
-  id: string;
-  generatedAt: string;
-  windowStart: string;
-  windowEnd: string;
-  headline: string;
-  overview: string;
-  pulse: {
-    label: 'risk-on' | 'risk-off' | 'mixed' | 'calm' | 'event-driven';
-    summary: string;
-  };
-  bullets: Array<{
-    headline: string;
-    summary: string;
-    marketImpact: string;
-    details: string;
-    change: 'new' | 'changed' | 'unchanged';
-    confidence: 'confirmed' | 'reported' | 'disputed' | 'speculative';
-    sources: NewsSummarySourceReference[];
-  }>;
-  secondarySignals: string[];
-  watchNext: string[];
-  noiseSummary: string;
-  analyzedItems: number;
-  sourceCounts: Record<NewsSource, number>;
-  model: string;
-  reasoningEffort: string;
-}
-
 interface FeedSnapshot {
   items: NewsItem[];
   notices: NewsNotice[];
+  // Legacy Mac mini pulse, served until the first cloud pulse is stored.
   executiveSummary?: NewsExecutiveSummary;
   updatedAt: string;
 }
@@ -139,48 +80,6 @@ function asString(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed ? trimmed.slice(0, maxLength) : undefined;
-}
-
-export function executiveSummaryScheduleSlot(
-  value: string | number | Date,
-): string | undefined {
-  const timestamp = value instanceof Date
-    ? value.getTime()
-    : typeof value === 'string'
-      ? Date.parse(value)
-      : value;
-  if (!Number.isFinite(timestamp)) return undefined;
-  const clock = Object.fromEntries(
-    executiveSummaryClock
-      .formatToParts(new Date(timestamp))
-      .map(({ type, value: partValue }) => [type, partValue]),
-  );
-  if (!executiveSummaryWeekdays.has(clock.weekday)) return undefined;
-
-  const minuteOfDay = Number(clock.hour) * 60 + Number(clock.minute);
-  let slotID: string | undefined;
-  for (const slot of EXECUTIVE_SUMMARY_SCHEDULE) {
-    if (minuteOfDay >= slot.hour * 60 + slot.minute) slotID = slot.id;
-  }
-  return slotID ? `${clock.year}-${clock.month}-${clock.day}:${slotID}` : undefined;
-}
-
-export function selectScheduledExecutiveSummary<T extends { generatedAt: string }>(
-  incoming: T | undefined,
-  previous: T | undefined,
-): T | undefined {
-  const incomingSlot = incoming
-    ? executiveSummaryScheduleSlot(incoming.generatedAt)
-    : undefined;
-  const previousSlot = previous
-    ? executiveSummaryScheduleSlot(previous.generatedAt)
-    : undefined;
-  if (!incoming || !incomingSlot) return previous && previousSlot ? previous : undefined;
-  if (!previous || !previousSlot) return incoming;
-  if (incomingSlot === previousSlot) return previous;
-  return Date.parse(incoming.generatedAt) > Date.parse(previous.generatedAt)
-    ? incoming
-    : previous;
 }
 
 function asHttpsUrl(value: unknown): string | undefined {
@@ -286,137 +185,6 @@ function normalizeNotice(value: unknown): NewsNotice | undefined {
   return { id, source: notice.source, message };
 }
 
-function isNewsSource(value: unknown): value is NewsSource {
-  return value === 'x' || value === 'telegram' || value === 'digg' || value === 'paste';
-}
-
-function normalizeSummarySource(value: unknown): NewsSummarySourceReference | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const source = value as Record<string, unknown>;
-  const itemKey = asString(source.itemKey, 300);
-  const title = asString(source.title, 180);
-  const author = asString(source.author, 180);
-  const publishedAt = asString(source.publishedAt, 64);
-  const url = asHttpsUrl(source.url);
-  if (
-    !itemKey || !isNewsSource(source.source) || !title || !author || !publishedAt || !url ||
-    !Number.isFinite(Date.parse(publishedAt))
-  ) {
-    return undefined;
-  }
-  return {
-    itemKey,
-    source: source.source,
-    title,
-    author,
-    publishedAt: new Date(publishedAt).toISOString(),
-    url,
-  };
-}
-
-function normalizeExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const summary = value as Record<string, unknown>;
-  const pulse = summary.pulse as Record<string, unknown> | undefined;
-  const id = asString(summary.id, 160);
-  const generatedAt = asString(summary.generatedAt, 64);
-  const windowStart = asString(summary.windowStart, 64);
-  const windowEnd = asString(summary.windowEnd, 64);
-  const headline = asString(summary.headline, 80);
-  const overview = asString(summary.overview, 240);
-  const pulseLabel = asString(pulse?.label, 32);
-  const pulseSummary = asString(pulse?.summary, 180);
-  const validPulseLabels = ['risk-on', 'risk-off', 'mixed', 'calm', 'event-driven'] as const;
-  if (
-    !id || !generatedAt || !windowStart || !windowEnd || !headline || !overview ||
-    !pulseLabel || !validPulseLabels.includes(pulseLabel as (typeof validPulseLabels)[number]) ||
-    !pulseSummary || !Number.isFinite(Date.parse(generatedAt)) ||
-    !executiveSummaryScheduleSlot(generatedAt) ||
-    !Number.isFinite(Date.parse(windowStart)) || !Number.isFinite(Date.parse(windowEnd)) ||
-    !Array.isArray(summary.bullets)
-  ) {
-    return undefined;
-  }
-
-  const bullets = summary.bullets.flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return [];
-    const bullet = entry as Record<string, unknown>;
-    const bulletHeadline = asString(bullet.headline, 80);
-    const bulletSummary = asString(bullet.summary, 220);
-    const marketImpact = asString(bullet.marketImpact ?? bullet.whyItMatters, 180);
-    const details = asString(bullet.details, 600);
-    const change = asString(bullet.change, 16) ?? 'unchanged';
-    const confidence = asString(bullet.confidence, 16) ?? 'reported';
-    const validChanges = ['new', 'changed', 'unchanged'] as const;
-    const validConfidence = ['confirmed', 'reported', 'disputed', 'speculative'] as const;
-    const sources = Array.isArray(bullet.sources)
-      ? bullet.sources.map(normalizeSummarySource).filter((source): source is NewsSummarySourceReference => Boolean(source)).slice(0, 4)
-      : [];
-    if (
-      !bulletHeadline || !bulletSummary || !marketImpact || !details || sources.length === 0 ||
-      !validChanges.includes(change as (typeof validChanges)[number]) ||
-      !validConfidence.includes(confidence as (typeof validConfidence)[number])
-    ) {
-      return [];
-    }
-    return [{
-      headline: bulletHeadline,
-      summary: bulletSummary,
-      marketImpact,
-      details,
-      change: change as NewsExecutiveSummary['bullets'][number]['change'],
-      confidence: confidence as NewsExecutiveSummary['bullets'][number]['confidence'],
-      sources,
-    }];
-  }).slice(0, 3);
-  if (bullets.length === 0) return undefined;
-
-  const watchNext = Array.isArray(summary.watchNext)
-    ? summary.watchNext.flatMap((entry) => asString(entry, 160) ?? []).slice(0, 2)
-    : [];
-  const secondarySignals = Array.isArray(summary.secondarySignals)
-    ? summary.secondarySignals.flatMap((entry) => asString(entry, 140) ?? []).slice(0, 3)
-    : [];
-  const noiseSummary = asString(summary.noiseSummary, 220);
-  if (!noiseSummary) return undefined;
-  const sourceCountsValue = summary.sourceCounts as Record<string, unknown> | undefined;
-  const sourceCounts = Object.fromEntries(
-    (['x', 'telegram', 'digg', 'paste'] as const).map((source) => [
-      source,
-      typeof sourceCountsValue?.[source] === 'number' && Number.isFinite(sourceCountsValue[source])
-        ? Math.max(0, Math.floor(sourceCountsValue[source]))
-        : 0,
-    ]),
-  ) as Record<NewsSource, number>;
-  return {
-    formatVersion:
-      typeof summary.formatVersion === 'number' && Number.isFinite(summary.formatVersion)
-        ? Math.max(1, Math.floor(summary.formatVersion))
-        : 1,
-    id,
-    generatedAt: new Date(generatedAt).toISOString(),
-    windowStart: new Date(windowStart).toISOString(),
-    windowEnd: new Date(windowEnd).toISOString(),
-    headline,
-    overview,
-    pulse: {
-      label: pulseLabel as NewsExecutiveSummary['pulse']['label'],
-      summary: pulseSummary,
-    },
-    bullets,
-    secondarySignals,
-    watchNext,
-    noiseSummary,
-    analyzedItems:
-      typeof summary.analyzedItems === 'number' && Number.isFinite(summary.analyzedItems)
-        ? Math.max(0, Math.floor(summary.analyzedItems))
-        : 0,
-    sourceCounts,
-    model: asString(summary.model, 80) ?? 'gpt-5.6-sol',
-    reasoningEffort: asString(summary.reasoningEffort, 32) ?? 'xhigh',
-  };
-}
-
 function normalizeSnapshot(value: unknown): FeedSnapshot | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const payload = value as Record<string, unknown>;
@@ -435,7 +203,6 @@ function normalizeSnapshot(value: unknown): FeedSnapshot | undefined {
   return {
     items,
     notices,
-    executiveSummary: normalizeExecutiveSummary(payload.executiveSummary),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -609,7 +376,10 @@ async function sendNewsPushes(env: Env, items: NewsItem[]): Promise<void> {
 }
 
 async function handleFeed(request: Request, env: Env): Promise<Response> {
-  const snapshot = await env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json');
+  const [snapshot, executiveSummary] = await Promise.all([
+    env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json'),
+    env.NEWS_RELAY_KV.get<NewsExecutiveSummary>(EXECUTIVE_SUMMARY_KEY, 'json'),
+  ]);
   if (!snapshot) return json({ error: 'The news bridge has not published yet.' }, 503, true);
   const url = new URL(request.url);
   const source = url.searchParams.get('source') ?? 'all';
@@ -631,7 +401,7 @@ async function handleFeed(request: Request, env: Env): Promise<Response> {
   return json({
     items,
     notices,
-    executiveSummary: source === 'all' ? snapshot.executiveSummary : undefined,
+    executiveSummary: source === 'all' ? executiveSummary ?? snapshot.executiveSummary : undefined,
     updatedAt: snapshot.updatedAt,
   }, 200, true);
 }
@@ -675,19 +445,8 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
     env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json'),
     env.NEWS_RELAY_KV.get<unknown>(SEEN_ITEMS_KEY, 'json'),
   ]);
-  const incomingSummarySlot = snapshot.executiveSummary
-    ? executiveSummaryScheduleSlot(snapshot.executiveSummary.generatedAt)
-    : undefined;
-  const previousSummarySlot = previous?.executiveSummary
-    ? executiveSummaryScheduleSlot(previous.executiveSummary.generatedAt)
-    : undefined;
-  snapshot.executiveSummary = selectScheduledExecutiveSummary(
-    snapshot.executiveSummary,
-    previous?.executiveSummary,
-  );
-  const storedSummarySlot = snapshot.executiveSummary
-    ? executiveSummaryScheduleSlot(snapshot.executiveSummary.generatedAt)
-    : undefined;
+  // The pulse is generated by this Worker's cron; the bridge only supplies items.
+  snapshot.executiveSummary = previous?.executiveSummary;
   const storedSeen = normalizeNewsNotificationSeenKeys(storedSeenKeys);
   const isSeenStateInitialized = storedSeen.length > 0;
   const previousKeys = previous?.items.map(newsNotificationItemKey) ?? [];
@@ -715,15 +474,11 @@ async function handleIngest(request: Request, env: Env, ctx: ExecutionContext): 
     event: 'ingest',
     items: snapshot.items.length,
     fresh: fresh.length,
-    incomingSummarySlot: incomingSummarySlot ?? null,
-    previousSummarySlot: previousSummarySlot ?? null,
-    storedSummarySlot: storedSummarySlot ?? null,
   }));
   return json({
     ok: true,
     items: snapshot.items.length,
     fresh: fresh.length,
-    summarySlot: storedSummarySlot ?? null,
   });
 }
 
@@ -761,5 +516,13 @@ export default {
       console.error(JSON.stringify({ event: 'request_failed', message: String(error) }));
       return json({ error: 'Internal server error' }, 500);
     }
+  },
+  async scheduled(controller, env): Promise<void> {
+    const result = await runScheduledExecutiveSummary(
+      env,
+      () => env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json'),
+      controller.scheduledTime,
+    );
+    console.log(JSON.stringify({ event: 'executive_summary', result }));
   },
 } satisfies ExportedHandler<Env>;

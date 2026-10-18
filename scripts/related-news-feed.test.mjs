@@ -40,6 +40,7 @@ test('ticker news finds mentions through post 200 without reusing the 40-post ca
     APP_ACCESS_TOKEN: 'test-access-token',
     NEWS_RELAY_KV: {
       get: async (key) => {
+        if (key === 'summary:executive') return null;
         assert.equal(key, 'feed:all');
         return { items, notices: [], updatedAt: '2026-09-12T12:00:00Z' };
       },

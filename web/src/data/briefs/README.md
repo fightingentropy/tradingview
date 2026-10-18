@@ -7,12 +7,13 @@ When available, read the latest original at
 
 ## Daily workflow
 
-The Mac mini service starts research at **08:00 Europe/London every day**.
-It runs at boot as the `hermes` service user and uses the authenticated Codex CLI;
-neither the laptop nor a desktop app needs to stay open. Publication follows
-research and verification; 08:00 is the start time, not a promised completion time.
-See [Mac mini operation](../../../../docs/daily-brief-service.md) for installation,
-retry behavior, status and logs. The original laptop heartbeat is paused.
+A Cloudflare Workflow in the `tradingview-web` Worker starts research at **08:00
+Europe/London every day** with the Claude API and publishes through the Worker's
+KV binding; no local machine needs to stay on. Publication follows research and
+validation; 08:00 is the start time, not a promised completion time. See
+[the daily brief service](../../../../docs/daily-brief-service.md) for retry
+behavior, credentials and troubleshooting. The steps below describe a manual
+edition.
 
 1. Read the latest published edition from
    `https://trade.erlin.org/api/daily-briefs` and its dated endpoint.

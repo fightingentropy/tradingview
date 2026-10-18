@@ -1,94 +1,86 @@
-# Mac mini daily brief service
+# Daily brief service
 
-The publisher runs on `m4mini` in the isolated checkout
-`/Users/hermes/Services/tradingview-daily-brief`. It is a system LaunchDaemon,
-`com.erlinhoxha.tradingview-daily-brief`, running as `hermes`. It starts without an
-interactive login and does not require the Codex desktop app or the laptop.
+The brief is researched and published by the `tradingview-web` Worker on
+Cloudflare with the Claude API. Neither the Mac mini nor the laptop needs to be
+on for it; the Mac mini only keeps feeding the news relay that the brief reads.
 
 ## Schedule and failure handling
 
-- Daily research starts at 08:00 Europe/London, including weekends. A fifteen-minute
-  check handles reboots, a missed scheduled launch, and bounded retries.
-- The date/hour gate uses Europe/London explicitly, including daylight saving.
-- A verified edition already published for the London date is never regenerated
-  or overwritten. An existing edition is checked through the public API.
-- Failed generation retries after 30, 60, then 120 minutes, with four attempts
-  maximum per day for ordinary failures. Usage-limit failures retry hourly so a
-  same-day quota reset recovers automatically; they never regenerate an already
-  published edition. The last published edition remains online.
-- A validated edition is saved before publication. Cloudflare or public-verification
-  failures retry that exact edition hourly for the rest of its London day, including
-  after a restart, without spending more research attempts. Yesterday's candidate
-  is never republished as today's brief.
-- KV operations retry transient authorization, network, rate-limit and server
-  failures after 1, 3 and 10 seconds. A 401 first runs Wrangler's supported auth
-  check so its renewable sign-in can recover. Only an explicit missing-key
-  response is treated as absent content; authentication failures cannot initialize
-  or replace the index.
-- A loopback-only process lock prevents overlapping research. A separate lock
-  serializes publication. The OS releases both locks after termination/reboot.
-- Research has a 40-minute limit. Publication runs through the existing validated
-  publisher and is followed by public index/content verification, allowing two
-  minutes for KV propagation. Timed-out or interrupted child processes are stopped.
+- An hourly cron (`0 * * * *`) checks the Europe/London clock. From 08:00 London,
+  including weekends and daylight-saving changes, it starts one Cloudflare
+  Workflow instance named `daily-brief-YYYY-MM-DD`. Later cron ticks see that
+  instance and leave it alone.
+- An edition already in the public index for the London date is never
+  regenerated or overwritten.
+- The research step retries after 30, 60, then 120 minutes: four attempts per
+  day. Each attempt has a 45-minute limit. The last published edition stays
+  online until a new one is published.
+- Completed Workflow steps are durable. A publication failure retries the exact
+  validated edition (up to six times, with exponential backoff from one minute)
+  without paying for research again.
+- Every step stops for good once the London day has ended, so yesterday's
+  research is never published as today's brief.
 
-## Research and credentials
+## Research and evidence
 
-`web/scripts/daily-brief-job.ts` reads the versioned `docs/BRIEF.md` contract and
-the previous publication. It first runs the maintained `scripts/ct-pulse.mjs`
-collector, which overwrites only the latest CT source pack. It then runs Codex
-with live web search and a scratch workspace. The model returns a structured
-headline/Markdown result; the outer runner validates and publishes it.
-Probability validation reads the Base, Alternative and Tail case labels; market
-yields and returns inside their explanations do not count as scenario probabilities.
+`worker/daily-brief.ts` sends the versioned `docs/BRIEF.md` contract (bundled as
+text), the previous edition and the latest news relay items to
+`claude-opus-5-5` with adaptive thinking at `high` effort. Claude researches
+with server-side web search (up to 30 searches) and web fetch (up to 20 pages),
+then calls a `submit_brief` tool with the headline and Markdown.
 
-The service reuses the Mac mini's Codex and Bird sign-ins. Wrangler has its own
-renewable Mac mini sign-in for account/user reads and KV storage. Credentials
-are stored by the tools, outside the repository and service definition.
-The laptop's Codex heartbeat `publish-daily-market-brief` is paused after cutover.
+The relay items are the brief's CT, Telegram, Digg and Paste Trade evidence: the
+curated X list, the Telegram channels BRIEF.md names, the Digg homepage and Paste
+Trade, as last ingested from the Mac mini bridge, limited to the past 72 hours.
+`scripts/ct-pulse.mjs` is not part of the cloud brief, so there is no Following or
+Home / For You sample. A missing or stale relay is disclosed in Data Caveats.
 
-## Runtime and installation
+The runner stamps the `Generated:` line with the exact submission time and runs
+the shared `validateFreshBrief` checks: the eight sections in order, five or more
+source links, 700–1,000 words, and Base, Alternative and Tail probabilities
+totalling 100%. A failed check goes back to Claude as a tool error so it can
+correct the brief, up to three submissions per attempt. Probability validation
+reads the case labels only; yields and returns in the explanations do not count.
 
-Dependencies:
+Requests opt into server-side refusal fallbacks (`fallbacks: "default"`), so a
+safety-classifier decline is retried on Anthropic's recommended fallback model.
+Each Claude request logs its token and server-tool usage as a `claude_usage` event
+in the Worker's observability logs.
 
-- `/opt/homebrew/bin/bun` and `/opt/homebrew/bin/node` (stable Homebrew paths)
-- `/Users/hermes/.local/bin/codex` and `bird`
-- Web dependencies installed with `bun install --cwd web --frozen-lockfile`
-- Dedicated Wrangler 4.118.0 runtime under
-  `~/Library/Application Support/TradingView Daily Brief/runtime/`
+## Credentials and deployment
 
-The service prefers IPv4 for Node requests to avoid intermittent IPv6 connection
-timeouts on the mini's network.
-
-From the service checkout, as the regular service user with existing sudo access:
+`ANTHROPIC_API_KEY` is a Worker secret on both `tradingview-web` and
+`tradingview-news-relay`. Store the key once in macOS Keychain; you are prompted
+for it, so it never appears in shell history:
 
 ```sh
-node scripts/daily-brief-service.mjs install
-node scripts/daily-brief-service.mjs status
+security add-generic-password -U -s com.erlinhoxha.tradingview.anthropic -a api-key -w
 ```
 
-The installer changes only this daily-brief service. For a complete fresh research
-check without changing the live publication:
+`npm run web:deploy` and `npm run relay:deploy` read it from Keychain and upload
+it with the Worker version. Writes to `DAILY_BRIEFS` go through the Worker's KV
+binding; no Wrangler sign-in or write endpoint is involved.
 
-```sh
-bun web/scripts/daily-brief-job.ts --research-only
-```
-
-Run `node scripts/daily-brief-service.mjs stop` to unload the job. Its definition
-remains available for reinstalling. Update the dedicated checkout deliberately;
-the scheduled job does not pull or execute new repository code automatically.
+`web/scripts/publish-daily-brief.ts` remains for manual publication and the first
+`--initialize`. Do not run it while a Workflow instance for the same day is
+publishing.
 
 ## Evidence and troubleshooting
 
-State and verified candidates: `~/Library/Application Support/TradingView Daily Brief/`.
-`status.json` records the publication date, attempts, host, latest result and any
-validated candidate awaiting publication, plus the next retry time;
-`verification.json` records the last successful research-only test.
-Logs: `~/Library/Logs/TradingView Daily Brief/service.log` and `service.error.log`.
-Check the exact public index and dated content at
-`https://trade.erlin.org/api/daily-briefs` before claiming a publication succeeded.
+Workflow instances, step attempts and errors are listed under **Workers &
+Pages → Workflows → tradingview-daily-brief** in the Cloudflare dashboard. Check the
+exact public index and dated content at `https://trade.erlin.org/api/daily-briefs`
+before claiming a publication succeeded.
 
-If credentials expire or a provider is unavailable, renew the affected tool's
-sign-in on the Mac mini. Never copy secrets into the repository or plist.
+## Retiring the Mac mini job
+
+The old `com.erlinhoxha.tradingview-daily-brief` LaunchDaemon ran Codex on the Mac
+mini. On the Mac mini, from the service checkout, as the service user with sudo
+access:
+
+```sh
+node scripts/daily-brief-service.mjs uninstall
+```
 
 ## Native iPhone reader
 

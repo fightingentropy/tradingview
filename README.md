@@ -48,7 +48,7 @@ checks account discovery, revoked-key rejection, and secure-storage failures.
   *same* Hyperliquid endpoints. Also keyless; the live `xyz` universe drives the catalog directly.
 - **Cboe** — the real CBOE Volatility Index (**VIX**) via Cboe's free public delayed-quotes CDN
   (`cdn.cboe.com`). Keyless; fetched directly (quote + daily/intraday OHLC history).
-- **News feed service** — a twice-daily weekday Codex executive pulse plus normalized X, Telegram,
+- **News feed service** — a twice-daily weekday Claude executive pulse plus normalized X, Telegram,
   Paste Trade,
   and Digg feeds. In development,
   `npm run news:server` reuses YinYang's local `bird` browser-cookie auth and X list, then
@@ -88,13 +88,14 @@ Install the feed as a per-user background service so it starts automatically at 
 npm run news:install
 ```
 
-The service uses the installed Codex CLI at 09:35 and 16:05 `America/New_York`, Monday through
-Friday, with `gpt-5.6-sol` and `xhigh` reasoning to filter duplicates and noise into the News tab's
+The relay Worker calls the Claude API (`claude-opus-5-5`, `xhigh` effort) at 09:35 and 16:05
+`America/New_York`, Monday through Friday, to filter duplicates and noise into the News tab's
 expandable **Pulse** homepage.
 The source-specific tabs stay raw and every pulse point links back to its source.
 
 Deploy the authenticated HTTPS relay with `npm run relay:deploy`. Relay credentials
-stay in macOS Keychain and Cloudflare encrypted secrets. In the app, enable remote
+and the Anthropic API key stay in macOS Keychain and Cloudflare encrypted secrets; see
+[the daily brief service](docs/daily-brief-service.md#credentials-and-deployment) for storing the key. In the app, enable remote
 alerts under **Settings → News Alerts**, then choose the X list and individual Telegram
 channels that are allowed to notify this device.
 

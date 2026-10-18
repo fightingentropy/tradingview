@@ -96,7 +96,7 @@ cache is separate from the regular 40-post news feed. The local bridge also allo
     "secondarySignals": ["A lower-priority development."],
     "watchNext": ["The next confirmation to monitor."],
     "noiseSummary": "Duplicates and unsupported reactions were excluded.",
-    "model": "gpt-5.6-sol",
+    "model": "claude-opus-5-5",
     "reasoningEffort": "xhigh"
   },
   "items": [
@@ -138,25 +138,26 @@ The included bridge:
   Upstream pulls are cached independently: X refreshes hourly, Telegram every five minutes,
   Digg hourly, and Paste hourly. Each scheduler tick detects newly published items and publishes an
   HMAC-authenticated snapshot to the relay without re-fetching sources that are still fresh.
-- Builds a new executive pulse at 09:35 and 16:05 `America/New_York`, Monday through Friday,
-  from up to 72 hours of recent source context. The
-  format is deliberately terse: a nine-word headline, a two-sentence lead, exactly three ranked
-  developments with change and confidence labels, optional secondary signals, and two watch items.
-  It
-  invokes the Mac mini's authenticated Codex CLI in an ephemeral, read-only session with
-  `gpt-5.6-sol`, `xhigh` reasoning, web search disabled, and a strict JSON output schema.
-- Persists the last valid pulse and each scheduled attempt under
-  `~/Library/Application Support/TradingView News/`, keeping the prior pulse if a later Codex run
-  fails. Each slot is attempted at most once, including across service restarts. Summary runs have
-  a 55-minute guard and never block the
-  one-minute source scheduler while Codex is reasoning.
-- The relay independently enforces the same weekday market slots. It discards pre-open and weekend
-  pulses, keeps the first valid pulse published for each slot, and will not let a stale publisher
-  replace it with another summary from the same slot. Raw source snapshots continue ingesting.
+- Publishes source items only. The executive pulse is generated in the relay Worker (below).
 - Persists push tokens and the seen-item watermark in the user's Application
   Support directory with user-only permissions.
 
 The Cloudflare relay:
+
+- Builds the executive pulse at 09:35 and 16:05 `America/New_York`, Monday through Friday. A
+  five-minute weekday cron (`*/5 13-21 * * 1-5` UTC, covering both daylight-saving offsets) checks
+  the New York clock and generates at most one pulse per slot from up to 72 hours of items the
+  bridge last ingested. The format is deliberately terse: a nine-word headline, a two-sentence lead,
+  exactly three ranked developments with change and confidence labels, optional secondary signals,
+  and two watch items.
+- Calls the Claude API (`claude-opus-5-5`, adaptive thinking at `xhigh` effort) with structured
+  JSON output and no tools, then enforces the word limits and replaces source keys with the exact
+  feed items. Refusal fallbacks are on (`fallbacks: "default"`).
+- Stores the pulse under `summary:executive` and each attempt under `summary:attempt` in
+  `NEWS_RELAY_KV`. A slot gets up to three attempts, 20 minutes apart; the previous pulse stays
+  visible if they fail. A feed older than three hours (the bridge is offline) skips the slot.
+- Ignores any pulse in ingested snapshots. Until the first cloud pulse exists, `/feed` serves the
+  last pulse the Mac mini published.
 
 - Requires a separate bearer token for feed reads and device registration.
 - Stores each device token under its own hashed KV key, avoiding shared-key write races.

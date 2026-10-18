@@ -1,14 +1,26 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "tradingview-web",
-  "main": "worker/web-app.mjs",
+  "main": "worker/web-entry.ts",
   "compatibility_date": "2026-08-06",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
   "kv_namespaces": [
-    { "binding": "DAILY_BRIEFS", "id": "a61b65da42314097857d47cc813a6d82" }
+    { "binding": "DAILY_BRIEFS", "id": "a61b65da42314097857d47cc813a6d82" },
+    // Read-only here: the news relay's feed is the brief's CT, Telegram, Digg and Paste Trade evidence.
+    { "binding": "NEWS_RELAY_KV", "id": "757a63280fc54505ad9c6950b37df7b6" }
   ],
+  "workflows": [
+    { "name": "tradingview-daily-brief", "binding": "DAILY_BRIEF_WORKFLOW", "class_name": "DailyBriefWorkflow" }
+  ],
+  // Hourly, so 08:00 Europe/London is hit in both GMT and BST.
+  "triggers": { "crons": ["0 * * * *"] },
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
+  "limits": { "cpu_ms": 300000 },
+  "secrets": {
+    "required": ["ANTHROPIC_API_KEY"]
+  },
   "routes": [
     { "pattern": "trade.erlin.org", "custom_domain": true }
   ],

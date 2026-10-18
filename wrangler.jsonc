@@ -17,8 +17,11 @@
     }
   ],
   "secrets": {
-    "required": ["APP_ACCESS_TOKEN", "BRIDGE_SECRET"]
+    "required": ["APP_ACCESS_TOKEN", "BRIDGE_SECRET", "ANTHROPIC_API_KEY"]
   },
+  // Weekday checks around the 09:35 and 16:05 New York pulse slots, in UTC for
+  // both daylight-saving offsets; the Worker gates each run on the New York clock.
+  "triggers": { "crons": ["*/5 13-21 * * 1-5"] },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
