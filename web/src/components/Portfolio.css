@@ -1,0 +1,382 @@
+/* Portfolio page: overview layout and the few repeated controls.
+   Colours, radii and easing come from the tokens in index.css. */
+
+.pf-card {
+  background: var(--color-brand-surface);
+  border: 1px solid var(--color-brand-hairline);
+  border-radius: var(--radius-xl);
+}
+
+/* Overview: summary beside the chart, with volume and fees as a strip underneath. */
+.pf-overview {
+  display: grid;
+  gap: 12px;
+}
+@media (min-width: 1024px) {
+  .pf-overview {
+    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-areas:
+      "summary chart"
+      "side side";
+  }
+  .pf-summary { grid-area: summary; }
+  .pf-chart { grid-area: chart; }
+  .pf-side { grid-area: side; }
+}
+
+/* Volume and fees: stacked rows on phones and tablets, three quiet columns from 900px. */
+.pf-side {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+}
+.pf-label {
+  color: var(--color-brand-slate-400);
+  font-size: 13px;
+  font-weight: 500;
+}
+.pf-figure {
+  margin-top: 6px;
+  color: var(--color-brand-slate-100);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.pf-side-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-brand-hairline);
+  color: var(--color-brand-slate-400);
+  font-size: 13px;
+  font-weight: 500;
+}
+.pf-side-head > span:last-child {
+  color: var(--color-brand-slate-500);
+  font-weight: 400;
+}
+.pf-fee {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+.pf-fee-label {
+  color: var(--color-brand-slate-400);
+}
+.pf-fee-suffix,
+.pf-fee-caption {
+  display: none;
+}
+.pf-fee-value {
+  color: var(--color-brand-slate-100);
+  font-weight: 500;
+}
+@media (min-width: 900px) {
+  .pf-side {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    padding: 0;
+  }
+  .pf-side > * {
+    padding: 22px 24px;
+  }
+  .pf-side > * + * {
+    border-left: 1px solid var(--color-brand-hairline);
+  }
+  .pf-side-head {
+    display: none;
+  }
+  .pf-fee {
+    display: block;
+  }
+  .pf-fee-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .pf-fee-suffix {
+    display: inline;
+  }
+  .pf-fee-caption {
+    display: block;
+    margin-top: 6px;
+    color: var(--color-brand-slate-500);
+    font-size: 12px;
+  }
+  .pf-fee-value {
+    display: block;
+    margin-top: 6px;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Pill buttons and links in the page header. */
+.pf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: var(--radius-control);
+  background: var(--color-brand-raised);
+  color: var(--color-brand-slate-100);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 140ms var(--ease-out),
+    color 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+.pf-btn:hover {
+  background: color-mix(in srgb, var(--color-brand-raised), white 7%);
+}
+.pf-btn:active {
+  transform: scale(0.98);
+}
+.pf-btn-primary {
+  background: var(--color-brand-accent);
+  color: var(--color-brand-screen);
+  font-weight: 600;
+}
+.pf-btn-primary:hover {
+  background: color-mix(in srgb, var(--color-brand-accent), white 12%);
+}
+
+/* Quiet text button, used for table footers. */
+.pf-ghost {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  color: var(--color-brand-slate-400);
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    background-color 140ms var(--ease-out),
+    color 140ms var(--ease-out);
+}
+.pf-ghost:hover:not(:disabled) {
+  background: var(--color-brand-raised);
+  color: var(--color-brand-slate-100);
+}
+.pf-ghost:disabled {
+  opacity: 0.4;
+}
+
+/* Native select drawn as a pill. */
+.pf-select {
+  appearance: none;
+  height: 44px;
+  max-width: 100%;
+  padding: 0 34px 0 16px;
+  border-radius: var(--radius-control);
+  background: var(--color-brand-raised);
+  color: var(--color-brand-slate-100);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 140ms var(--ease-out);
+}
+.pf-select:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-brand-raised), white 7%);
+}
+.pf-select:disabled {
+  color: var(--color-brand-slate-400);
+  cursor: not-allowed;
+}
+
+/* Segmented control for the chart range. */
+.pf-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--color-brand-raised);
+}
+.pf-seg > button {
+  flex: 1;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  color: var(--color-brand-slate-400);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 140ms var(--ease-out),
+    color 140ms var(--ease-out);
+}
+.pf-seg > button:hover {
+  color: var(--color-brand-slate-100);
+}
+.pf-seg > button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--color-brand-accent) 14%, transparent);
+  color: var(--color-brand-accent);
+}
+
+/* Chart title that switches between Account Value and PNL. */
+.pf-title-tabs {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.pf-title-tabs > button {
+  height: 44px;
+  color: var(--color-brand-slate-500);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  transition: color 140ms var(--ease-out);
+}
+.pf-title-tabs > button:hover {
+  color: var(--color-brand-slate-100);
+}
+.pf-title-tabs > button[aria-pressed="true"] {
+  color: var(--color-brand-slate-100);
+  text-decoration: underline;
+  text-decoration-color: var(--color-brand-accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 9px;
+}
+
+/* History tabs: a scrollable text row with an accent underline on the active tab. */
+.pf-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 0 12px;
+  scrollbar-width: none;
+}
+.pf-tabs::-webkit-scrollbar {
+  display: none;
+}
+.pf-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 48px;
+  padding: 0 12px;
+  color: var(--color-brand-slate-400);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 140ms var(--ease-out);
+}
+.pf-tabs > button:hover {
+  color: var(--color-brand-slate-100);
+}
+.pf-tabs > button[aria-pressed="true"] {
+  color: var(--color-brand-slate-100);
+  box-shadow: inset 0 -2px 0 var(--color-brand-accent);
+}
+.pf-tabs > button:focus-visible {
+  outline-offset: -4px;
+  border-radius: var(--radius-md);
+}
+.pf-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-control);
+  background: var(--color-brand-raised);
+  color: var(--color-brand-slate-400);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* History tables. */
+.pf-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.pf-table th {
+  padding: 12px 20px;
+  color: var(--color-brand-slate-500);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-brand-border);
+}
+.pf-table td {
+  padding: 14px 20px;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--color-brand-hairline);
+}
+.pf-table tbody tr {
+  transition: background-color 120ms var(--ease-out);
+}
+.pf-table tbody tr:hover {
+  background: color-mix(in srgb, var(--color-brand-raised) 55%, transparent);
+}
+.pf-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.pf-table .pf-num {
+  text-align: right;
+  white-space: nowrap;
+}
+.pf-empty {
+  padding: 56px 20px !important;
+  color: var(--color-brand-slate-500);
+  font-size: 14px !important;
+  text-align: center;
+}
+
+/* On wider screens the controls drop to 36-40px. */
+@media (min-width: 640px) {
+  .pf-btn,
+  .pf-select {
+    height: 40px;
+  }
+  .pf-ghost {
+    height: 36px;
+  }
+  .pf-seg > button {
+    height: 32px;
+  }
+  .pf-title-tabs > button {
+    height: 40px;
+  }
+}
+@media (max-width: 639px) {
+  .pf-seg {
+    width: 100%;
+  }
+  .pf-table th,
+  .pf-table td {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-btn,
+  .pf-ghost,
+  .pf-select,
+  .pf-seg > button,
+  .pf-title-tabs > button,
+  .pf-tabs > button,
+  .pf-table tbody tr {
+    transition: none;
+  }
+  .pf-btn:active {
+    transform: none;
+  }
+}
