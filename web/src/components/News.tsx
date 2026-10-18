@@ -17,27 +17,29 @@ const NewsEntry: Component<{ item: NewsItem; now: number }> = (props) => {
       : { title: '', body: text };
   });
   return <article class="news-item" data-source={props.item.source}>
-    <div class="news-item-header">
-      <span class="news-avatar" aria-hidden="true">
-        {props.item.author.name.slice(0, 1).toUpperCase()}
-        <Show when={props.item.author.avatarUrl}>{url => <img src={url()} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = 'none'; }} />}</Show>
-      </span>
-      <div class="news-author">
-        <div class="news-author-line"><span class="news-author-name">{props.item.author.name}</span><span class="news-source-label">{sourceLabel()}</span></div>
-        <Show when={props.item.author.handle && (props.item.source === 'x' || props.item.source === 'telegram')}><span class="news-author-handle">@{props.item.author.handle?.replace(/^@/, '')}</span></Show>
+    <span class="news-avatar" aria-hidden="true">
+      {props.item.author.name.slice(0, 1).toUpperCase()}
+      <Show when={props.item.author.avatarUrl}>{url => <img src={url()} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = 'none'; }} />}</Show>
+    </span>
+    <div class="news-item-main">
+      <div class="news-item-header">
+        <div class="news-author">
+          <div class="news-author-line"><span class="news-author-name">{props.item.author.name}</span><span class="news-source-label">{sourceLabel()}</span></div>
+          <Show when={props.item.author.handle && (props.item.source === 'x' || props.item.source === 'telegram')}><span class="news-author-handle">@{props.item.author.handle?.replace(/^@/, '')}</span></Show>
+        </div>
+        <time class="news-item-time" dateTime={props.item.publishedAt} title={new Date(props.item.publishedAt).toLocaleString()}>{formatNewsTime(props.item.publishedAt, props.now)}</time>
+        <Show when={props.item.url}>{url => <a class="news-source-link" href={url()} target="_blank" rel="noopener noreferrer" aria-label={`Open original post on ${sourceLabel()}`} title="Open original post"><ExternalLink /></a>}</Show>
       </div>
-      <time class="news-item-time" dateTime={props.item.publishedAt} title={new Date(props.item.publishedAt).toLocaleString()}>{formatNewsTime(props.item.publishedAt, props.now)}</time>
-      <Show when={props.item.url}>{url => <a class="news-source-link" href={url()} target="_blank" rel="noopener noreferrer" aria-label={`Open original post on ${sourceLabel()}`} title="Open original post"><ExternalLink /></a>}</Show>
-    </div>
-    <div class="news-item-content">
-      <Show when={split().title}><h2 class="news-story-title"><Show when={props.item.url} fallback={split().title}>{url => <a href={url()} target="_blank" rel="noopener noreferrer">{split().title}</a>}</Show></h2></Show>
-      <Show when={split().body}><p class="news-text">{split().body}</p></Show>
-      <Show when={props.item.media?.length}>
-        <div class="news-media"><For each={props.item.media?.slice(0, 4)}>{media => <a href={props.item.url ?? media.previewUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${media.type === 'video' ? 'video' : 'image'} from ${props.item.author.name}`}>
-          <img src={media.previewUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={event => { event.currentTarget.parentElement!.style.display = 'none'; }} />
-          <Show when={media.type === 'video'}><span class="news-video-label">Video</span></Show>
-        </a>}</For></div>
-      </Show>
+      <div class="news-item-content">
+        <Show when={split().title}><h2 class="news-story-title"><Show when={props.item.url} fallback={split().title}>{url => <a href={url()} target="_blank" rel="noopener noreferrer">{split().title}</a>}</Show></h2></Show>
+        <Show when={split().body}><p class="news-text">{split().body}</p></Show>
+        <Show when={props.item.media?.length}>
+          <div class="news-media"><For each={props.item.media?.slice(0, 4)}>{media => <a href={props.item.url ?? media.previewUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${media.type === 'video' ? 'video' : 'image'} from ${props.item.author.name}`}>
+            <img src={media.previewUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={event => { event.currentTarget.parentElement!.style.display = 'none'; }} />
+            <Show when={media.type === 'video'}><span class="news-video-label">Video</span></Show>
+          </a>}</For></div>
+        </Show>
+      </div>
     </div>
   </article>;
 };

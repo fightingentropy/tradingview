@@ -161,7 +161,7 @@ const Brief: Component = () => {
 
   return (
     <main ref={scroller} class="daily-brief-page" aria-label="Daily market brief" aria-busy={loading()} onScroll={updateReadingPosition}>
-      <div class="brief-reading-progress" aria-hidden="true"><span style={{ width: `${progress()}%` }} /></div>
+      <div class="brief-reading-progress" aria-hidden="true"><span style={{ transform: `scaleX(${progress() / 100})` }} /></div>
       <div class="brief-frame">
         <header class="brief-masthead">
           <div>
@@ -182,7 +182,7 @@ const Brief: Component = () => {
           </div>
         </header>
         <Show when={isAdmin() && (runError() || running() || run()?.status === 'errored')}>
-          <div class="brief-feed-status" role="status">
+          <div class="brief-feed-status" classList={{ 'is-running': !runError() && running() }} role="status">
             {runError() || (running()
               ? `Researching a fresh brief since ${runClock(run()?.startedAt) || 'now'} (London). It replaces today's edition when done.`
               : `The last run failed${run()?.error ? `: ${run()?.error}` : '.'} Run it again to retry.`)}
