@@ -82,7 +82,9 @@ npm run ios:sim:release -- --device <simulator-udid>
 Run the trading-risk math and Hyperliquid signing regression suite with
 `npm run test:trading`.
 
-Install the feed as a per-user background service so it starts automatically at login:
+In production the feed and the price-alert monitor run as systemd services on the Oracle VM;
+deploy them with `node scripts/vm-deploy.mjs oracle` (see [docs/vm-services.md](docs/vm-services.md)).
+To run the feed as a per-user background service on a Mac instead:
 
 ```bash
 npm run news:install
