@@ -14,6 +14,7 @@
     "index.ts",
     "news-relay.ts",
     "news-pulse.ts",
+    "news-pulse-workflow.ts",
     "claude.ts",
     "daily-brief.ts",
     "daily-brief-workflow.ts",

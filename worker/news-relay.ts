@@ -11,7 +11,7 @@ import {
 } from '../src/domain/newsNotificationSources';
 import {
   EXECUTIVE_SUMMARY_KEY,
-  runScheduledExecutiveSummary,
+  scheduleExecutiveSummary,
   type NewsExecutiveSummary,
   type NewsItem,
   type NewsSource,
@@ -518,7 +518,7 @@ export default {
     }
   },
   async scheduled(controller, env): Promise<void> {
-    const result = await runScheduledExecutiveSummary(
+    const result = await scheduleExecutiveSummary(
       env,
       () => env.NEWS_RELAY_KV.get<FeedSnapshot>(FEED_KEY, 'json'),
       controller.scheduledTime,

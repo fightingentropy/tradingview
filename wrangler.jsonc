@@ -10,6 +10,10 @@
     "bindings": [{ "name": "PRICE_ALERTS", "class_name": "MacMiniAlertRelay" }]
   },
   "migrations": [{ "tag": "price-alerts-v1", "new_sqlite_classes": ["MacMiniAlertRelay"] }],
+  "workflows": [
+    { "name": "tradingview-news-pulse", "binding": "NEWS_PULSE_WORKFLOW", "class_name": "NewsPulseWorkflow" }
+  ],
+  "limits": { "cpu_ms": 300000 },
   "kv_namespaces": [
     {
       "binding": "NEWS_RELAY_KV",

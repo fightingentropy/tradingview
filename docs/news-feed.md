@@ -158,16 +158,19 @@ The Cloudflare relay:
 
 - Builds the executive pulse at 09:35 and 16:05 `America/New_York`, Monday through Friday. A
   five-minute weekday cron (`*/5 13-21 * * 1-5` UTC, covering both daylight-saving offsets) checks
-  the New York clock and generates at most one pulse per slot from up to 72 hours of items the
-  bridge last ingested. The format is deliberately terse: a nine-word headline, a two-sentence lead,
+  the New York clock and starts one `tradingview-news-pulse` Workflow instance per slot
+  (`news-pulse-YYYY-MM-DD-open|close`) from up to 72 hours of items the bridge last ingested. The format is deliberately terse: a nine-word headline, a two-sentence lead,
   exactly three ranked developments with change and confidence labels, optional secondary signals,
   and two watch items.
-- Calls the Claude API (`claude-opus-5-5`, adaptive thinking at `xhigh` effort) with structured
-  JSON output and no tools, then enforces the word limits and replaces source keys with the exact
-  feed items. Refusal fallbacks are on (`fallbacks: "default"`).
-- Stores the pulse under `summary:executive` and each attempt under `summary:attempt` in
-  `NEWS_RELAY_KV`. A slot gets up to three attempts, 20 minutes apart; the previous pulse stays
-  visible if they fail. A feed older than three hours (the bridge is offline) skips the slot.
+- Calls the Claude API (`claude-opus-5-5`, adaptive thinking at `xhigh` effort). Claude may verify
+  consequential claims against primary sources with up to 5 web searches and 3 page fetches, then
+  submits through a `submit_pulse` tool. The runner enforces the word limits and replaces source
+  keys with the exact feed items; a pulse that fails validation goes back to Claude once. The pulse
+  closes with a rumour check, uses UK time, and never treats engagement, reposts or Polymarket odds
+  as confirmation. Refusal fallbacks are on (`fallbacks: "default"`).
+- Stores the pulse under `summary:executive` in `NEWS_RELAY_KV`. Each slot gets up to three
+  generation attempts, five minutes apart, and only while the slot is current; the previous pulse
+  stays visible if they fail. A feed older than three hours (the bridge is offline) delays the slot.
 - Ignores any pulse in ingested snapshots. Until the first cloud pulse exists, `/feed` serves the
   last pulse the Mac mini published.
 

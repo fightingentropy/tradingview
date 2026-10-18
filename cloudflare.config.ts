@@ -66,7 +66,10 @@ export default defineConfig((ctx) => {
           entrypoint: "worker/index.ts",
           exports: {
             MacMiniAlertRelay: exports.durableObject({ storage: "sqlite" }),
+            NewsPulseWorkflow: exports.workflow({ name: "tradingview-news-pulse" }),
           },
+          // Workflow steps stream Claude turns with web verification.
+          limits: { cpuMs: 300_000 },
           // Weekday checks around the 09:35 and 16:05 New York pulse slots, in UTC
           // for both daylight-saving offsets; the Worker gates on the New York clock.
           triggers: [triggers.scheduled({ schedule: "*/5 13-21 * * 1-5" })],
@@ -86,6 +89,11 @@ export default defineConfig((ctx) => {
             PRICE_ALERTS: bindings.durableObject({
               worker: "tradingview-news-relay",
               exportName: "MacMiniAlertRelay",
+            }),
+            NEWS_PULSE_WORKFLOW: bindings.workflow({
+              name: "tradingview-news-pulse",
+              worker: "tradingview-news-relay",
+              exportName: "NewsPulseWorkflow",
             }),
           },
         }),

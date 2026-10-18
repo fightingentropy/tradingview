@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type Anthropic from '@anthropic-ai/sdk';
+
 import {
-  EXECUTIVE_SUMMARY_ATTEMPT_KEY,
   EXECUTIVE_SUMMARY_KEY,
   NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION,
   executiveSummaryScheduleSlot,
+  generateExecutiveSummary,
   hydrateExecutiveSummary,
-  runScheduledExecutiveSummary,
+  pulseInstanceId,
+  scheduleExecutiveSummary,
   selectExecutiveSummaryItems,
   shouldGenerateExecutiveSummary,
   type NewsItem,
@@ -140,43 +143,87 @@ test('keeps overnight and weekend context for the next scheduled pulse', () => {
   assert.deepEqual(selected.map(({ id }) => id), ['inside']);
 });
 
-test('the cron skips generation it does not need, without calling Claude', async () => {
+function fakeWorkflow(existing = new Set<string>()) {
+  const created: unknown[] = [];
+  return {
+    created,
+    async get(id: string) { if (!existing.has(id)) throw new Error('instance.not_found'); return {}; },
+    async create(options: { id: string }) { created.push(options); existing.add(options.id); return {}; },
+  } as unknown as Workflow<never> & { created: unknown[] };
+}
+
+test('the cron starts one Workflow per slot, only when a pulse is due and the feed is fresh', async () => {
   const openSlot = Date.parse('2026-07-13T13:40:00.000Z');
   const feed = { items, updatedAt: new Date(openSlot - 60_000).toISOString() };
   const loadFeed = async () => feed;
-  const env = (initial?: Record<string, unknown>) => ({ NEWS_RELAY_KV: memoryKV(initial) });
+  const env = (initial?: Record<string, unknown>, workflow = fakeWorkflow()) => ({
+    NEWS_RELAY_KV: memoryKV(initial),
+    NEWS_PULSE_WORKFLOW: workflow,
+  });
+  const due = { [EXECUTIVE_SUMMARY_KEY]: { formatVersion: NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION, generatedAt: '2026-07-10T20:05:00.000Z' } };
+  const freshFeed = async () => ({ ...feed, items: items.map((item) => ({ ...item, publishedAt: '2026-07-13T13:00:00.000Z' })) });
 
-  assert.equal(await runScheduledExecutiveSummary(env(), loadFeed, Date.parse('2026-07-11T15:00:00.000Z')), 'outside-schedule');
-  assert.equal(await runScheduledExecutiveSummary(env({
+  assert.equal(await scheduleExecutiveSummary(env(), loadFeed, Date.parse('2026-07-11T15:00:00.000Z')), 'outside-schedule');
+  assert.equal(await scheduleExecutiveSummary(env({
     [EXECUTIVE_SUMMARY_KEY]: { formatVersion: NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION, generatedAt: '2026-07-13T13:35:05.000Z' },
   }), loadFeed, openSlot), 'already-generated');
   // The legacy Mac mini pulse in the feed counts until the first cloud pulse.
-  assert.equal(await runScheduledExecutiveSummary(env(), async () => ({
+  assert.equal(await scheduleExecutiveSummary(env(), async () => ({
     ...feed,
     executiveSummary: { formatVersion: NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION, generatedAt: '2026-07-13T13:35:05.000Z' } as never,
   }), openSlot), 'already-generated');
-  assert.equal(await runScheduledExecutiveSummary(env({
-    [EXECUTIVE_SUMMARY_ATTEMPT_KEY]: { slot: '2026-07-13:open', attempts: 1, startedAt: '2026-07-13T13:35:00.000Z', state: 'failed' },
-  }), loadFeed, openSlot), 'cooling-down');
-  assert.equal(await runScheduledExecutiveSummary(env({
-    [EXECUTIVE_SUMMARY_ATTEMPT_KEY]: { slot: '2026-07-13:open', attempts: 3, startedAt: '2026-07-13T12:00:00.000Z', state: 'failed' },
-  }), loadFeed, openSlot), 'attempts-exhausted');
-  assert.equal(await runScheduledExecutiveSummary(env(), async () => ({
-    ...feed,
-    updatedAt: '2026-07-13T09:00:00.000Z',
-  }), openSlot), 'feed-stale');
+  assert.equal(await scheduleExecutiveSummary(env(due), async () => ({ ...feed, updatedAt: '2026-07-13T09:00:00.000Z' }), openSlot), 'feed-stale');
+
+  const workflow = fakeWorkflow();
+  assert.equal(await scheduleExecutiveSummary(env(due, workflow), freshFeed, openSlot), 'started');
+  assert.deepEqual(workflow.created, [{ id: 'news-pulse-2026-07-13-open', params: { slot: '2026-07-13:open', scheduledAt: openSlot } }]);
+  assert.equal(await scheduleExecutiveSummary(env(due, workflow), freshFeed, openSlot + 5 * 60_000), 'already-started');
+  assert.equal(pulseInstanceId('2026-07-13:close'), 'news-pulse-2026-07-13-close');
 });
 
-test('a failed generation records the attempt for the cooldown', async () => {
-  const openSlot = Date.parse('2026-07-13T13:40:00.000Z');
-  const kv = memoryKV();
-  const feed = { items: items.map((item) => ({ ...item, publishedAt: '2026-07-13T13:00:00.000Z' })), updatedAt: '2026-07-13T13:39:00.000Z' };
+function fakeClaude(responses: Array<Record<string, unknown>>) {
+  const requests: Array<Record<string, unknown>> = [];
+  const client = { beta: { messages: { stream(request: Record<string, unknown>) {
+    requests.push(request);
+    const next = responses.shift();
+    if (!next) throw new Error('No more fake responses');
+    return { finalMessage: async () => ({
+      model: 'claude-opus-5-5',
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      ...next,
+    }) };
+  } } } };
+  return { client: client as unknown as Anthropic, requests };
+}
+
+const submitPulse = (id: string, input: unknown) => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name: 'submit_pulse', input }] });
+
+test('generation offers web lookups and accepts a pulse submitted through the tool', async () => {
+  const { client, requests } = fakeClaude([submitPulse('call-1', claudeSummary)]);
+  const summary = await generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client });
+  assert.equal(summary.bullets.length, 3);
+  const tools = (requests[0]!.tools as Array<{ type?: string; name: string; max_uses?: number }>);
+  assert.deepEqual(tools.map(({ name }) => name), ['web_search', 'web_fetch', 'submit_pulse']);
+  assert.equal(tools[0]!.max_uses, 5);
+});
+
+test('an unsourced pulse is returned once for correction, then fails', async () => {
+  const unsourced = { ...claudeSummary, bullets: claudeSummary.bullets.map((bullet) => ({ ...bullet, sourceKeys: ['x:missing'] })) };
+  const repaired = fakeClaude([submitPulse('call-1', unsourced), submitPulse('call-2', claudeSummary)]);
+  await generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: repaired.client });
+  const followUp = repaired.requests[1]!.messages as Array<{ role: string; content: unknown }>;
+  const [result] = followUp.at(-1)!.content as Array<{ tool_use_id: string; is_error: boolean; content: string }>;
+  assert.equal(result!.tool_use_id, 'call-1');
+  assert.equal(result!.is_error, true);
+
+  const failing = fakeClaude([submitPulse('call-1', unsourced), submitPulse('call-2', unsourced)]);
   await assert.rejects(
-    runScheduledExecutiveSummary({ NEWS_RELAY_KV: kv }, async () => feed, openSlot),
-    /ANTHROPIC_API_KEY is not configured/,
+    generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: failing.client }),
+    /The pulse failed validation/,
   );
-  const attempt = JSON.parse(kv.values.get(EXECUTIVE_SUMMARY_ATTEMPT_KEY)!);
-  assert.equal(attempt.slot, '2026-07-13:open');
-  assert.equal(attempt.attempts, 1);
-  assert.equal(attempt.state, 'failed');
+  const silent = fakeClaude([{ stop_reason: 'end_turn', content: [{ type: 'text', text: 'No pulse today.' }] }]);
+  await assert.rejects(
+    generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: silent.client }),
+    /ended without submitting a pulse: No pulse today/,
+  );
 });
