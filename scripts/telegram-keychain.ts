@@ -6,6 +6,12 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const ACCOUNT = os.userInfo().username;
+export interface TelegramCredentials {
+  apiId: number;
+  apiHash: string;
+  session: string;
+}
+
 const SERVICES = {
   apiId: 'com.erlinhoxha.tradingview.telegram.api-id',
   apiHash: 'com.erlinhoxha.tradingview.telegram.api-hash',
@@ -19,7 +25,7 @@ const FILE_PATH = process.env.TELEGRAM_CREDENTIALS_FILE ?? path.join(
   'telegram.json',
 );
 
-function readSecret(service) {
+function readSecret(service: string): string | undefined {
   try {
     return execFileSync('security', ['find-generic-password', '-a', ACCOUNT, '-s', service, '-w'], {
       encoding: 'utf8',
@@ -30,7 +36,7 @@ function readSecret(service) {
   }
 }
 
-async function writeSecret(service, value) {
+async function writeSecret(service: string, value: string): Promise<void> {
   await execFileAsync('security', [
     'add-generic-password',
     '-U',
@@ -43,7 +49,7 @@ async function writeSecret(service, value) {
   ]);
 }
 
-function readFileCredentials() {
+function readFileCredentials(): TelegramCredentials | undefined {
   try {
     const value = JSON.parse(readFileSync(FILE_PATH, 'utf8'));
     const apiId = Number(value.apiId);
@@ -56,7 +62,7 @@ function readFileCredentials() {
   }
 }
 
-function writeFileCredentials({ apiId, apiHash, session }) {
+function writeFileCredentials({ apiId, apiHash, session }: TelegramCredentials): void {
   mkdirSync(path.dirname(FILE_PATH), { recursive: true });
   writeFileSync(
     FILE_PATH,
@@ -65,7 +71,7 @@ function writeFileCredentials({ apiId, apiHash, session }) {
   );
 }
 
-export function readTelegramCredentials() {
+export function readTelegramCredentials(): TelegramCredentials | undefined {
   const apiId = Number(readSecret(SERVICES.apiId));
   const apiHash = readSecret(SERVICES.apiHash);
   const session = readSecret(SERVICES.session);
@@ -75,7 +81,7 @@ export function readTelegramCredentials() {
   return readFileCredentials();
 }
 
-export async function storeTelegramCredentials({ apiId, apiHash, session }) {
+export async function storeTelegramCredentials({ apiId, apiHash, session }: TelegramCredentials): Promise<void> {
   try {
     await writeSecret(SERVICES.apiId, String(apiId));
     await writeSecret(SERVICES.apiHash, apiHash);

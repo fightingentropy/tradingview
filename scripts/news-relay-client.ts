@@ -1,8 +1,15 @@
 import { createHmac } from 'node:crypto';
 
-import { readNewsRelayConfiguration } from './news-relay-keychain.mjs';
+import type { NewsFeedNotice, NewsItem } from '../src/domain/news.ts';
+import { readNewsRelayConfiguration } from './news-relay-keychain.ts';
 
-export async function publishNewsRelaySnapshot(snapshot) {
+export interface NewsRelaySnapshot {
+  items: NewsItem[];
+  notices: NewsFeedNotice[];
+  updatedAt: string;
+}
+
+export async function publishNewsRelaySnapshot(snapshot: NewsRelaySnapshot): Promise<boolean> {
   const configuration = readNewsRelayConfiguration();
   if (!configuration?.url) return false;
   const body = JSON.stringify(snapshot);

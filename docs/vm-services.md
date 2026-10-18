@@ -9,15 +9,15 @@ see [the daily brief service](daily-brief-service.md).
 
 | systemd unit | Entry point | What it does |
 | --- | --- | --- |
-| `tradingview-news` | `scripts/news-feed-server.mjs` | Collects the X list, Telegram, Digg and Paste Trade, and publishes signed snapshots to the news relay. Listens on `127.0.0.1:8430`. |
-| `tradingview-price-alerts` | `scripts/price-alert-monitor.mjs` | Watches Hyperliquid prices and delivers alerts through the relay. |
+| `tradingview-news` | `scripts/news-feed-server.ts` | Collects the X list, Telegram, Digg and Paste Trade, and publishes signed snapshots to the news relay. Listens on `127.0.0.1:8430`. |
+| `tradingview-price-alerts` | `scripts/price-alert-monitor.ts` | Watches Hyperliquid prices and delivers alerts through the relay. |
 
 ## Deploying
 
 From this repository on the laptop:
 
 ```sh
-bun scripts/vm-deploy.mjs oracle
+bun scripts/vm-deploy.ts oracle
 ```
 
 The script uses esbuild to find the files the two services import, ships only
@@ -25,10 +25,10 @@ those plus a `package.json` with their npm packages at the lockfile versions,
 runs `bun install --production` on the VM and installs and restarts both units.
 Bun blocks the `es5-ext` postinstall script, which only prints a message. The previous
 release stays at `~/tradingview-services.previous`; to roll back, move it back to
-`~/tradingview-services` and run `~/.bun/bin/bun ~/tradingview-services/scripts/linux-services.mjs start`.
+`~/tradingview-services` and run `~/.bun/bin/bun ~/tradingview-services/scripts/linux-services.ts start`.
 Pass `--no-start` to install without restarting.
 
-On the VM, `~/.bun/bin/bun ~/tradingview-services/scripts/linux-services.mjs status|start|stop`
+On the VM, `~/.bun/bin/bun ~/tradingview-services/scripts/linux-services.ts status|start|stop`
 manages both units. Logs: `journalctl -u tradingview-news -u tradingview-price-alerts`.
 
 ## Credentials and state
@@ -41,7 +41,7 @@ All files are mode `0600` in `0700` directories and are never committed.
   access token and bridge secret. `seen-news.json` beside it is the push watermark.
 - `~/Library/Application Support/TradingView Price Alerts/`: the monitor's trigger state.
 - Telegram channels are read from their public pages. For a logged-in session,
-  `scripts/telegram-keychain.mjs` falls back to `telegram.json` in the news
+  `scripts/telegram-keychain.ts` falls back to `telegram.json` in the news
   directory, or `TELEGRAM_CREDENTIALS_FILE`, when there is no macOS Keychain.
 
 ## Tools

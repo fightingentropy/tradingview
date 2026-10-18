@@ -83,7 +83,7 @@ Run the trading-risk math and Hyperliquid signing regression suite with
 `npm run test:trading`.
 
 In production the feed and the price-alert monitor run as systemd services on the Oracle VM;
-deploy them with `bun scripts/vm-deploy.mjs oracle` (see [docs/vm-services.md](docs/vm-services.md)).
+deploy them with `bun scripts/vm-deploy.ts oracle` (see [docs/vm-services.md](docs/vm-services.md)).
 To run the feed as a per-user background service on a Mac instead:
 
 ```bash

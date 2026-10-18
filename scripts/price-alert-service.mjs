@@ -35,7 +35,7 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
 <key>Label</key><string>${label}</string>
 <key>UserName</key><string>${escaped(taskUser.username)}</string>
-<key>ProgramArguments</key><array><string>${escaped(nodeBinary)}</string><string>--disable-warning=MODULE_TYPELESS_PACKAGE_JSON</string><string>${escaped(path.join(repo, 'scripts', 'price-alert-monitor.mjs'))}</string></array>
+<key>ProgramArguments</key><array><string>${escaped(nodeBinary)}</string><string>--disable-warning=MODULE_TYPELESS_PACKAGE_JSON</string><string>${escaped(path.join(repo, 'scripts', 'price-alert-monitor.ts'))}</string></array>
 <key>WorkingDirectory</key><string>${escaped(repo)}</string>
 <key>EnvironmentVariables</key><dict><key>HOME</key><string>${escaped(taskHome)}</string><key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
 <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>

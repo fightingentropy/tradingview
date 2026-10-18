@@ -2,7 +2,18 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import type { NewsItem } from '../src/domain/news.ts';
 import { buildNewsPushNotificationContent } from '../src/domain/newsNotificationSources.ts';
+
+interface ExpoPushTicket {
+  status?: string;
+  id?: unknown;
+  details?: { error?: string };
+}
+
+interface ExpoPushReceipt {
+  details?: { error?: string };
+}
 
 const STATE_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'TradingView News');
 const TOKENS_FILE = path.join(STATE_DIR, 'push-tokens.json');
@@ -11,7 +22,7 @@ const PUSH_SEND_URL = 'https://exp.host/--/api/v2/push/send';
 const PUSH_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getReceipts';
 const TOKEN_PATTERN = /^(?:Exponent|Expo)PushToken\[[A-Za-z0-9_-]+\]$/;
 
-async function readJson(file, fallback) {
+async function readJson(file: string, fallback: unknown): Promise<unknown> {
   try {
     return JSON.parse(await readFile(file, 'utf8'));
   } catch {
@@ -19,24 +30,26 @@ async function readJson(file, fallback) {
   }
 }
 
-async function atomicWriteJson(file, value) {
+async function atomicWriteJson(file: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.tmp`;
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, file);
 }
 
-function itemKey(item) {
+function itemKey(item: Pick<NewsItem, 'source' | 'id'>): string {
   return `${item.source}:${item.id}`;
 }
 
 export class NewsPushService {
-  subscriptions = new Map();
-  seen = new Set();
+  subscriptions = new Map<string, string[]>();
+  seen = new Set<string>();
   initialized = false;
-  receipts = new Map();
+  receipts = new Map<string, string>();
+  xSourceId: string;
+  validSourceIds: Set<string>;
 
-  constructor({ xListId, telegramChannels }) {
+  constructor({ xListId, telegramChannels }: { xListId: string; telegramChannels: readonly string[] }) {
     this.xSourceId = `x:list:${xListId}`;
     this.validSourceIds = new Set([
       this.xSourceId,
@@ -44,21 +57,21 @@ export class NewsPushService {
     ]);
   }
 
-  normalizeSourceIds(value) {
+  normalizeSourceIds(value: unknown): string[] {
     if (!Array.isArray(value)) return [...this.validSourceIds];
-    return [...new Set(value.filter((id) => typeof id === 'string'))].filter((id) =>
+    return [...new Set(value.filter((id): id is string => typeof id === 'string'))].filter((id) =>
       this.validSourceIds.has(id),
     );
   }
 
-  sourceIdForItem(item) {
+  sourceIdForItem(item: Pick<NewsItem, 'source' | 'author'> | undefined): string | undefined {
     if (item?.source === 'x') return this.xSourceId;
     const handle = String(item?.author?.handle ?? '').replace(/^@/, '').toLowerCase();
     const sourceId = handle ? `telegram:${handle}` : undefined;
     return sourceId && this.validSourceIds.has(sourceId) ? sourceId : undefined;
   }
 
-  async initialize() {
+  async initialize(): Promise<void> {
     if (this.initialized) return;
     const tokens = await readJson(TOKENS_FILE, []);
     const seen = await readJson(SEEN_FILE, []);
@@ -68,16 +81,18 @@ export class NewsPushService {
           this.subscriptions.set(value, [...this.validSourceIds]);
           continue;
         }
-        if (!value || typeof value !== 'object' || !TOKEN_PATTERN.test(value.token)) continue;
-        const sourceIds = this.normalizeSourceIds(value.sourceIds);
-        if (sourceIds.length > 0) this.subscriptions.set(value.token, sourceIds);
+        if (!value || typeof value !== 'object') continue;
+        const { token, sourceIds: stored } = value as { token?: unknown; sourceIds?: unknown };
+        if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) continue;
+        const sourceIds = this.normalizeSourceIds(stored);
+        if (sourceIds.length > 0) this.subscriptions.set(token, sourceIds);
       }
     }
     if (Array.isArray(seen)) for (const key of seen) if (typeof key === 'string') this.seen.add(key);
     this.initialized = true;
   }
 
-  async register(token, sourceIds) {
+  async register(token: string, sourceIds: unknown): Promise<void> {
     await this.initialize();
     if (!TOKEN_PATTERN.test(token)) throw new Error('Invalid Expo push token');
     if (sourceIds !== undefined && !Array.isArray(sourceIds)) {
@@ -89,20 +104,20 @@ export class NewsPushService {
     await this.saveTokens();
   }
 
-  async unregister(token) {
+  async unregister(token: string): Promise<void> {
     await this.initialize();
     this.subscriptions.delete(token);
     await this.saveTokens();
   }
 
-  async saveTokens() {
+  async saveTokens(): Promise<void> {
     await atomicWriteJson(
       TOKENS_FILE,
       [...this.subscriptions].map(([token, sourceIds]) => ({ token, sourceIds })),
     );
   }
 
-  async processSnapshot(items) {
+  async processSnapshot(items: NewsItem[]): Promise<void> {
     await this.initialize();
     const keys = items.map(itemKey);
     if (this.seen.size === 0) {
@@ -119,7 +134,7 @@ export class NewsPushService {
     await this.sendItems(fresh);
   }
 
-  async sendItems(items) {
+  async sendItems(items: NewsItem[]): Promise<void> {
     const messages = [...this.subscriptions].flatMap(([to, sourceIds]) => {
       const allowed = new Set(sourceIds);
       const allowedItems = items.filter((item) => {
@@ -150,7 +165,7 @@ export class NewsPushService {
       signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) throw new Error(`Expo Push Service returned ${response.status}`);
-    const payload = await response.json();
+    const payload = await response.json() as { data?: ExpoPushTicket | ExpoPushTicket[] };
     const tickets = Array.isArray(payload.data) ? payload.data : [payload.data];
     tickets.forEach((ticket, index) => {
       const token = messages[index]?.to;
@@ -163,7 +178,7 @@ export class NewsPushService {
     await this.saveTokens();
   }
 
-  async checkReceipts() {
+  async checkReceipts(): Promise<void> {
     if (this.receipts.size === 0) return;
     const ids = [...this.receipts.keys()].slice(0, 300);
     const response = await fetch(PUSH_RECEIPTS_URL, {
@@ -173,7 +188,7 @@ export class NewsPushService {
       signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) return;
-    const payload = await response.json();
+    const payload = await response.json() as { data?: Record<string, ExpoPushReceipt | undefined> };
     for (const id of ids) {
       const receipt = payload.data?.[id];
       if (!receipt) continue;

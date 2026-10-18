@@ -38,7 +38,7 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
   <key>ProgramArguments</key>
   <array>
     <string>${process.execPath}</string>
-    <string>${path.join(repo, 'scripts', 'news-feed-server.mjs')}</string>
+    <string>${path.join(repo, 'scripts', 'news-feed-server.ts')}</string>
   </array>
   <key>WorkingDirectory</key><string>${repo}</string>
   <key>EnvironmentVariables</key>

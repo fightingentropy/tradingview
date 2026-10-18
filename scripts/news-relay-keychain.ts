@@ -4,12 +4,19 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+export interface NewsRelayConfiguration {
+  accessToken: string;
+  bridgeSecret: string;
+  url: string;
+}
+
 const SERVICE = 'com.erlinhoxha.tradingview.news-relay';
 const ACCOUNTS = {
   accessToken: 'app-access-token',
   bridgeSecret: 'bridge-secret',
   url: 'relay-url',
-};
+} as const;
+type Account = typeof ACCOUNTS[keyof typeof ACCOUNTS];
 const CONFIG_FILE = process.env.NEWS_RELAY_CONFIG_FILE ?? path.join(
   os.homedir(),
   'Library',
@@ -18,15 +25,16 @@ const CONFIG_FILE = process.env.NEWS_RELAY_CONFIG_FILE ?? path.join(
   'relay.json',
 );
 
-function validConfiguration(value) {
-  if (!value || typeof value !== 'object') return undefined;
+function validConfiguration(input: unknown): NewsRelayConfiguration | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const value = input as Partial<Record<keyof NewsRelayConfiguration, unknown>>;
   const accessToken = typeof value.accessToken === 'string' ? value.accessToken.trim() : '';
   const bridgeSecret = typeof value.bridgeSecret === 'string' ? value.bridgeSecret.trim() : '';
   const url = typeof value.url === 'string' ? value.url.trim().replace(/\/+$/, '') : '';
   return accessToken && bridgeSecret && url ? { accessToken, bridgeSecret, url } : undefined;
 }
 
-function readFileConfiguration() {
+function readFileConfiguration(): NewsRelayConfiguration | undefined {
   try {
     return validConfiguration(JSON.parse(readFileSync(CONFIG_FILE, 'utf8')));
   } catch {
@@ -34,7 +42,7 @@ function readFileConfiguration() {
   }
 }
 
-function read(account) {
+function read(account: Account): string | undefined {
   try {
     return execFileSync(
       'security',
@@ -46,7 +54,7 @@ function read(account) {
   }
 }
 
-function write(account, value) {
+function write(account: Account, value: string): void {
   execFileSync(
     'security',
     ['add-generic-password', '-U', '-s', SERVICE, '-a', account, '-w', value],
@@ -54,14 +62,14 @@ function write(account, value) {
   );
 }
 
-export function readNewsRelayConfiguration() {
+export function readNewsRelayConfiguration(): NewsRelayConfiguration | undefined {
   const accessToken = read(ACCOUNTS.accessToken);
   const bridgeSecret = read(ACCOUNTS.bridgeSecret);
   const url = read(ACCOUNTS.url);
   return validConfiguration({ accessToken, bridgeSecret, url }) ?? readFileConfiguration();
 }
 
-export function ensureNewsRelaySecrets() {
+export function ensureNewsRelaySecrets(): Omit<NewsRelayConfiguration, 'url'> {
   const accessToken = read(ACCOUNTS.accessToken) ?? randomBytes(32).toString('hex');
   const bridgeSecret = read(ACCOUNTS.bridgeSecret) ?? randomBytes(32).toString('hex');
   write(ACCOUNTS.accessToken, accessToken);
@@ -69,6 +77,6 @@ export function ensureNewsRelaySecrets() {
   return { accessToken, bridgeSecret };
 }
 
-export function storeNewsRelayUrl(url) {
+export function storeNewsRelayUrl(url: string): void {
   write(ACCOUNTS.url, url.replace(/\/+$/, ''));
 }

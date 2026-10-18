@@ -35,9 +35,9 @@ adds the `MacMiniAlertRelay` SQLite Durable Object migration. Preserve the exist
 
 Copy these files into a dedicated directory on the Mac mini, retaining their paths:
 
-- `scripts/price-alert-monitor.mjs`
+- `scripts/price-alert-monitor.ts`
 - `scripts/price-alert-service.mjs`
-- `scripts/news-relay-keychain.mjs`
+- `scripts/news-relay-keychain.ts`
 - `src/domain/priceAlerts.ts`
 
 Run `node scripts/price-alert-service.mjs install` there as the regular service user

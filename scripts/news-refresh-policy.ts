@@ -1,3 +1,5 @@
+import type { NewsSource } from '../src/domain/news.ts';
+
 export const NEWS_SOURCE_REFRESH_INTERVAL_MS = Object.freeze({
   x: 60 * 60_000,
   telegram: 5 * 60_000,
@@ -8,7 +10,7 @@ export const NEWS_SOURCE_REFRESH_INTERVAL_MS = Object.freeze({
 // A lightweight scheduler tick publishes cached snapshots and retries overdue sources.
 export const NEWS_SCHEDULER_INTERVAL_MS = 60_000;
 
-export function isNewsSourceCacheFresh(source, fetchedAt, now = Date.now()) {
+export function isNewsSourceCacheFresh(source: NewsSource, fetchedAt: number | undefined, now = Date.now()): boolean {
   if (typeof fetchedAt !== 'number' || !Number.isFinite(fetchedAt)) return false;
   const age = now - fetchedAt;
   return age >= 0 && age < NEWS_SOURCE_REFRESH_INTERVAL_MS[source];

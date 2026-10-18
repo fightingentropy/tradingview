@@ -3,7 +3,7 @@ import { stdin, stdout } from 'node:process';
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 
-import { storeTelegramCredentials } from './telegram-keychain.mjs';
+import { storeTelegramCredentials } from './telegram-keychain.ts';
 
 const input = createInterface({ input: stdin, output: stdout });
 const apiId = Number(await input.question('Telegram API ID: '));

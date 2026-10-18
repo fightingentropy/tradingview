@@ -3,11 +3,13 @@ import { accessSync, constants, existsSync } from 'node:fs';
 import os from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { promisify } from 'node:util';
-import { load } from 'cheerio';
+import { load, type CheerioAPI } from 'cheerio';
+
+import type { NewsItem } from '../src/domain/news.ts';
 
 const execFileAsync = promisify(execFile);
 
-export const DIGG_TECH_URL = 'https://digg.com/tech';
+export const DIGG_URL = 'https://digg.com/';
 const FETCH_TIMEOUT_MS = 20_000;
 const FETCH_MAX_BUFFER_BYTES = 25 * 1024 * 1024;
 
@@ -27,7 +29,7 @@ function findCurlImpersonate() {
     '/opt/homebrew/bin/curl_chrome104',
     '/usr/local/bin/curl_chrome131',
     '/usr/local/bin/curl_chrome110',
-  ].filter((value) => typeof value === 'string' && value.trim());
+  ].filter((value): value is string => typeof value === 'string' && Boolean(value.trim()));
 
   for (const candidate of candidates) {
     if (!existsSync(candidate)) continue;
@@ -44,37 +46,37 @@ function findCurlImpersonate() {
   );
 }
 
-function faviconUrl($) {
+function faviconUrl($: CheerioAPI): string | undefined {
   const href = $('link[rel="icon"][href]').first().attr('href')?.trim();
   if (!href) return undefined;
   try {
-    const url = new URL(href, DIGG_TECH_URL);
+    const url = new URL(href, DIGG_URL);
     return url.protocol === 'https:' && url.hostname === 'digg.com' ? url.toString() : undefined;
   } catch {
     return undefined;
   }
 }
 
-function storyTimestamps(html) {
-  const timestamps = new Map();
+function storyTimestamps(html: string): Map<string, string> {
+  const timestamps = new Map<string, string>();
   const pattern = /\{\\"clusterId\\":\\"([^"\\]+)\\"[\s\S]{0,4000}?\\"createdAt\\":\\"([^"\\]+)\\"/g;
   for (const match of html.matchAll(pattern)) {
-    const date = new Date(match[2]);
-    if (Number.isFinite(date.getTime())) timestamps.set(match[1], date.toISOString());
+    const date = new Date(match[2]!);
+    if (Number.isFinite(date.getTime())) timestamps.set(match[1]!, date.toISOString());
   }
   return timestamps;
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function parseNextDataEnvelope(script) {
+function parseNextDataEnvelope(script: string): unknown {
   const match = /^self\.__next_f\.push\((.+)\);?$/s.exec(script.trim());
   if (!match) return undefined;
 
   try {
-    const envelope = JSON.parse(match[1]);
+    const envelope: unknown = JSON.parse(match[1]!);
     const chunk = Array.isArray(envelope) ? envelope[1] : undefined;
     if (typeof chunk !== 'string') return undefined;
     const separator = chunk.indexOf(':');
@@ -84,13 +86,18 @@ function parseNextDataEnvelope(script) {
   }
 }
 
-function findTopStoriesFeed(value) {
+interface RankedStoriesFeed {
+  posts: unknown[];
+  topic: string;
+}
+
+function findRankedStoriesFeed(value: unknown): RankedStoriesFeed | undefined {
   if (!value || typeof value !== 'object') return undefined;
-  // Digg's current topic pages carry the ranked feed in initialPage.
+  // The homepage carries a mixed-topic trending feed; topic pages use top.
   if (
     isRecord(value) &&
     isRecord(value.initialPage) &&
-    value.initialPage.view === 'top' &&
+    (value.initialPage.view === 'trending' || value.initialPage.view === 'top') &&
     Array.isArray(value.initialPage.posts)
   ) {
     return {
@@ -110,13 +117,13 @@ function findTopStoriesFeed(value) {
 
   const children = Array.isArray(value) ? value : Object.values(value);
   for (const child of children) {
-    const feed = findTopStoriesFeed(child);
+    const feed: RankedStoriesFeed | undefined = findRankedStoriesFeed(child);
     if (feed) return feed;
   }
   return undefined;
 }
 
-function storyTitle(value) {
+function storyTitle(value: Record<string, unknown>): string {
   if (typeof value.title === 'string') return value.title.replace(/\s+/g, ' ').trim();
   if (isRecord(value.summary) && typeof value.summary.title === 'string') {
     return value.summary.title.replace(/\s+/g, ' ').trim();
@@ -124,7 +131,7 @@ function storyTitle(value) {
   return '';
 }
 
-function storySummary(value) {
+function storySummary(value: Record<string, unknown>): string {
   if (typeof value.tldr === 'string') return value.tldr.replace(/\s+/g, ' ').trim();
   if (isRecord(value.summary) && typeof value.summary.description === 'string') {
     return value.summary.description.replace(/\s+/g, ' ').trim();
@@ -132,40 +139,41 @@ function storySummary(value) {
   return '';
 }
 
-function parseStructuredStories($, avatarUrl) {
-  let feed;
-  $('script').each((_, node) => {
-    if (feed) return;
+function parseStructuredStories($: CheerioAPI, avatarUrl: string | undefined): NewsItem[] {
+  let feed: RankedStoriesFeed | undefined;
+  for (const node of $('script').toArray()) {
     const payload = parseNextDataEnvelope($(node).html() ?? '');
-    if (payload) feed = findTopStoriesFeed(payload);
-  });
+    if (payload) feed = findRankedStoriesFeed(payload);
+    if (feed) break;
+  }
   if (!feed) return [];
+  const { posts, topic: feedTopic } = feed;
 
-  return feed.posts.flatMap((value) => {
+  return posts.flatMap((value): NewsItem[] => {
     if (!isRecord(value)) return [];
     const id = typeof value.clusterId === 'string' ? value.clusterId.trim() : '';
     const slug = typeof value.clusterUrlId === 'string' ? value.clusterUrlId.trim() : '';
     const title = storyTitle(value);
     const summary = storySummary(value);
     const publishedAt = typeof value.createdAt === 'string' ? new Date(value.createdAt) : undefined;
-    const topic = feed.topic && /^[a-z0-9-]+$/i.test(feed.topic) ? feed.topic : 'tech';
-    if (!id || !slug || !title || !publishedAt || !Number.isFinite(publishedAt.getTime())) return [];
+    const topic = typeof value.topicSlug === 'string' ? value.topicSlug.trim() : feedTopic;
+    if (!id || !slug || !title || !publishedAt || !Number.isFinite(publishedAt.getTime()) || !/^[a-z0-9-]+$/i.test(topic)) return [];
 
     return [{
       id,
       source: 'digg',
-      author: { name: 'Digg Tech', handle: 'tech', ...(avatarUrl ? { avatarUrl } : {}) },
+      author: { name: 'Digg', handle: 'digg', ...(avatarUrl ? { avatarUrl } : {}) },
       text: summary ? `${title}\n\n${summary}` : title,
       publishedAt: publishedAt.toISOString(),
-      url: new URL(`/${topic}/${encodeURIComponent(slug)}`, DIGG_TECH_URL).toString(),
+      url: new URL(`/${topic}/${encodeURIComponent(slug)}`, DIGG_URL).toString(),
       media: [],
     }];
   });
 }
 
-function parseLegacyStories($, html, avatarUrl) {
+function parseLegacyStories($: CheerioAPI, html: string, avatarUrl: string | undefined): NewsItem[] {
   const timestamps = storyTimestamps(html);
-  const items = [];
+  const items: NewsItem[] = [];
 
   $('[data-testid="top-stories-stack"] [data-story-row="true"]').each((_, node) => {
     const story = $(node);
@@ -177,9 +185,9 @@ function parseLegacyStories($, html, avatarUrl) {
     if (!id || !title || !href || !publishedAt) return;
 
     const summary = anchor.nextAll('p').first().text().replace(/\s+/g, ' ').trim();
-    let url;
+    let url: string;
     try {
-      url = new URL(href, DIGG_TECH_URL).toString();
+      url = new URL(href, DIGG_URL).toString();
     } catch {
       return;
     }
@@ -188,7 +196,7 @@ function parseLegacyStories($, html, avatarUrl) {
     items.push({
       id,
       source: 'digg',
-      author: { name: 'Digg Tech', handle: 'tech', ...(avatarUrl ? { avatarUrl } : {}) },
+      author: { name: 'Digg', handle: 'digg', ...(avatarUrl ? { avatarUrl } : {}) },
       text: summary ? `${title}\n\n${summary}` : title,
       publishedAt,
       url,
@@ -200,8 +208,8 @@ function parseLegacyStories($, html, avatarUrl) {
 }
 
 /** Keep only the icon + RSC scripts cheerio needs — avoids parsing a 1MB+ DOM. */
-function trimDiggHtml(html) {
-  const parts = [];
+function trimDiggHtml(html: string): string {
+  const parts: string[] = [];
   const icon = html.match(/<link[^>]+rel=["']icon["'][^>]*>/i);
   if (icon) parts.push(`<head>${icon[0]}</head>`);
 
@@ -216,7 +224,7 @@ function trimDiggHtml(html) {
   return `<!doctype html><html>${parts.join('')}</html>`;
 }
 
-export function parseDiggTech(html) {
+export function parseDigg(html: string): NewsItem[] {
   const trimmed = load(trimDiggHtml(html));
   const avatarUrl = faviconUrl(trimmed);
   const structuredStories = parseStructuredStories(trimmed, avatarUrl);
@@ -226,11 +234,11 @@ export function parseDiggTech(html) {
   return parseLegacyStories($, html, faviconUrl($));
 }
 
-function isVercelChallenge(html) {
+function isVercelChallenge(html: string): boolean {
   return /Vercel Security Checkpoint/i.test(html);
 }
 
-async function fetchDiggHtmlViaCurlImpersonate() {
+async function fetchDiggHtmlViaCurlImpersonate(): Promise<string> {
   const curl = findCurlImpersonate();
 
   // curl-impersonate mimics Chrome's TLS/HTTP2 fingerprint, which is enough to
@@ -244,9 +252,10 @@ async function fetchDiggHtmlViaCurlImpersonate() {
       '--max-time',
       String(Math.ceil(FETCH_TIMEOUT_MS / 1000)),
       '--compressed',
-      DIGG_TECH_URL,
+      DIGG_URL,
     ],
     {
+      encoding: 'utf8',
       timeout: FETCH_TIMEOUT_MS + 2_000,
       maxBuffer: FETCH_MAX_BUFFER_BYTES,
       env: { ...process.env, HOME: os.homedir() },
@@ -261,9 +270,9 @@ async function fetchDiggHtmlViaCurlImpersonate() {
   return html;
 }
 
-export async function fetchDiggTech() {
+export async function fetchDigg(): Promise<NewsItem[]> {
   const html = await fetchDiggHtmlViaCurlImpersonate();
-  const items = parseDiggTech(html);
-  if (items.length === 0) throw new Error('Digg returned no recognizable Tech stories');
+  const items = parseDigg(html);
+  if (items.length === 0) throw new Error('Digg returned no recognizable stories');
   return items;
 }

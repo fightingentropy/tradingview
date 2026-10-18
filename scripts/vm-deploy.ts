@@ -8,14 +8,14 @@ import { build } from 'esbuild';
 // Ships the news bridge and price-alert monitor to the Linux VM: only the files
 // they import, their npm packages at the lockfile versions, and the systemd units.
 // Bun installs the packages and runs both services.
-const ENTRIES = ['scripts/news-feed-server.mjs', 'scripts/price-alert-monitor.mjs'];
+const ENTRIES = ['scripts/news-feed-server.ts', 'scripts/price-alert-monitor.ts'];
 const args = process.argv.slice(2);
 const start = !args.includes('--no-start');
 const host = args.find((value) => !value.startsWith('--')) ?? 'oracle';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lock = JSON.parse(readFileSync(path.join(repo, 'package-lock.json'), 'utf8'));
 
-const files = new Set(['scripts/linux-services.mjs']);
+const files = new Set(['scripts/linux-services.ts']);
 const packages = new Set();
 for (const entry of ENTRIES) {
   const result = await build({
@@ -51,7 +51,7 @@ try {
     'rm -rf "$R.next" && mkdir -p "$R.next" && tar -xzf - -C "$R.next"',
     'cd "$R.next" && "$BUN" install --production --no-progress',
     'rm -rf "$R.previous" && if [ -d "$R" ]; then mv "$R" "$R.previous"; fi && mv "$R.next" "$R"',
-    `"$BUN" "$R/scripts/linux-services.mjs" install${start ? '' : ' --no-start'}`,
+    `"$BUN" "$R/scripts/linux-services.ts" install${start ? '' : ' --no-start'}`,
   ].join('\n');
   execFileSync('ssh', ['-o', 'BatchMode=yes', host, remote], { input: archive, stdio: ['pipe', 'inherit', 'inherit'] });
   console.log(`Deployed ${files.size} files and ${Object.keys(dependencies).join(', ')} to ${host}:~/tradingview-services.`);

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { acquirePriceMonitorLock, createPriceAlertRelayClient, PriceAlertMonitor } from './price-alert-monitor.mjs';
+import { acquirePriceMonitorLock, createPriceAlertRelayClient, PriceAlertMonitor } from './price-alert-monitor.ts';
 import { priceMonitorSignaturePayload } from '../src/domain/priceAlerts.ts';
 
 const DEVICE = 'a'.repeat(64);

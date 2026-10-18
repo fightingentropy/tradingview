@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readAnthropicApiKey } from './anthropic-keychain.mjs';
-import { ensureNewsRelaySecrets, storeNewsRelayUrl } from './news-relay-keychain.mjs';
+import { ensureNewsRelaySecrets, storeNewsRelayUrl } from './news-relay-keychain.ts';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cf = path.join(repo, 'node_modules/cf/bin/cf');

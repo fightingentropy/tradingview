@@ -1,7 +1,62 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseDiggTech } from './digg-tech.mjs';
+import { parseDigg } from './digg.ts';
+
+test('parses the homepage trending feed across topics, preserving rank and each story link', () => {
+  const story = {
+    clusterId: 'business-story',
+    clusterUrlId: 'business123',
+    topicSlug: 'world-business',
+    summary: { title: 'A business development', description: 'A useful summary.' },
+    createdAt: '2026-10-03T08:00:00Z',
+  };
+  const payload = {
+    feedGroups: [{
+      topicSlug: 'tech',
+      initialPage: { view: 'top', posts: [{ ...story, clusterId: 'sidebar-story' }] },
+    }],
+    initialPage: {
+      view: 'trending',
+      posts: [
+        story,
+        { ...story, clusterId: 'sports-story', clusterUrlId: 'sports456', topicSlug: 'sports', createdAt: '2026-10-03T12:00:00Z' },
+        { ...story, clusterId: 'ai-story', clusterUrlId: 'ai789', topicSlug: 'ai' },
+      ],
+    },
+  };
+  const html = `<head><link rel="icon" href="/icon.svg"></head>
+    <script>self.__next_f.push(${JSON.stringify([1, `19:${JSON.stringify(payload)}`])})</script>`;
+  const items = parseDigg(html);
+
+  assert.deepEqual(items.map(item => item.id), ['business-story', 'sports-story', 'ai-story']);
+  assert.deepEqual(items.map(item => item.url), [
+    'https://digg.com/world-business/business123',
+    'https://digg.com/sports/sports456',
+    'https://digg.com/ai/ai789',
+  ]);
+  assert.equal(items[0].publishedAt, '2026-10-03T08:00:00.000Z');
+  assert.equal(items[0].text, 'A business development\n\nA useful summary.');
+  assert.deepEqual(items[0].author, { name: 'Digg', handle: 'digg', avatarUrl: 'https://digg.com/icon.svg' });
+});
+
+test('skips homepage stories whose topic cannot produce a valid category link', () => {
+  const story = {
+    clusterId: 'missing-topic',
+    clusterUrlId: 'abc123',
+    summary: { title: 'A story' },
+    createdAt: '2026-10-03T08:00:00Z',
+  };
+  const payload = { initialPage: { view: 'trending', posts: [
+    story,
+    { ...story, clusterId: 'unsafe-topic', topicSlug: '../tech' },
+    { ...story, clusterId: 'valid-topic', topicSlug: 'world-business' },
+  ] } };
+  const html = `<script>self.__next_f.push(${JSON.stringify([1, `19:${JSON.stringify(payload)}`])})</script>`;
+  const items = parseDigg(html);
+  assert.deepEqual(items.map(item => item.id), ['valid-topic']);
+  assert.equal(items[0].url, 'https://digg.com/world-business/abc123');
+});
 
 test('parses the current initialPage feed, preserving rank and topic links', () => {
   const story = {
@@ -37,11 +92,11 @@ test('parses the current initialPage feed, preserving rank and topic links', () 
   const html = `<head><link rel="icon" href="/icon.svg?current"></head>
     <script>self.__next_f.push(${JSON.stringify([1, `19:${JSON.stringify(payload)}\n`])})</script>`;
 
-  assert.deepEqual(parseDiggTech(html), [
+  assert.deepEqual(parseDigg(html), [
     {
       id: 'rank-one',
       source: 'digg',
-      author: { name: 'Digg Tech', handle: 'tech', avatarUrl: 'https://digg.com/icon.svg?current' },
+      author: { name: 'Digg', handle: 'digg', avatarUrl: 'https://digg.com/icon.svg?current' },
       text: 'First ranked story\n\nA useful summary.',
       publishedAt: '2026-09-12T11:32:36.230Z',
       url: 'https://digg.com/tech/first123',
@@ -50,7 +105,7 @@ test('parses the current initialPage feed, preserving rank and topic links', () 
     {
       id: 'rank-two',
       source: 'digg',
-      author: { name: 'Digg Tech', handle: 'tech', avatarUrl: 'https://digg.com/icon.svg?current' },
+      author: { name: 'Digg', handle: 'digg', avatarUrl: 'https://digg.com/icon.svg?current' },
       text: 'Second ranked story',
       publishedAt: '2026-09-12T12:00:00.000Z',
       url: 'https://digg.com/tech/second456',
@@ -71,13 +126,13 @@ test('selects the top initialPage instead of unrelated feeds and uses topicSlug'
     { topicSlug: 'ai', initialPage: { view: 'top', posts: [story] } },
   ];
   const html = `<script>self.__next_f.push(${JSON.stringify([1, `19:${JSON.stringify(payload)}`])})</script>`;
-  const items = parseDiggTech(html);
+  const items = parseDigg(html);
   assert.equal(items.length, 1);
   assert.equal(items[0].id, 'top-story');
   assert.equal(items[0].url, 'https://digg.com/ai/abc123');
 });
 
-test('parses ranked Digg Tech stories from the previous storiesByFilter payload', () => {
+test('parses ranked Digg stories from the previous storiesByFilter payload', () => {
   const payload = [
     '$',
     '$Lfeed',
@@ -115,13 +170,13 @@ test('parses ranked Digg Tech stories from the previous storiesByFilter payload'
     <script>self.__next_f.push(${nextData})</script>
   `;
 
-  assert.deepEqual(parseDiggTech(html), [
+  assert.deepEqual(parseDigg(html), [
     {
       id: 'story-current',
       source: 'digg',
       author: {
-        name: 'Digg Tech',
-        handle: 'tech',
+        name: 'Digg',
+        handle: 'digg',
         avatarUrl: 'https://digg.com/icon.svg?current',
       },
       text: 'Current tech story\n\nA useful current summary.',
@@ -158,11 +213,11 @@ test('still accepts legacy title/tldr fields on structured Digg posts', () => {
   const nextData = JSON.stringify([1, `2b:${JSON.stringify(payload)}`]);
   const html = `<script>self.__next_f.push(${nextData})</script>`;
 
-  assert.deepEqual(parseDiggTech(html), [
+  assert.deepEqual(parseDigg(html), [
     {
       id: 'story-legacy',
       source: 'digg',
-      author: { name: 'Digg Tech', handle: 'tech' },
+      author: { name: 'Digg', handle: 'digg' },
       text: 'Legacy tech story\n\nLegacy summary.',
       publishedAt: '2026-07-19T08:04:15.230Z',
       url: 'https://digg.com/tech/legacy123',
@@ -189,13 +244,13 @@ test('keeps the legacy ranked-story parser as a fallback', () => {
     <script>self.__next_f.push([1, "{\\"clusterId\\":\\"story-one\\",\\"title\\":\\"First tech story\\",\\"createdAt\\":\\"2026-07-11T08:04:15.230903+00:00\\"}"])</script>
   `;
 
-  assert.deepEqual(parseDiggTech(html), [
+  assert.deepEqual(parseDigg(html), [
     {
       id: 'story-one',
       source: 'digg',
       author: {
-        name: 'Digg Tech',
-        handle: 'tech',
+        name: 'Digg',
+        handle: 'digg',
         avatarUrl: 'https://digg.com/icon.svg?current',
       },
       text: 'First tech story\n\nA useful summary.',

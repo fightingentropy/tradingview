@@ -92,7 +92,7 @@ Use these public feeds as a fast discovery layer for material developments that 
 
 - **TradFi headlines:** [`@tradfi_t3`](https://t.me/tradfi_t3), [`@trad_fin`](https://t.me/trad_fin), [`@WatcherGuru`](https://t.me/WatcherGuru), and [`@dbnewsdelayed`](https://t.me/dbnewsdelayed)
 - **Hyperliquid platform developments:** [`@hyperliquid_announcements`](https://t.me/hyperliquid_announcements)
-- **Technology discovery:** [Digg Tech](https://digg.com/tech)
+- **General news discovery:** [Digg](https://digg.com/)
 - **Trader theses:** [Paste Trade](https://app.paste.trade)
 
 For `update`, scan the latest relevant posts since the prior brief. For `brief` and `full brief`, use a 24–72-hour window, extending it only when an older item is still driving current price action.
@@ -100,7 +100,7 @@ For `update`, scan the latest relevant posts since the prior brief. For `brief` 
 Fetch Digg directly through the maintained TradingView adapter:
 
 ```bash
-cd /Users/erlinhoxha/Developer/tradingview && node --input-type=module -e 'import { fetchDiggTech } from "./scripts/digg-tech.mjs"; console.log(JSON.stringify(await fetchDiggTech(), null, 2));'
+cd /Users/erlinhoxha/Developer/tradingview && bun -e 'import { fetchDigg } from "./scripts/digg.ts"; console.log(JSON.stringify(await fetchDigg(), null, 2));'
 ```
 
 The adapter uses `curl-impersonate` with a Chrome TLS fingerprint. Do not start the TradingView news server or use a browser challenge flow merely to retrieve Digg for a brief. The persistent relay/server is optional app infrastructure, not a briefing dependency.
@@ -110,7 +110,7 @@ Apply these source-specific rules:
 - Treat Telegram headline feeds as fast, aggregated reporting. Follow through to the original report, filing, policy statement, or market data whenever available.
 - If the underlying source cannot be verified, link the exact Telegram message and label the claim **reported** rather than confirmed.
 - Do not count several channels repeating the same underlying report as independent confirmation.
-- Use Digg only for material technology, AI, cybersecurity, semiconductor, platform, or policy developments with plausible market relevance. It is a discovery source, not confirmation.
+- Use Digg's all-topics homepage for material business, macroeconomic, geopolitical, policy, technology, or other developments with plausible market relevance. It is a discovery source, not confirmation; follow through to original reporting and exclude unrelated stories from the brief.
 - Use Paste Trade as named trader-thesis and directional-view evidence. It is not verified news, consensus positioning, or direct flow data.
 - Use Hyperliquid announcements as platform-specific evidence only; verify broader market claims independently.
 - Exclude `@chain_alerts` and all whale, large-wallet-transfer, or similar on-chain alert feeds. Do not elevate isolated wallet movements into a market thesis.

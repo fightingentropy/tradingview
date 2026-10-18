@@ -2,15 +2,61 @@ import { createHmac } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { mkdir, open, rename, unlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import { createServer } from 'node:net';
+import { createServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
   normalizeRemotePriceRule, priceAlertMove, priceMonitorSignaturePayload,
   remotePriceRuleKey, PRICE_MONITOR_VERSION,
+  type RemotePriceRule,
 } from '../src/domain/priceAlerts.ts';
-import { readNewsRelayConfiguration } from './news-relay-keychain.mjs';
+import { readNewsRelayConfiguration, type NewsRelayConfiguration } from './news-relay-keychain.ts';
+
+type RelayClient = (pathname: string, payload: unknown) => Promise<unknown>;
+interface ResponseLike {
+  ok: boolean;
+  status: number;
+  headers?: { get(name: string): string | null };
+  body?: ReadableStream<Uint8Array> | null;
+  json(): Promise<unknown>;
+}
+type FetchLike = (url: string | URL, init?: RequestInit) => Promise<ResponseLike>;
+interface WebSocketLike {
+  send(data: string): void;
+  close(): void;
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onerror: (() => void) | null;
+  onclose: (() => void) | null;
+}
+type MonitorRule = RemotePriceRule & { device: string; key: string };
+interface PendingEvent {
+  key: string;
+  device: string;
+  alertId: string;
+  createdAt: number;
+  price: number;
+  triggeredAt: number;
+}
+interface MonitorHealth {
+  storageHealthy: boolean;
+  connected: boolean;
+  lastHyperliquidAt: number | null;
+  lastXyzAt: number | null;
+  lastCboeAt: number | null;
+  pendingEvents: number;
+  version: string;
+}
+interface PriceAlertMonitorOptions {
+  relay: RelayClient;
+  stateDir?: string;
+  fetchImpl?: FetchLike;
+  socketFactory?: (url: string) => WebSocketLike;
+  now?: () => number;
+  log?: (line: string) => void;
+  onFatal?: (error: unknown) => void;
+}
 
 const DEFAULT_STATE_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'TradingView Price Alerts');
 const SOCKET_URL = 'wss://api.hyperliquid.xyz/ws';
@@ -21,17 +67,17 @@ const MAX_STATE_BYTES = 32 * 1024 * 1024;
 const MAX_SOCKET_BYTES = 4 * 1024 * 1024;
 const MAX_RULES = 100_000;
 
-function priceNumber(value) {
+function priceNumber(value: unknown): number | null {
   if (typeof value !== 'number' && (typeof value !== 'string' || !/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value))) return null;
   const price = Number(value);
   return Number.isFinite(price) && price >= 0 ? price : null;
 }
 
-function validMids(value) {
+function validMids(value: unknown): Record<string, number> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const entries = Object.entries(value);
   if (entries.length > 20_000) return null;
-  const mids = {};
+  const mids: Record<string, number> = {};
   for (const [key, raw] of entries) {
     if (key.length > 100 || !/^[A-Za-z0-9@#._:\/-]+$/.test(key)) continue;
     const price = priceNumber(raw);
@@ -41,17 +87,17 @@ function validMids(value) {
   return Object.keys(mids).length ? mids : null;
 }
 
-async function boundedJson(response, maximumBytes) {
+async function boundedJson(response: ResponseLike, maximumBytes: number): Promise<unknown> {
   if (response.headers?.get('content-length') && Number(response.headers.get('content-length')) > maximumBytes) throw new Error('Response exceeds monitor limits');
   if (!response.body?.getReader) {
     // The real fetch Response always has a stream; this supports injected test clients.
-    let value;
+    let value: unknown;
     try { value = await response.json(); } catch { throw new Error('Invalid JSON from price source'); }
     if (Buffer.byteLength(JSON.stringify(value)) > maximumBytes) throw new Error('Response exceeds monitor limits');
     return value;
   }
   const reader = response.body.getReader();
-  const chunks = []; let length = 0;
+  const chunks: Buffer[] = []; let length = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -65,10 +111,13 @@ async function boundedJson(response, maximumBytes) {
   catch { throw new Error('Invalid JSON from price source'); }
 }
 
-export function createPriceAlertRelayClient(configuration, fetchImpl = fetch) {
+export function createPriceAlertRelayClient(
+  configuration: Pick<NewsRelayConfiguration, 'url' | 'bridgeSecret'>,
+  fetchImpl: FetchLike = fetch as FetchLike,
+): RelayClient {
   const base = new URL(configuration.url);
   if (base.protocol !== 'https:') throw new Error('Price monitor requires an HTTPS relay');
-  return async (pathname, payload) => {
+  return async (pathname: string, payload: unknown) => {
     const body = JSON.stringify(payload);
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = createHmac('sha256', configuration.bridgeSecret)
@@ -84,7 +133,19 @@ export function createPriceAlertRelayClient(configuration, fetchImpl = fetch) {
 
 /** Files contain only alert trigger records and opaque device hashes, never push tokens. */
 export class PriceAlertMonitor {
-  constructor({ relay, stateDir = DEFAULT_STATE_DIR, fetchImpl = fetch, socketFactory = url => new WebSocket(url), now = Date.now, log = console.log, onFatal = () => undefined }) {
+  relay: RelayClient; stateDir: string; fetchImpl: FetchLike;
+  socketFactory: (url: string) => WebSocketLike; now: () => number; log: (line: string) => void; onFatal: (error: unknown) => void;
+  pending: Record<string, PendingEvent>; completed: Set<string>; rules: MonitorRule[]; appliedRevisions: Record<string, number>;
+  lastSyncAt: number; lastHyperliquidAt: number | null; lastXyzAt: number | null; lastCboeAt: number | null;
+  lastMessageAt: number; connected: boolean; stopped: boolean;
+  writeChain: Promise<void>; tasks: Set<Promise<unknown>>; retryCount: number; storageFailed: boolean;
+  syncPromise?: Promise<void> | null; flushPromise?: Promise<void> | null; cboePromise?: Promise<void> | null;
+  syncing?: boolean; cboePolling?: boolean; lastError?: string;
+  socket?: WebSocketLike | null; reconnect?: () => void;
+  connectTimer?: ReturnType<typeof setTimeout>; reconnectTimer?: ReturnType<typeof setTimeout>;
+  syncTimer?: ReturnType<typeof setInterval>; cboeTimer?: ReturnType<typeof setInterval>; pingTimer?: ReturnType<typeof setInterval>;
+
+  constructor({ relay, stateDir = DEFAULT_STATE_DIR, fetchImpl = fetch as FetchLike, socketFactory = (url: string) => new WebSocket(url) as unknown as WebSocketLike, now = Date.now, log = console.log, onFatal = () => undefined }: PriceAlertMonitorOptions) {
     this.relay = relay; this.stateDir = stateDir; this.fetchImpl = fetchImpl;
     this.socketFactory = socketFactory; this.now = now; this.log = log; this.onFatal = onFatal;
     this.pending = {}; this.completed = new Set(); this.rules = []; this.appliedRevisions = {};
@@ -93,32 +154,33 @@ export class PriceAlertMonitor {
     this.writeChain = Promise.resolve(); this.tasks = new Set(); this.retryCount = 0; this.storageFailed = false;
   }
 
-  async initialize() {
+  async initialize(): Promise<void> {
     await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
     try {
       const file = await open(path.join(this.stateDir, 'triggers.json'), 'r');
-      let raw;
+      let raw: string;
       try {
         if ((await file.stat()).size > MAX_STATE_BYTES) throw new Error('Trigger state exceeds monitor limits');
         raw = await file.readFile('utf8');
       } finally { await file.close(); }
-      const state = JSON.parse(raw);
+      const state = JSON.parse(raw) as { version?: unknown; pending?: Record<string, PendingEvent>; completed?: string[] } | null;
       if (!state || state.version !== 1 || !state.pending || typeof state.pending !== 'object' || Array.isArray(state.pending) || !Array.isArray(state.completed) || Object.keys(state.pending).length > MAX_RULES || state.completed.length > MAX_RULES) throw new Error('Invalid state');
-      for (const [key, event] of Object.entries(state.pending)) {
+      for (const [key, event] of Object.entries(state.pending as Record<string, PendingEvent>)) {
         if (!event || event.key !== key || !/^[a-f0-9]{64}$/.test(event.device) ||
             typeof event.alertId !== 'string' || event.alertId.length > 120 || !Number.isSafeInteger(event.createdAt) || event.createdAt <= 0 ||
             !Number.isFinite(event.price) || event.price < 0 || !Number.isSafeInteger(event.triggeredAt) || event.triggeredAt < event.createdAt ||
             key !== `${event.device}:${event.alertId}:${event.createdAt}`) throw new Error('Invalid trigger state');
       }
-      this.pending = state.pending;
-      if (state.completed.some(key => typeof key !== 'string' || key.length > 256 || !/^[a-f0-9]{64}:/.test(key))) throw new Error('Invalid completed trigger history');
-      this.completed = new Set(state.completed);
+      this.pending = state.pending as Record<string, PendingEvent>;
+      const completed = state.completed as string[];
+      if (completed.some(key => typeof key !== 'string' || key.length > 256 || !/^[a-f0-9]{64}:/.test(key))) throw new Error('Invalid completed trigger history');
+      this.completed = new Set(completed);
     } catch (error) {
-      if (error.code !== 'ENOENT') throw new Error('Price monitor state could not be restored; refusing to reset trigger history', { cause: error });
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Price monitor state could not be restored; refusing to reset trigger history', { cause: error });
     }
   }
 
-  persist() {
+  persist(): Promise<void> {
     this.writeChain = this.writeChain.then(async () => {
       const file = path.join(this.stateDir, 'triggers.json');
       const temporary = `${file}.tmp`;
@@ -139,7 +201,7 @@ export class PriceAlertMonitor {
     return this.writeChain;
   }
 
-  health() {
+  health(): MonitorHealth {
     return {
       storageHealthy: !this.storageFailed, connected: this.connected && !this.storageFailed, lastHyperliquidAt: this.lastHyperliquidAt,
       lastXyzAt: this.lastXyzAt, lastCboeAt: this.lastCboeAt,
@@ -147,13 +209,13 @@ export class PriceAlertMonitor {
     };
   }
 
-  track(task) {
+  track<T>(task: Promise<T>): Promise<T> {
     this.tasks.add(task);
     task.then(() => this.tasks.delete(task), () => this.tasks.delete(task));
     return task;
   }
 
-  sync() {
+  sync(): Promise<void> {
     if (this.stopped) return Promise.resolve();
     if (this.syncPromise) return this.syncPromise;
     this.syncPromise = this.track(this.syncImpl());
@@ -161,16 +223,16 @@ export class PriceAlertMonitor {
     return this.syncPromise;
   }
 
-  async syncImpl() {
+  async syncImpl(): Promise<void> {
     if (this.storageFailed) throw new Error('Price monitor trigger storage is unavailable');
     if (this.syncing) return;
     this.syncing = true;
     try {
-      const payload = await this.relay('/price-alerts/monitor/sync', { health: this.health(), appliedRevisions: this.appliedRevisions });
+      const payload = await this.relay('/price-alerts/monitor/sync', { health: this.health(), appliedRevisions: this.appliedRevisions }) as { subscriptions?: unknown } | null;
       if (!payload || !Array.isArray(payload.subscriptions) || payload.subscriptions.length > 1000) throw new Error('Invalid relay response');
       if (this.stopped) return;
-      const rules = [], revisions = {};
-      for (const subscription of payload.subscriptions) {
+      const rules: MonitorRule[] = [], revisions: Record<string, number> = {};
+      for (const subscription of payload.subscriptions as { device: string; revision: number; rules: unknown[] }[]) {
         if (!subscription || !/^[a-f0-9]{64}$/.test(subscription.device) || !Number.isSafeInteger(subscription.revision) || subscription.revision < 0 || !Array.isArray(subscription.rules) || subscription.rules.length > 100 || revisions[subscription.device] !== undefined) throw new Error('Invalid subscription');
         revisions[subscription.device] = subscription.revision;
         for (const raw of subscription.rules) {
@@ -190,12 +252,12 @@ export class PriceAlertMonitor {
     } finally { this.syncing = false; }
   }
 
-  observe(source, mids, observedAt = this.now()) {
+  observe(source: string, mids: unknown, observedAt = this.now()): Promise<void> {
     if (this.stopped) return Promise.resolve();
     return this.track(this.observeImpl(source, mids, observedAt));
   }
 
-  async observeImpl(source, rawMids, observedAt) {
+  async observeImpl(source: string, rawMids: unknown, observedAt: number): Promise<void> {
     const now = this.now();
     const mids = validMids(rawMids);
     if (!mids || !['hyperliquid', 'cboe'].includes(source) || this.storageFailed || !Number.isSafeInteger(observedAt) || observedAt <= 0 ||
@@ -217,7 +279,7 @@ export class PriceAlertMonitor {
     if (!this.stopped) await this.flushPending();
   }
 
-  flushPending() {
+  flushPending(): Promise<void> {
     if (this.stopped) return Promise.resolve();
     if (this.flushPromise) return this.flushPromise;
     this.flushPromise = this.track(this.flushPendingImpl());
@@ -225,7 +287,7 @@ export class PriceAlertMonitor {
     return this.flushPromise;
   }
 
-  async flushPendingImpl() {
+  async flushPendingImpl(): Promise<void> {
     while (!this.stopped) {
       if (this.storageFailed) throw new Error('Price monitor trigger storage is unavailable');
       const next = Object.entries(this.pending)[0];
@@ -233,7 +295,7 @@ export class PriceAlertMonitor {
       const [key, event] = next;
       await this.writeChain;
       if (this.stopped) return;
-      const response = await this.relay('/price-alerts/monitor/event', event);
+      const response = await this.relay('/price-alerts/monitor/event', event) as { accepted?: unknown; event?: { delivery?: unknown } } | null;
       if (!response || typeof response.accepted !== 'boolean') throw new Error('Invalid trigger acknowledgement');
       // Explicit rejection is authoritative cancellation/rearm validation at the
       // relay. A transport failure leaves the exact event queued for idempotent retry.
@@ -243,7 +305,7 @@ export class PriceAlertMonitor {
     }
   }
 
-  connect() {
+  connect(): void {
     if (this.stopped || this.socket) return;
     const socket = this.socketFactory(SOCKET_URL);
     this.socket = socket;
@@ -265,7 +327,7 @@ export class PriceAlertMonitor {
     };
     socket.onmessage = event => {
       if (this.socket !== socket) return;
-      let message;
+      let message: { channel?: unknown; data?: { mids?: unknown } } | null;
       const text = String(event.data);
       if (Buffer.byteLength(text) > MAX_SOCKET_BYTES) return;
       try { message = JSON.parse(text); } catch { return; }
@@ -281,7 +343,7 @@ export class PriceAlertMonitor {
     socket.onerror = reconnect; socket.onclose = reconnect;
   }
 
-  pollCboe() {
+  pollCboe(): Promise<void> {
     if (this.stopped) return Promise.resolve();
     if (this.cboePromise) return this.cboePromise;
     this.cboePromise = this.track(this.pollCboeImpl());
@@ -289,14 +351,14 @@ export class PriceAlertMonitor {
     return this.cboePromise;
   }
 
-  async pollCboeImpl() {
+  async pollCboeImpl(): Promise<void> {
     if (this.cboePolling || !this.rules.some(rule => rule.source === 'cboe')) return;
     this.cboePolling = true;
     try {
       const response = await this.fetchImpl(CBOE_URL, { signal: AbortSignal.timeout(15_000) });
       if (!response.ok) throw new Error(`Cboe returned ${response.status}`);
       const payload = await boundedJson(response, MAX_SOCKET_BYTES);
-      const price = priceNumber(payload?.data?.current_price);
+      const price = priceNumber((payload as { data?: { current_price?: unknown } } | null)?.data?.current_price);
       if (price === null || price <= 0) throw new Error('Cboe quote is unavailable');
       if (this.stopped) return;
       this.lastCboeAt = this.now();
@@ -304,20 +366,21 @@ export class PriceAlertMonitor {
     } finally { this.cboePolling = false; }
   }
 
-  async writeHealth() {
+  async writeHealth(): Promise<void> {
     const target = path.join(this.stateDir, 'health.json');
     await writeFile(`${target}.tmp`, `${JSON.stringify({ ...this.health(), updatedAt: this.now(), rules: this.rules.length, lastSyncAt: this.lastSyncAt })}\n`, { mode: 0o600 });
     await rename(`${target}.tmp`, target);
   }
 
-  handleError(error) {
+  handleError(error: unknown): void {
     // Never emit rule bodies, push tokens or relay credentials.
-    this.log(JSON.stringify({ event: 'price_monitor_error', message: error.message }));
-    this.lastError = error.message;
+    const message = (error as Error | undefined)?.message;
+    this.log(JSON.stringify({ event: 'price_monitor_error', message }));
+    this.lastError = message;
     if (this.storageFailed) this.onFatal(error);
   }
 
-  async start() {
+  async start(): Promise<void> {
     await this.initialize();
     this.connect();
     await this.sync().catch(error => this.handleError(error));
@@ -326,16 +389,16 @@ export class PriceAlertMonitor {
     this.cboeTimer = setInterval(() => { void this.pollCboe().catch(error => this.handleError(error)); }, 60_000);
     this.pingTimer = setInterval(() => {
       if (!this.socket) return;
-      if (this.now() - this.lastMessageAt > 40_000) { this.reconnect(); return; }
+      if (this.now() - this.lastMessageAt > 40_000) { this.reconnect?.(); return; }
       if (this.connected) {
-        try { this.socket.send(JSON.stringify({ method: 'ping' })); } catch { this.reconnect(); }
+        try { this.socket.send(JSON.stringify({ method: 'ping' })); } catch { this.reconnect?.(); }
       }
     }, 15_000);
     await this.pollCboe().catch(error => this.handleError(error));
     this.log(JSON.stringify({ event: 'price_monitor_started', version: PRICE_MONITOR_VERSION }));
   }
 
-  async stop() {
+  async stop(): Promise<void> {
     this.stopped = true;
     for (const timer of [this.syncTimer, this.cboeTimer, this.pingTimer]) clearInterval(timer);
     clearTimeout(this.reconnectTimer); clearTimeout(this.connectTimer);
@@ -346,12 +409,12 @@ export class PriceAlertMonitor {
 }
 
 /** OS-held loopback ownership survives no crash; stale PID text is informational. */
-export async function acquirePriceMonitorLock(stateDir, port = 3401) {
+export async function acquirePriceMonitorLock(stateDir: string, port = 3401): Promise<{ port: number; release(): Promise<void> }> {
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('Invalid monitor lock port');
   const server = createServer(socket => socket.destroy());
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
+    server.listen({ host: '127.0.0.1', port, exclusive: true }, () => resolve());
   });
   try {
     await mkdir(stateDir, { recursive: true, mode: 0o700 });
@@ -359,19 +422,19 @@ export async function acquirePriceMonitorLock(stateDir, port = 3401) {
     await writeFile(`${file}.tmp`, String(process.pid), { mode: 0o600 });
     await rename(`${file}.tmp`, file);
   } catch (error) {
-    await new Promise(resolve => server.close(resolve));
+    await new Promise<void>(resolve => server.close(() => resolve()));
     throw error;
   }
   return {
-    port: server.address().port,
+    port: (server.address() as AddressInfo).port,
     async release() {
       await unlink(path.join(stateDir, 'monitor.pid')).catch(error => { if (error.code !== 'ENOENT') throw error; });
-      await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     },
   };
 }
 
-async function run() {
+async function run(): Promise<void> {
   const stateDir = process.env.PRICE_ALERT_STATE_DIR || DEFAULT_STATE_DIR;
   const lock = await acquirePriceMonitorLock(stateDir, Number(process.env.PRICE_ALERT_LOCK_PORT || 3401));
   const configuration = readNewsRelayConfiguration();

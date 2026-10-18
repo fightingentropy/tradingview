@@ -6,7 +6,7 @@ import {
   normalizePasteShow,
   resetPasteTradeCache,
   selectActivePasteShows,
-} from './paste-trade.mjs';
+} from './paste-trade.ts';
 
 const NOW = Date.parse('2026-07-12T20:00:00.000Z');
 

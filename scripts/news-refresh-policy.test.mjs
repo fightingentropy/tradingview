@@ -5,7 +5,7 @@ import {
   NEWS_SCHEDULER_INTERVAL_MS,
   NEWS_SOURCE_REFRESH_INTERVAL_MS,
   isNewsSourceCacheFresh,
-} from './news-refresh-policy.mjs';
+} from './news-refresh-policy.ts';
 
 test('uses the configured per-source refresh intervals', () => {
   assert.deepEqual(NEWS_SOURCE_REFRESH_INTERVAL_MS, {

@@ -3,18 +3,41 @@ import { accessSync, constants, existsSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import { promisify } from 'node:util';
-import { load } from 'cheerio';
+import { load, type Cheerio } from 'cheerio';
+import type { AnyNode } from 'domhandler';
+import type { TelegramClient } from 'telegram';
 
-import { DIGG_TECH_URL, fetchDiggTech } from './digg-tech.mjs';
-import { NewsPushService } from './news-push.mjs';
+import { DIGG_URL, fetchDigg } from './digg.ts';
+import { NewsPushService } from './news-push.ts';
 import {
   NEWS_SCHEDULER_INTERVAL_MS,
   NEWS_SOURCE_REFRESH_INTERVAL_MS,
   isNewsSourceCacheFresh,
-} from './news-refresh-policy.mjs';
-import { PASTE_TRADE_URL, fetchPasteTrade } from './paste-trade.mjs';
-import { publishNewsRelaySnapshot } from './news-relay-client.mjs';
-import { readTelegramCredentials } from './telegram-keychain.mjs';
+} from './news-refresh-policy.ts';
+import { PASTE_TRADE_URL, fetchPasteTrade } from './paste-trade.ts';
+import { publishNewsRelaySnapshot } from './news-relay-client.ts';
+import { readTelegramCredentials } from './telegram-keychain.ts';
+import type { NewsFeedNotice, NewsItem, NewsMedia } from '../src/domain/news.ts';
+
+// Untrusted JSON from `bird list-timeline --json-full`.
+interface BirdTweet {
+  id?: unknown;
+  text?: unknown;
+  createdAt?: unknown;
+  author?: { username?: unknown; name?: unknown };
+  media?: unknown;
+  quotedTweet?: unknown;
+  raw?: { card?: unknown; core?: { user_results?: { result?: { avatar?: { image_url?: unknown } } } } };
+}
+
+interface SourceSnapshot {
+  items: NewsItem[];
+  notices: NewsFeedNotice[];
+}
+interface CachedItems {
+  fetchedAt: number;
+  items: NewsItem[];
+}
 
 const execFileAsync = promisify(execFile);
 const LIST_ID = '1933193197817135501';
@@ -31,18 +54,18 @@ const TELEGRAM_CHANNELS = [
   'hyperliquid_announcements',
 ];
 
-let cached;
-let inFlight;
-let telegramCached;
-let telegramInFlight;
-let telegramClientPromise;
-let diggCached;
-let diggInFlight;
-let pasteCached;
-let pasteInFlight;
+let cached: (CachedItems & { requestedCount: number }) | undefined;
+let inFlight: Promise<NewsItem[]> | undefined;
+let telegramCached: (SourceSnapshot & { fetchedAt: number }) | undefined;
+let telegramInFlight: Promise<SourceSnapshot & { fetchedAt: number }> | undefined;
+let telegramClientPromise: Promise<TelegramClient> | undefined;
+let diggCached: CachedItems | undefined;
+let diggInFlight: Promise<NewsItem[]> | undefined;
+let pasteCached: CachedItems | undefined;
+let pasteInFlight: Promise<NewsItem[]> | undefined;
 const pushService = new NewsPushService({ xListId: LIST_ID, telegramChannels: TELEGRAM_CHANNELS });
 
-function findBird() {
+function findBird(): string {
   const candidates = [
     '/usr/local/bin/bird',
     '/opt/homebrew/bin/bird',
@@ -61,13 +84,13 @@ function findBird() {
   throw new Error("Couldn't find the bird CLI. Expected it in /usr/local/bin or Homebrew.");
 }
 
-function asNonEmptyString(value) {
+function asNonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;
 }
 
-function asHttpsUrl(value) {
+function asHttpsUrl(value: unknown): string | undefined {
   const string = asNonEmptyString(value);
   if (!string) return undefined;
   try {
@@ -78,15 +101,16 @@ function asHttpsUrl(value) {
   }
 }
 
-function avatarUrl(tweet) {
+function avatarUrl(tweet: BirdTweet): string | undefined {
   const value = tweet?.raw?.core?.user_results?.result?.avatar?.image_url;
   return asHttpsUrl(value)?.replace('_normal.', '_bigger.');
 }
 
-function normalizeMedia(value) {
+function normalizeMedia(value: unknown): NewsMedia[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return [];
+  return value.flatMap((input: unknown): NewsMedia[] => {
+    if (!input || typeof input !== 'object') return [];
+    const entry = input as { type?: unknown; url?: unknown; previewUrl?: unknown };
     const isPhoto = entry.type === 'photo';
     const previewUrl = asHttpsUrl(isPhoto ? entry.url ?? entry.previewUrl : entry.previewUrl ?? entry.url);
     if (!previewUrl) return [];
@@ -94,7 +118,7 @@ function normalizeMedia(value) {
   });
 }
 
-function displayText(tweet) {
+function displayText(tweet: BirdTweet): string {
   let text = asNonEmptyString(tweet.text) ?? '';
   const hasAttachment =
     (Array.isArray(tweet.media) && tweet.media.length > 0) || tweet.quotedTweet || tweet.raw?.card;
@@ -104,13 +128,13 @@ function displayText(tweet) {
   return text;
 }
 
-function normalizeTweet(tweet) {
+function normalizeTweet(tweet: BirdTweet | null | undefined): NewsItem | undefined {
   if (!tweet || typeof tweet !== 'object') return undefined;
   const id = asNonEmptyString(tweet.id);
   const username = asNonEmptyString(tweet.author?.username);
   if (!id || !username) return undefined;
 
-  const date = new Date(tweet.createdAt);
+  const date = new Date(typeof tweet.createdAt === 'string' || typeof tweet.createdAt === 'number' ? tweet.createdAt : Number.NaN);
   return {
     id,
     source: 'x',
@@ -126,13 +150,13 @@ function normalizeTweet(tweet) {
   };
 }
 
-function backgroundImageUrl(style) {
+function backgroundImageUrl(style: unknown): string | undefined {
   if (typeof style !== 'string') return undefined;
   const match = style.match(/background-image\s*:\s*url\((['"]?)(.*?)\1\)/i);
   return asHttpsUrl(match?.[2]);
 }
 
-function normalizeTelegramText(element) {
+function normalizeTelegramText(element: Cheerio<AnyNode>): string {
   if (!element.length) return '';
   const copy = element.clone();
   copy.find('br').replaceWith('\n');
@@ -144,7 +168,7 @@ function normalizeTelegramText(element) {
     .trim();
 }
 
-async function fetchTelegramChannel(handle) {
+async function fetchTelegramChannel(handle: string): Promise<SourceSnapshot> {
   const response = await fetch(`https://t.me/s/${encodeURIComponent(handle)}`, {
     headers: {
       Accept: 'text/html',
@@ -159,7 +183,7 @@ async function fetchTelegramChannel(handle) {
   const channelName =
     asNonEmptyString($('meta[property="og:title"]').attr('content')) ?? `@${handle}`;
   const channelAvatar = asHttpsUrl($('meta[property="og:image"]').attr('content'));
-  const items = [];
+  const items: NewsItem[] = [];
 
   $('.js-widget_message[data-post]').each((_, node) => {
     const message = $(node);
@@ -170,7 +194,7 @@ async function fetchTelegramChannel(handle) {
     const postHandle = post.slice(0, separator);
     const messageID = post.slice(separator + 1);
     const publishedAt = message.find('time[datetime]').first().attr('datetime');
-    const date = new Date(publishedAt);
+    const date = new Date(publishedAt ?? Number.NaN);
     if (!Number.isFinite(date.getTime())) return;
 
     const photoUrl = backgroundImageUrl(
@@ -179,7 +203,7 @@ async function fetchTelegramChannel(handle) {
     const videoUrl = backgroundImageUrl(
       message.find('.tgme_widget_message_video_thumb').first().attr('style'),
     );
-    const media = videoUrl
+    const media: NewsMedia[] = videoUrl
       ? [{ type: 'video', previewUrl: videoUrl }]
       : photoUrl
         ? [{ type: 'image', previewUrl: photoUrl }]
@@ -201,7 +225,7 @@ async function fetchTelegramChannel(handle) {
     const authenticated = await fetchAuthenticatedTelegramChannel(handle);
     if (authenticated) return { items: authenticated, notices: [] };
   }
-  const notices = items.length === 0
+  const notices: NewsFeedNotice[] = items.length === 0
     ? [{
         id: `telegram:${handle}:no-public-history`,
         source: 'telegram',
@@ -211,7 +235,7 @@ async function fetchTelegramChannel(handle) {
   return { items, notices };
 }
 
-async function authenticatedTelegramClient() {
+async function authenticatedTelegramClient(): Promise<TelegramClient | undefined> {
   const credentials = readTelegramCredentials();
   if (!credentials) return undefined;
   if (!telegramClientPromise) {
@@ -239,15 +263,16 @@ async function authenticatedTelegramClient() {
   return telegramClientPromise;
 }
 
-async function fetchAuthenticatedTelegramChannel(handle) {
+async function fetchAuthenticatedTelegramChannel(handle: string): Promise<NewsItem[] | undefined> {
   const client = await authenticatedTelegramClient();
   if (!client) return undefined;
   const entity = await client.getEntity(handle);
   const messages = await client.getMessages(entity, { limit: 20 });
-  const channelName = asNonEmptyString(entity.title) ?? `@${handle}`;
-  return messages.flatMap((message) => {
+  const channelName = asNonEmptyString((entity as { title?: unknown }).title) ?? `@${handle}`;
+  return messages.flatMap((message): NewsItem[] => {
     const id = asNonEmptyString(String(message.id));
-    const date = message.date instanceof Date ? message.date : new Date(Number(message.date) * 1000);
+    const sentAt: unknown = message.date;
+    const date = sentAt instanceof Date ? sentAt : new Date(Number(sentAt) * 1000);
     if (!id || !Number.isFinite(date.getTime())) return [];
     return [{
       id: `${handle}:${id}`,
@@ -261,7 +286,7 @@ async function fetchAuthenticatedTelegramChannel(handle) {
   });
 }
 
-async function fetchTelegramTimeline(count) {
+async function fetchTelegramTimeline(count: number): Promise<SourceSnapshot & { fetchedAt: number }> {
   const now = Date.now();
   if (telegramCached && isNewsSourceCacheFresh('telegram', telegramCached.fetchedAt, now)) {
     return { ...telegramCached, items: telegramCached.items.slice(0, count) };
@@ -273,8 +298,8 @@ async function fetchTelegramTimeline(count) {
 
   telegramInFlight = (async () => {
     const results = await Promise.allSettled(TELEGRAM_CHANNELS.map(fetchTelegramChannel));
-    const items = [];
-    const notices = [];
+    const items: NewsItem[] = [];
+    const notices: NewsFeedNotice[] = [];
     results.forEach((result, index) => {
       const handle = TELEGRAM_CHANNELS[index];
       if (result.status === 'fulfilled') {
@@ -289,8 +314,9 @@ async function fetchTelegramTimeline(count) {
       }
     });
     items.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
-    telegramCached = { fetchedAt: Date.now(), items, notices };
-    return telegramCached;
+    const snapshot = { fetchedAt: Date.now(), items, notices };
+    telegramCached = snapshot;
+    return snapshot;
   })();
 
   try {
@@ -301,7 +327,7 @@ async function fetchTelegramTimeline(count) {
   }
 }
 
-async function fetchXTimeline(count) {
+async function fetchXTimeline(count: number): Promise<NewsItem[]> {
   const now = Date.now();
   if (
     cached &&
@@ -317,12 +343,12 @@ async function fetchXTimeline(count) {
     const { stdout } = await execFileAsync(
       bird,
       ['list-timeline', LIST_ID, '--count', String(count), '--json-full'],
-      { timeout: 20_000, maxBuffer: 25 * 1024 * 1024 },
+      { encoding: 'utf8', timeout: 20_000, maxBuffer: 25 * 1024 * 1024 },
     );
-    const payload = JSON.parse(stdout);
-    const tweets = Array.isArray(payload) ? payload : payload?.tweets;
+    const payload: unknown = JSON.parse(stdout);
+    const tweets = Array.isArray(payload) ? payload : (payload as { tweets?: unknown } | null)?.tweets;
     if (!Array.isArray(tweets)) throw new Error('bird returned an unexpected timeline payload');
-    const items = tweets.map(normalizeTweet).filter(Boolean);
+    const items = (tweets as BirdTweet[]).map(normalizeTweet).filter((item): item is NewsItem => Boolean(item));
     cached = { fetchedAt: Date.now(), requestedCount: count, items };
     return items;
   })();
@@ -334,7 +360,7 @@ async function fetchXTimeline(count) {
   }
 }
 
-async function fetchDiggTimeline(count) {
+async function fetchDiggTimeline(count: number): Promise<NewsItem[]> {
   const now = Date.now();
   if (diggCached && isNewsSourceCacheFresh('digg', diggCached.fetchedAt, now)) {
     return diggCached.items.slice(0, count);
@@ -342,7 +368,7 @@ async function fetchDiggTimeline(count) {
   if (diggInFlight) return (await diggInFlight).slice(0, count);
 
   diggInFlight = (async () => {
-    const items = await fetchDiggTech();
+    const items = await fetchDigg();
     diggCached = { fetchedAt: Date.now(), items };
     return items;
   })();
@@ -354,22 +380,22 @@ async function fetchDiggTimeline(count) {
   }
 }
 
-async function fetchDiggSnapshot(count) {
+async function fetchDiggSnapshot(count: number): Promise<SourceSnapshot> {
   try {
     return { items: await fetchDiggTimeline(count), notices: [] };
   } catch {
     return {
       items: [],
       notices: [{
-        id: 'digg:tech:unavailable',
+        id: 'digg:unavailable',
         source: 'digg',
-        message: 'Digg Tech is temporarily unavailable.',
+        message: 'Digg is temporarily unavailable.',
       }],
     };
   }
 }
 
-async function fetchPasteTimeline(count) {
+async function fetchPasteTimeline(count: number): Promise<NewsItem[]> {
   const now = Date.now();
   if (pasteCached && isNewsSourceCacheFresh('paste', pasteCached.fetchedAt, now)) {
     return pasteCached.items.slice(0, count);
@@ -389,7 +415,7 @@ async function fetchPasteTimeline(count) {
   }
 }
 
-async function fetchPasteSnapshot(count) {
+async function fetchPasteSnapshot(count: number): Promise<SourceSnapshot> {
   try {
     return { items: await fetchPasteTimeline(count), notices: [] };
   } catch {
@@ -404,7 +430,7 @@ async function fetchPasteSnapshot(count) {
   }
 }
 
-function sendJson(response, status, body) {
+function sendJson(response: http.ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, {
     'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-store',
@@ -413,7 +439,7 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-async function readJsonBody(request) {
+async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
   let body = '';
   for await (const chunk of request) {
     body += chunk;
@@ -422,7 +448,7 @@ async function readJsonBody(request) {
   return JSON.parse(body || '{}');
 }
 
-async function latestCombinedSnapshot(count = MAX_RELAY_SNAPSHOT_COUNT) {
+async function latestCombinedSnapshot(count = MAX_RELAY_SNAPSHOT_COUNT): Promise<SourceSnapshot & { updatedAt: string }> {
   const perSourceCount = Math.min(MAX_COUNT, count);
   const [xItems, telegram, digg, paste] = await Promise.all([
     fetchXTimeline(perSourceCount),
@@ -497,7 +523,7 @@ const server = http.createServer(async (request, response) => {
       ok: true,
       xSource: `list:${LIST_ID}`,
       telegramChannels: TELEGRAM_CHANNELS,
-      diggSource: DIGG_TECH_URL,
+      diggSource: DIGG_URL,
       pasteSource: PASTE_TRADE_URL,
       refreshIntervalsMs: NEWS_SOURCE_REFRESH_INTERVAL_MS,
       lastFetchedAt: {
@@ -524,8 +550,8 @@ const server = http.createServer(async (request, response) => {
   const count = Number.isFinite(requested) ? Math.min(maxCount, Math.max(1, Math.floor(requested))) : 40;
 
   try {
-    let items;
-    let notices = [];
+    let items: NewsItem[];
+    let notices: NewsFeedNotice[] = [];
     if (source === 'x') {
       items = await fetchXTimeline(count);
     } else if (source === 'telegram') {
@@ -555,7 +581,7 @@ const server = http.createServer(async (request, response) => {
 server.listen(PORT, HOST, () => {
   console.log(`News feed bridge listening on http://${HOST}:${PORT}`);
   console.log(`X source: https://x.com/i/lists/${LIST_ID} via bird browser-cookie auth`);
-  console.log(`Digg source: ${DIGG_TECH_URL} via curl-impersonate (Chrome TLS)`);
+  console.log(`Digg source: ${DIGG_URL} via curl-impersonate (Chrome TLS)`);
   console.log(`Paste source: ${PASTE_TRADE_URL}`);
   console.log(
     `Refresh intervals: X ${NEWS_SOURCE_REFRESH_INTERVAL_MS.x / 60_000}m, ` +
