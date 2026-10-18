@@ -190,38 +190,32 @@ const TradePanel: Component = () => {
 
   return (
     <div
-      class="account-dock flex shrink-0 flex-col border-t border-brand-border bg-brand-surface"
+      class="account-dock flex shrink-0 flex-col bg-brand-surface"
       style={{ height: `${panelHeight()}px` }}
     >
-      <div
-        class="group flex h-2 cursor-row-resize items-center justify-center"
-        onMouseDown={startResize}
-      >
-        <div class="h-0.5 w-10 rounded-full bg-brand-border transition-colors group-hover:bg-brand-slate-500" />
+      <div class="account-dock-handle" onMouseDown={startResize}>
+        <div class="account-dock-grip" />
       </div>
-      <div class="flex min-h-10 items-stretch border-b border-brand-border">
-        <div class="flex min-w-0 flex-1 items-stretch overflow-x-auto">
+      <div class="account-dock-bar">
+        <div class="account-dock-tabs">
           <For each={[...ACCOUNT_TABS].filter(tab => PRIMARY_TABS.has(tab.id)).sort((a, b) => ["positions", "openOrders", "balances", "tradeHistory"].indexOf(a.id) - ["positions", "openOrders", "balances", "tradeHistory"].indexOf(b.id))}>
             {(tab) => (
               <button
                 type="button"
-                class={`whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
-                  activeTab() === tab.id
-                    ? "border-brand-accent text-slate-100"
-                    : "border-transparent text-brand-slate-400 hover:text-slate-200"
-                }`}
+                class="account-tab"
+                aria-pressed={activeTab() === tab.id}
                 onClick={() => setActiveTab(tab.id)}
               >
                 {tab.label}
                 <Show when={tabCountFor(tab.id) > 0}>
-                  <span class="ml-1 text-[10px] text-brand-slate-300">
+                  <span class="account-tab-count">
                     ({tabCountFor(tab.id)})
                   </span>
                 </Show>
               </button>
             )}
           </For>
-          <select aria-label="More account sections" class="max-w-40 border-0 bg-brand-surface px-3 text-xs text-brand-slate-400" value={PRIMARY_TABS.has(activeTab()) ? '' : activeTab()} onChange={event => setActiveTab(event.currentTarget.value as AccountTab)}>
+          <select aria-label="More account sections" class="account-more" value={PRIMARY_TABS.has(activeTab()) ? '' : activeTab()} onChange={event => setActiveTab(event.currentTarget.value as AccountTab)}>
             <option value="" disabled>More</option>
             <For each={ACCOUNT_TABS.filter(tab => !PRIMARY_TABS.has(tab.id))}>{tab => <option value={tab.id}>{tab.label}</option>}</For>
           </select>
@@ -238,7 +232,7 @@ const TradePanel: Component = () => {
       <div class="flex-1 overflow-auto">
         <Suspense
           fallback={
-            <div class="flex h-full items-center justify-center text-xs text-brand-slate-500">
+            <div class="flex h-full items-center justify-center text-sm text-brand-slate-500">
               <Spinner label="Loading account activity" />
             </div>
           }

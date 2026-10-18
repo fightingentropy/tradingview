@@ -15,11 +15,11 @@ const AccountDockFilters: Component<{
   onSideChange: (side: AccountSideFilter) => void;
   onMarketChange: (market: string) => void;
 }> = (props) => (
-  <div class="flex shrink-0 items-center gap-1.5 border-l border-brand-border px-2">
+  <div class="account-filters">
     <Show when={accountTabHasSideFilter(props.tab)}>
       <select
         aria-label="Filter by side"
-        class="h-8 rounded border border-transparent bg-transparent px-2 text-xs font-medium text-brand-slate-300 outline-none hover:border-brand-border hover:text-slate-100 focus:border-brand-slate-500"
+        class="account-select"
         value={props.side}
         onInput={(event) =>
           props.onSideChange(event.currentTarget.value as AccountSideFilter)
@@ -33,7 +33,7 @@ const AccountDockFilters: Component<{
     <Show when={accountTabHasMarketFilter(props.tab)}>
       <select
         aria-label="Filter by market"
-        class="h-8 max-w-36 rounded border border-transparent bg-transparent px-2 text-xs font-medium text-brand-slate-300 outline-none hover:border-brand-border hover:text-slate-100 focus:border-brand-slate-500"
+        class="account-select max-w-36"
         value={props.market}
         onInput={(event) => props.onMarketChange(event.currentTarget.value)}
       >

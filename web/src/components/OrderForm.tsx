@@ -128,9 +128,9 @@ const OrderForm: Component = () => {
   );
   const depositButtonClass = createMemo(() => {
     if (!isAuthenticated() || canAdminDeposit()) {
-      return "border border-brand-border text-slate-200 hover:bg-brand-border/40";
+      return "border border-brand-border text-brand-slate-100 hover:bg-white/5";
     }
-    return "bg-brand-border text-brand-slate-500 cursor-not-allowed";
+    return "bg-brand-raised text-brand-slate-500 cursor-not-allowed";
   });
   const depositButtonDisabled = createMemo(
     () => isAuthenticated() && !canAdminDeposit(),
@@ -724,7 +724,7 @@ const OrderForm: Component = () => {
     if (isSpot()) {
       const asset = spotAsset();
       const balance = asset ? getSpotTotalBalance(asset) : 0;
-      return balance > 0 ? "text-slate-100" : "text-brand-slate-400";
+      return balance > 0 ? "text-brand-slate-100" : "text-brand-slate-400";
     }
     const position = currentPosition();
     if (!position || position.size === 0) return "text-brand-slate-400";
@@ -983,12 +983,12 @@ const OrderForm: Component = () => {
             <span class="execution-mode">Practice</span>
           </Show>
         </div>
-        <div class="ticket-controls border-b border-brand-border p-4 space-y-4">
+        <div class="ticket-controls">
           <Show when={!isSpot()}>
             <div class="space-y-2">
-              <div class="grid grid-cols-3 gap-2">
+              <div class="ticket-margin-row">
                 <button
-                  class="rounded-full border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  class="ticket-chip"
                   onClick={() =>
                     setMarginType(
                       marginType() === "isolated" ? "cross" : "isolated",
@@ -998,7 +998,7 @@ const OrderForm: Component = () => {
                   {marginType() === "isolated" ? "Isolated" : "Cross"}
                 </button>
                 <button
-                  class="rounded-full border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  class="ticket-chip"
                   onClick={() => setLeverageMenuOpen(!leverageMenuOpen())}
                 >
                   {leverage()}x
@@ -1007,7 +1007,7 @@ const OrderForm: Component = () => {
                   type="button"
                   aria-label={marginModeButtonDescription()}
                   title={marginModeButtonDescription()}
-                  class="rounded-full border border-brand-border py-2 text-xs font-medium text-slate-200"
+                  class="ticket-chip"
                   onClick={() => {
                     if (isHyperliquidExecution()) {
                       openSettings();
@@ -1020,15 +1020,12 @@ const OrderForm: Component = () => {
                 </button>
               </div>
               <Show when={leverageMenuOpen()}>
-                <div class="rounded-md border border-brand-border bg-brand-surface p-2">
-                  <div class="grid grid-cols-5 gap-2">
+                <div class="leverage-menu">
+                  <div class="leverage-options">
                     {leverageOptions().map((option) => (
                       <button
-                        class={`rounded-full border px-2 py-1 text-xs ${
-                          leverage() === option
-                            ? "border-brand-accent text-brand-accent bg-brand-accent/10"
-                            : "border-brand-border text-brand-slate-400 hover:text-slate-200"
-                        }`}
+                        class={`leverage-option ${leverage() === option ? "is-active" : ""}`}
+                        aria-pressed={leverage() === option}
                         onClick={() => {
                           setLeverage(option);
                           setLeverageMenuOpen(false);
@@ -1043,14 +1040,15 @@ const OrderForm: Component = () => {
 
               {/* Portfolio Margin Modal */}
               <Show when={marginModeOpen() && !isHyperliquidExecution()}>
-                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-                  <div class="mx-4 w-full max-w-sm rounded-lg border border-brand-border bg-brand-surface shadow-xl">
-                    <div class="flex items-center justify-between border-b border-brand-border p-4">
-                      <h3 class="text-lg font-semibold text-slate-100">
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                  <div class="mx-4 w-full max-w-sm rounded-xl border border-brand-border bg-brand-surface shadow-2xl">
+                    <div class="flex items-center justify-between px-5 pt-5 pb-1">
+                      <h3 class="text-[17px] font-semibold text-brand-slate-100">
                         Paper margin model
                       </h3>
                       <button
-                        class="text-brand-slate-400 hover:text-slate-200 transition-colors"
+                        aria-label="Close margin model"
+                        class="text-brand-slate-400 hover:text-brand-slate-100 transition-colors"
                         onClick={() => setMarginModeOpen(false)}
                       >
                         <svg
@@ -1065,10 +1063,10 @@ const OrderForm: Component = () => {
                       </button>
                     </div>
 
-                    <div class="p-4 space-y-4">
+                    <div class="p-5 space-y-3">
                       {/* Standard paper mode */}
                       <button
-                        class={`w-full rounded-md border p-4 text-left transition-all ${
+                        class={`w-full rounded-lg border p-4 text-left transition-colors duration-150 ${
                           !isPortfolioMarginEnabled()
                             ? "border-brand-accent bg-brand-accent/10"
                             : "border-brand-border hover:border-brand-slate-400"
@@ -1080,7 +1078,7 @@ const OrderForm: Component = () => {
                         disabled={marginModeLoading()}
                       >
                         <div class="flex items-center justify-between">
-                          <span class="font-semibold text-slate-100">
+                          <span class="font-semibold text-brand-slate-100">
                             Standard
                           </span>
                           <Show when={!isPortfolioMarginEnabled()}>
@@ -1097,9 +1095,9 @@ const OrderForm: Component = () => {
 
                       {/* Portfolio paper mode */}
                       <button
-                        class={`w-full rounded-md border p-4 text-left transition-all ${
+                        class={`w-full rounded-lg border p-4 text-left transition-colors duration-150 ${
                           isPortfolioMarginEnabled()
-                            ? "border-emerald-500 bg-emerald-500/10"
+                            ? "border-brand-accent bg-brand-accent/10"
                             : "border-brand-border hover:border-brand-slate-400"
                         }`}
                         onClick={() => {
@@ -1109,11 +1107,11 @@ const OrderForm: Component = () => {
                         disabled={marginModeLoading()}
                       >
                         <div class="flex items-center justify-between">
-                          <span class="font-semibold text-slate-100">
+                          <span class="font-semibold text-brand-slate-100">
                             Portfolio Margin
                           </span>
                           <Show when={isPortfolioMarginEnabled()}>
-                            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-brand-accent/20 text-brand-accent">
                               Active
                             </span>
                           </Show>
@@ -1131,9 +1129,9 @@ const OrderForm: Component = () => {
                       </Show>
                     </div>
 
-                    <div class="border-t border-brand-border p-4">
+                    <div class="px-5 pb-5 pt-1">
                       <button
-                        class="w-full rounded-md bg-brand-border/70 py-2.5 text-sm font-semibold text-slate-100 hover:bg-brand-border transition-colors"
+                        class="w-full rounded-full bg-brand-raised py-2.5 text-sm font-semibold text-brand-slate-100 transition-colors duration-150 hover:bg-brand-border"
                         onClick={() => setMarginModeOpen(false)}
                       >
                         Close
@@ -1147,28 +1145,20 @@ const OrderForm: Component = () => {
 
           {/* Order Type */}
           <div
-            class="flex w-fit items-center gap-1 rounded-full bg-brand-screen p-1"
+            class="ticket-segmented"
             role="group"
             aria-label="Order type"
           >
             <button
               aria-pressed={orderType() === "market"}
-              class={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                orderType() === "market"
-                  ? "bg-brand-border text-slate-100"
-                  : "text-brand-slate-400 hover:text-slate-200"
-              }`}
+              class="ticket-segment"
               onClick={() => setOrderType("market")}
             >
               Market
             </button>
             <button
               aria-pressed={orderType() === "limit"}
-              class={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                orderType() === "limit"
-                  ? "bg-brand-border text-slate-100"
-                  : "text-brand-slate-400 hover:text-slate-200"
-              }`}
+              class="ticket-segment"
               onClick={() => {
                 setOrderType("limit");
                 if (!limitPrice()) {
@@ -1184,42 +1174,32 @@ const OrderForm: Component = () => {
           </div>
 
           {/* Long/Short Toggle */}
-          <div class="ticket-side-switch rounded-full p-1">
-            <div class="flex">
-              <button
-                class={`flex-1 rounded-full py-2 text-sm font-semibold transition-colors ${
-                  isLong()
-                    ? "bg-brand-green-400/12 text-brand-green-400"
-                    : "text-brand-slate-400 hover:text-slate-200"
-                }`}
-                aria-pressed={isLong()}
-                onClick={() => setSide("long")}
-              >
-                {longLabel()}
-              </button>
-              <button
-                class={`flex-1 rounded-full py-2 text-sm font-semibold transition-colors ${
-                  !isLong()
-                    ? "bg-brand-red-400/12 text-brand-red-400"
-                    : "text-brand-slate-400 hover:text-slate-200"
-                }`}
-                aria-pressed={!isLong()}
-                onClick={() => setSide("short")}
-              >
-                {shortLabel()}
-              </button>
-            </div>
+          <div class="ticket-side-switch">
+            <button
+              class="ticket-side ticket-side-long"
+              aria-pressed={isLong()}
+              onClick={() => setSide("long")}
+            >
+              {longLabel()}
+            </button>
+            <button
+              class="ticket-side ticket-side-short"
+              aria-pressed={!isLong()}
+              onClick={() => setSide("short")}
+            >
+              {shortLabel()}
+            </button>
           </div>
         </div>
 
-        <div class="ticket-body p-4 space-y-4">
+        <div class="ticket-body">
           {/* Available & Position Info */}
           <div class="space-y-2">
-            <div class="flex justify-between gap-4 text-sm">
+            <div class="ticket-row">
               <span class="text-brand-slate-500">{availableLabel()}</span>
-              <span class="text-slate-100 font-mono">{availableDisplay()}</span>
+              <span class="text-brand-slate-100 font-mono">{availableDisplay()}</span>
             </div>
-            <div class="flex justify-between gap-4 text-sm">
+            <div class="ticket-row">
               <span class="text-brand-slate-500">{positionLabel()}</span>
               <span class={`font-mono ${positionValueClass()}`}>
                 {positionDisplay()}
@@ -1228,70 +1208,62 @@ const OrderForm: Component = () => {
           </div>
 
           {/* Amount Input */}
-          <div>
-            <div class="mb-2 text-xs text-brand-slate-400">Size</div>
-            <div class="flex items-center rounded-md border border-brand-border bg-brand-screen px-3 py-3">
+          <label class="ticket-field">
+            <span class="ticket-field-label">Size</span>
+            <input
+              type="text"
+              inputmode="decimal"
+              pattern="[0-9]*[.]?[0-9]*"
+              autocomplete="off"
+              class="ticket-field-input font-mono"
+              aria-label="Order size"
+              placeholder="0.00"
+              value={amount()}
+              onInput={(e) => updateAmountInput(e.currentTarget.value)}
+            />
+            <span class="ticket-field-unit">{displaySymbol()}</span>
+          </label>
+
+          <Show when={orderType() === "limit"}>
+            <label class="ticket-field">
+              <span class="ticket-field-label">Price</span>
               <input
                 type="text"
                 inputmode="decimal"
                 pattern="[0-9]*[.]?[0-9]*"
                 autocomplete="off"
-                class="flex-1 bg-transparent text-sm text-slate-100 font-mono text-left"
-                aria-label="Order size"
-                placeholder="0.00"
-                value={amount()}
-                onInput={(e) => updateAmountInput(e.currentTarget.value)}
+                class="ticket-field-input font-mono"
+                aria-label="Limit price"
+                placeholder={mark().toFixed(3)}
+                value={limitPrice()}
+                onInput={(e) =>
+                  setLimitPrice(sanitizeNumericInput(e.currentTarget.value, 3))
+                }
               />
-              <span class="ml-3 text-xs font-medium text-brand-slate-400">
-                {displaySymbol()}
+              <span class="ticket-field-unit">
+                {isSpot() ? "USDC" : collateral()}
               </span>
-            </div>
-          </div>
-
-          <Show when={orderType() === "limit"}>
-            <div>
-              <div class="flex items-center rounded-md border border-brand-border bg-brand-screen px-3 py-3">
-                <span class="text-sm text-brand-slate-400">Price</span>
-                <input
-                  type="text"
-                  inputmode="decimal"
-                  pattern="[0-9]*[.]?[0-9]*"
-                  autocomplete="off"
-                  class="flex-1 bg-transparent px-3 text-sm text-slate-100 font-mono text-right"
-                  aria-label="Limit price"
-                  placeholder={mark().toFixed(3)}
-                  value={limitPrice()}
-                  onInput={(e) =>
-                    setLimitPrice(
-                      sanitizeNumericInput(e.currentTarget.value, 3),
-                    )
-                  }
-                />
-                <span class="text-xs text-brand-slate-400">
-                  {isSpot() ? "USDC" : collateral()}
-                </span>
-              </div>
-            </div>
+            </label>
           </Show>
 
           {/* Slider */}
-          <div class="flex items-center gap-3">
+          <div class="ticket-slider-row">
             <div class="relative flex-1">
               <div class="absolute inset-0 flex items-center">
-                <div class="h-1.5 w-full rounded-full bg-brand-border/70" />
+                <div class="h-1 w-full rounded-full bg-brand-border" />
               </div>
               <div class="absolute inset-0 flex items-center">
                 <div
-                  class="h-1.5 rounded-full bg-brand-accent"
+                  class="h-1 rounded-full bg-brand-accent"
                   style={{ width: `${sliderValue()}%` }}
                 />
               </div>
-              <div class="absolute inset-0 flex items-center justify-between px-2 pointer-events-none">
-                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
-                <span class="h-2 w-2 rounded-full bg-brand-border/70" />
+              <div class="absolute inset-0 flex items-center justify-between px-1 pointer-events-none">
+                <span class="ticket-slider-stop" />
+                <span class="ticket-slider-stop" />
+                <span class="ticket-slider-stop" />
+                <span class="ticket-slider-stop" />
+                <span class="ticket-slider-stop" />
               </div>
               <input
                 aria-label="Order size percentage"
@@ -1305,110 +1277,106 @@ const OrderForm: Component = () => {
                 class="order-slider relative z-10 w-full"
               />
             </div>
-            <div class="flex items-center rounded-md border border-brand-border bg-brand-screen px-3 py-2 text-sm">
+            <label class="ticket-field ticket-field-percent">
               <input
                 type="text"
                 aria-label="Order percentage"
                 inputmode="numeric"
                 pattern="[0-9]*"
                 autocomplete="off"
-                class="w-10 bg-transparent text-right font-mono text-slate-100"
+                class="ticket-field-input font-mono"
                 value={sliderValue()}
                 onInput={(e) =>
                   updateFromSlider(parseInt(e.currentTarget.value, 10) || 0)
                 }
               />
-              <span class="ml-1 text-brand-slate-400">%</span>
-            </div>
+              <span class="ticket-field-unit">%</span>
+            </label>
           </div>
 
           {/* Checkboxes */}
           <Show when={!isSpot()}>
             <div class="space-y-2">
-              <label class="flex items-center gap-2 cursor-pointer">
+              <label class="ticket-check">
                 <input
                   type="checkbox"
                   checked={reduceOnly()}
                   onChange={(e) => setReduceOnly(e.currentTarget.checked)}
-                  class="h-3.5 w-3.5 rounded border border-brand-border bg-brand-screen accent-brand-accent"
+                  class="accent-brand-accent"
                 />
-                <span class="text-sm text-slate-100">Reduce only</span>
+                <span class="text-brand-slate-100">Reduce only</span>
               </label>
-              <label class="flex items-center gap-2 cursor-pointer">
+              <label class="ticket-check">
                 <input
                   type="checkbox"
                   checked={tpsl()}
                   disabled={liveLimitTpslUnavailable()}
                   onChange={(e) => setTpsl(e.currentTarget.checked)}
-                  class="h-3.5 w-3.5 rounded border border-brand-border bg-brand-screen accent-brand-accent disabled:cursor-not-allowed disabled:opacity-40"
+                  class="accent-brand-accent disabled:cursor-not-allowed disabled:opacity-40"
                 />
                 <span
-                  class={`text-sm ${
+                  class={
                     liveLimitTpslUnavailable()
                       ? "text-brand-slate-500"
-                      : "text-slate-100"
-                  }`}
+                      : "text-brand-slate-100"
+                  }
                 >
                   Take profit / Stop loss
                 </span>
               </label>
               <Show when={liveLimitTpslUnavailable()}>
-                <p class="text-xs leading-5 text-brand-slate-500">
+                <p class="text-[13px] leading-5 text-brand-slate-500">
                   Add TP/SL after the limit order fills.
                 </p>
               </Show>
             </div>
 
             <Show when={reduceOnlyError()}>
-              <div class="text-xs text-brand-red-400">{reduceOnlyError()}</div>
+              <div class="text-[13px] leading-5 text-brand-red-400">{reduceOnlyError()}</div>
             </Show>
 
             <Show when={tpsl()}>
               <div class="space-y-2">
-                <div class="flex items-center bg-brand-screen border border-brand-border rounded-lg overflow-hidden">
-                  <span class="px-3 text-sm text-brand-slate-400">
-                    Take Profit
-                  </span>
+                <label class="ticket-field">
+                  <span class="ticket-field-label">Take Profit</span>
                   <input
                     type="text"
                     inputmode="decimal"
                     pattern="[0-9]*[.]?[0-9]*"
                     autocomplete="off"
-                    class="flex-1 bg-transparent px-3 py-3 text-sm text-slate-200 font-mono text-right"
+                    class="ticket-field-input font-mono"
                     aria-label="Take profit price"
                     placeholder="--"
                     value={takeProfit()}
                     onInput={(e) => setTakeProfit(e.currentTarget.value)}
                   />
-                </div>
-                <div class="flex items-center bg-brand-screen border border-brand-border rounded-lg overflow-hidden">
-                  <span class="px-3 text-sm text-brand-slate-400">
-                    Stop Loss
-                  </span>
+                </label>
+                <label class="ticket-field">
+                  <span class="ticket-field-label">Stop Loss</span>
                   <input
                     type="text"
                     inputmode="decimal"
                     pattern="[0-9]*[.]?[0-9]*"
                     autocomplete="off"
-                    class="flex-1 bg-transparent px-3 py-3 text-sm text-slate-200 font-mono text-right"
+                    class="ticket-field-input font-mono"
                     aria-label="Stop loss price"
                     placeholder="--"
                     value={stopLoss()}
                     onInput={(e) => setStopLoss(e.currentTarget.value)}
                   />
-                </div>
+                </label>
               </div>
             </Show>
           </Show>
 
           <Show when={spotError()}>
-            <div class="text-xs text-brand-red-400">{spotError()}</div>
+            <div class="text-[13px] leading-5 text-brand-red-400">{spotError()}</div>
           </Show>
           <Show when={orderError()}>
-            <div class="text-xs text-brand-red-400">{orderError()}</div>
+            <div class="text-[13px] leading-5 text-brand-red-400">{orderError()}</div>
           </Show>
           <Show when={orderNotice()}>
-            <div class="text-xs leading-5 text-brand-green-400" role="status">
+            <div class="text-[13px] leading-5 text-brand-green-400" role="status">
               {orderNotice()}
             </div>
           </Show>
@@ -1417,56 +1385,56 @@ const OrderForm: Component = () => {
           <Show
             when={!isSpot()}
             fallback={
-              <div class="ticket-details space-y-2 text-sm">
-                <div class="flex justify-between gap-4">
+              <div class="ticket-details">
+                <div class="ticket-row">
                   <span class="text-brand-slate-500">Order value</span>
-                  <span class="text-slate-100 font-mono">
+                  <span class="text-brand-slate-100 font-mono">
                     {orderValueDisplay()}
                   </span>
                 </div>
-                <div class="flex justify-between gap-4">
+                <div class="ticket-row">
                   <span class="text-brand-slate-500">Est. fee</span>
-                  <span class="text-slate-100 font-mono">
+                  <span class="text-brand-slate-100 font-mono">
                     {isHyperliquidExecution() ? "—" : "0.10%"}
                   </span>
                 </div>
               </div>
             }
           >
-            <div class="ticket-details space-y-2 text-sm">
-              <div class="flex justify-between gap-4">
+            <div class="ticket-details">
+              <div class="ticket-row">
                 <span class="text-brand-slate-500">Liq. price</span>
-                <span class="font-mono text-slate-100">
+                <span class="font-mono text-brand-slate-100">
                   {isHyperliquidExecution()
                     ? "—"
                     : liquidationPreview()}
                 </span>
               </div>
-              <div class="flex justify-between gap-4">
+              <div class="ticket-row">
                 <span class="text-brand-slate-500">Order value</span>
-                <span class="text-slate-100 font-mono">
+                <span class="text-brand-slate-100 font-mono">
                   {orderValueDisplay()}
                 </span>
               </div>
-              <div class="flex justify-between gap-4">
+              <div class="ticket-row">
                 <span class="text-brand-slate-500">Margin required</span>
-                <span class="text-slate-100 font-mono">
+                <span class="text-brand-slate-100 font-mono">
                   {isHyperliquidExecution()
                     ? "—"
                     : marginRequiredDisplay()}
                 </span>
               </div>
               <Show when={orderType() === "market"}>
-                <div class="flex justify-between gap-4">
+                <div class="ticket-row">
                   <span class="text-brand-slate-500">Max. slippage</span>
-                  <span class="font-mono text-slate-100">
+                  <span class="font-mono text-brand-slate-100">
                     {HYPERLIQUID_MARKET_SLIPPAGE_PERCENT.toFixed(2)}%
                   </span>
                 </div>
               </Show>
-              <div class="flex justify-between gap-4">
+              <div class="ticket-row">
                 <span class="text-brand-slate-500">Fees</span>
-                <span class="font-mono text-slate-100">
+                <span class="font-mono text-brand-slate-100">
                   {isHyperliquidExecution() ? "—" : "0%"}
                 </span>
               </div>
@@ -1475,11 +1443,11 @@ const OrderForm: Component = () => {
         </div>
 
         {/* Portfolio Section */}
-        <div class="ticket-account mt-auto border-t border-brand-border px-4 py-4 space-y-4">
+        <div class="ticket-account">
           <Show when={!isHyperliquidExecution() && canAdminDeposit()}>
             <div class="flex gap-3">
               <button
-                class={`flex-1 rounded-full py-2.5 text-sm font-semibold transition-colors ${depositButtonClass()}`}
+                class={`ticket-secondary-button ${depositButtonClass()}`}
                 onClick={handleDepositClick}
                 disabled={depositButtonDisabled()}
               >
@@ -1496,11 +1464,11 @@ const OrderForm: Component = () => {
             fallback={
               <div class="space-y-2">
                 <div class="ticket-section-title">Account</div>
-                <div class="flex justify-between gap-4 text-sm">
+                <div class="ticket-row">
                   <span class="text-brand-slate-500">
                     {isHyperliquidExecution() ? "Available USDC" : "Balance"}
                   </span>
-                  <span class="font-mono text-slate-100">
+                  <span class="font-mono text-brand-slate-100">
                     {formatUsd(
                       isHyperliquidExecution()
                         ? getAvailableBalance("USDC")
@@ -1508,7 +1476,7 @@ const OrderForm: Component = () => {
                     )}
                   </span>
                 </div>
-                <div class="flex justify-between gap-4 text-sm">
+                <div class="ticket-row">
                   <span class="text-brand-slate-500">Unrealized PNL</span>
                   <span
                     class={`font-mono ${
@@ -1520,7 +1488,7 @@ const OrderForm: Component = () => {
                     {formatSignedUsd(unrealizedPnl())}
                   </span>
                 </div>
-                <div class="flex justify-between gap-4 text-sm">
+                <div class="ticket-row">
                   <span class="text-brand-slate-500">Cross margin ratio</span>
                   <span class="font-mono text-brand-accent">
                     {`${crossMarginRatio().toFixed(2)}%`}
@@ -1531,7 +1499,7 @@ const OrderForm: Component = () => {
           >
             <div class="space-y-3">
               <div class="ticket-section-title">Portfolio margin</div>
-              <div class="flex items-center justify-between gap-3 text-sm">
+              <div class="ticket-row">
                 <span class="text-brand-slate-400">
                   Margin ratio
                 </span>
@@ -1542,13 +1510,13 @@ const OrderForm: Component = () => {
                   {formatOptionalPercent(livePortfolioSummary()?.marginRatio)}
                 </span>
               </div>
-              <div class="flex justify-between gap-3 text-sm">
+              <div class="ticket-row">
                 <span class="text-brand-slate-400">Portfolio value</span>
-                <span class="font-mono text-slate-100">
+                <span class="font-mono text-brand-slate-100">
                   {formatOptionalUsd(livePortfolioSummary()?.portfolioValue)}
                 </span>
               </div>
-              <div class="flex justify-between gap-3 text-sm">
+              <div class="ticket-row">
                 <span class="text-brand-slate-400">Unrealized PNL</span>
                 <span
                   class={`font-mono ${
@@ -1564,29 +1532,29 @@ const OrderForm: Component = () => {
                     : formatSignedUsd(livePortfolioSummary()!.unrealizedPnl)}
                 </span>
               </div>
-              <div class="flex justify-between gap-3 text-sm">
+              <div class="ticket-row">
                 <span class="text-brand-slate-400">
                   Borrow cap used
                 </span>
-                <span class="font-mono text-slate-100">
+                <span class="font-mono text-brand-slate-100">
                   {formatOptionalPercent(livePortfolioSummary()?.borrowCapUsed)}
                 </span>
               </div>
-              <div class="flex justify-between gap-3 text-sm">
+              <div class="ticket-row">
                 <span class="text-brand-slate-400">
                   Maintenance margin
                 </span>
-                <span class="font-mono text-slate-100">
+                <span class="font-mono text-brand-slate-100">
                   {formatOptionalUsd(
                     livePortfolioSummary()?.perpsMaintenanceMargin,
                   )}
                 </span>
               </div>
-              <div class="flex justify-between gap-3 text-sm">
+              <div class="ticket-row">
                 <span class="text-brand-slate-400">
                   Account leverage
                 </span>
-                <span class="font-mono text-slate-100">
+                <span class="font-mono text-brand-slate-100">
                   {livePortfolioSummary()?.accountLeverage === undefined
                     ? "--"
                     : `${livePortfolioSummary()!.accountLeverage!.toFixed(2)}x`}
@@ -1598,11 +1566,13 @@ const OrderForm: Component = () => {
       </div>
       <div class="ticket-submit">
         <button
-          class={`flex min-h-11 w-full items-center justify-center rounded-full py-3 text-sm font-semibold transition-colors ${
+          class={`ticket-submit-button ${
             (!isAuthenticated() && !isHyperliquidExecution()) ||
             (canSubmitOrder() && !isSubmitting())
-              ? "bg-brand-accent text-brand-screen hover:brightness-105"
-              : "bg-brand-border text-brand-slate-500 cursor-not-allowed"
+              ? !isLong() && (isAuthenticated() || isHyperliquidExecution())
+                ? "is-sell"
+                : "is-buy"
+              : "is-disabled"
           }`}
           onClick={() =>
             !isAuthenticated() && !isHyperliquidExecution()

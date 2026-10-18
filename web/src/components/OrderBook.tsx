@@ -56,12 +56,12 @@ const OrderBook: Component = () => {
   return (
     <div class="order-book flex flex-col h-full">
       {/* Header */}
-      <div class="book-heading flex items-center justify-between px-3 border-b border-brand-border">
-        <span class="text-xs font-medium text-slate-200">Order book</span>
+      <div class="book-heading">
+        <h2 class="panel-title">Order book</h2>
       </div>
 
       {/* Column Headers */}
-      <div class="grid grid-cols-3 gap-2 px-3 py-1.5 text-[10px] uppercase tracking-wider text-brand-slate-500">
+      <div class="book-columns">
         <div>Price</div>
         <div class="text-right">Size</div>
         <div class="text-right">Total</div>
@@ -70,28 +70,24 @@ const OrderBook: Component = () => {
       <Show
         when={!isEmpty()}
         fallback={
-          <div class="flex-1 flex items-center justify-center px-3 text-xs text-brand-slate-500">
+          <div class="flex-1 flex items-center justify-center px-4 text-sm text-brand-slate-500">
             <Spinner label="Loading order book" />
           </div>
         }
       >
         {/* Asks */}
-        <div class="flex-1 overflow-hidden flex flex-col justify-end">
+        <div class="book-asks flex-1 overflow-hidden flex flex-col justify-end">
           <Index each={asksForDisplay()}>
             {(level) => (
-              <div class="book-level grid grid-cols-3 gap-2 px-3 text-xs relative">
+              <div class="book-level">
                 <div
-                  class="absolute inset-0 bg-brand-red-400/7"
-                  style={{
-                    width: `${(level().total / maxTotal()) * 100}%`,
-                    right: 0,
-                    left: "auto",
-                  }}
+                  class="book-depth bg-brand-red-400/10"
+                  style={{ width: `${(level().total / maxTotal()) * 100}%` }}
                 />
                 <div class="text-brand-red-400 font-mono relative z-10">
                   {level().price.toFixed(priceDecimals())}
                 </div>
-                <div class="text-right text-slate-300 font-mono relative z-10">
+                <div class="text-right text-brand-slate-100 font-mono relative z-10">
                   {formatSize(level().size)}
                 </div>
                 <div class="text-right text-brand-slate-400 font-mono relative z-10">
@@ -103,34 +99,26 @@ const OrderBook: Component = () => {
         </div>
 
         {/* Spread */}
-        <div class="px-3 py-2 border-y border-brand-border bg-brand-screen/50">
-          <div class="flex items-center justify-between text-xs">
-            <span class="text-brand-green-400 font-mono font-semibold">
-              {markPrice()}
-            </span>
-            <span class="text-brand-slate-500">
-              Spread: {spreadPercent().toFixed(3)}%
-            </span>
-          </div>
+        <div class="book-spread">
+          <span class="book-spread-price font-mono">{markPrice()}</span>
+          <span class="book-spread-label">
+            Spread: {spreadPercent().toFixed(3)}%
+          </span>
         </div>
 
         {/* Bids */}
-        <div class="flex-1 overflow-hidden">
+        <div class="book-bids flex-1 overflow-hidden">
           <Index each={bids()}>
             {(level) => (
-              <div class="book-level grid grid-cols-3 gap-2 px-3 text-xs relative">
+              <div class="book-level">
                 <div
-                  class="absolute inset-0 bg-brand-green-400/7"
-                  style={{
-                    width: `${(level().total / maxTotal()) * 100}%`,
-                    right: 0,
-                    left: "auto",
-                  }}
+                  class="book-depth bg-brand-green-400/10"
+                  style={{ width: `${(level().total / maxTotal()) * 100}%` }}
                 />
                 <div class="text-brand-green-400 font-mono relative z-10">
                   {level().price.toFixed(priceDecimals())}
                 </div>
-                <div class="text-right text-slate-300 font-mono relative z-10">
+                <div class="text-right text-brand-slate-100 font-mono relative z-10">
                   {formatSize(level().size)}
                 </div>
                 <div class="text-right text-brand-slate-400 font-mono relative z-10">

@@ -31,7 +31,8 @@ const ChevronDown = () => (
     stroke-width="2"
     stroke-linecap="round"
     stroke-linejoin="round"
-    class="text-brand-slate-400"
+    class="market-selector-chevron"
+    aria-hidden="true"
   >
     <path d="m6 9 6 6 6-6" />
   </svg>
@@ -144,17 +145,15 @@ const MarketInfo: Component = () => {
         <Show
           when={ICON_SYMBOLS.has(displaySymbol())}
           fallback={
-            <div class="w-6 h-6 rounded-full bg-brand-screen flex items-center justify-center border border-brand-border text-[10px] font-semibold text-slate-200">
+            <div class="market-selector-fallback">
               {displaySymbol().slice(0, 4)}
             </div>
           }
         >
-          <img src={iconSrc()} alt={displaySymbol()} class="w-6 h-6" />
+          <img src={iconSrc()} alt={displaySymbol()} />
         </Show>
         <span class="market-selector-copy">
-          <span class="font-semibold text-slate-100">
-            {displayMarketName()}
-          </span>
+          <span class="market-pair">{displayMarketName()}</span>
           <span class="market-subtitle">
             {currentMarketType() === "spot" ? "Spot market" : "Perpetual"}
             <Show when={currentMarketType() !== "spot"}>
@@ -168,36 +167,38 @@ const MarketInfo: Component = () => {
 
       {/* Price */}
       <div class="market-mark">
+        <span class="market-label">Mark Price</span>
         <span class="market-mark-price">{markPrice()}</span>
-        <span class="text-xs text-brand-slate-400">Mark Price</span>
       </div>
 
       {/* Stats */}
       <div class="market-stats">
-        <div class="flex flex-col">
-          <span class={`font-mono ${changeColor()}`}>{changeText()}</span>
-          <span class="text-xs text-brand-slate-500">24h Change</span>
+        <div class="market-stat">
+          <span class="market-label">24h Change</span>
+          <span class={`market-value font-mono ${changeColor()}`}>
+            {changeText()}
+          </span>
         </div>
-        <div class="flex flex-col">
-          <span class="text-slate-200 font-mono">{oraclePrice()}</span>
-          <span class="text-xs text-brand-slate-500">Oracle</span>
+        <div class="market-stat">
+          <span class="market-label">Oracle</span>
+          <span class="market-value font-mono">{oraclePrice()}</span>
         </div>
-        <div class="flex flex-col">
-          <span class="text-slate-200 font-mono">{volume24h()}</span>
-          <span class="text-xs text-brand-slate-500">24h Volume</span>
+        <div class="market-stat">
+          <span class="market-label">24h Volume</span>
+          <span class="market-value font-mono">{volume24h()}</span>
         </div>
         <Show when={currentMarketType() !== "spot"}>
-          <div class="flex flex-col">
-            <span class="text-slate-200 font-mono">{openInterest()}</span>
-            <span class="text-xs text-brand-slate-500">Open Interest</span>
+          <div class="market-stat">
+            <span class="market-label">Open Interest</span>
+            <span class="market-value font-mono">{openInterest()}</span>
           </div>
-          <div class="flex flex-col">
-            <div class="flex items-center gap-3">
+          <div class="market-stat">
+            <span class="market-label">Funding / Next payment</span>
+            <span class="market-value">
               <span class={`font-mono ${fundingColor()}`}>{fundingRate()}</span>
-              <span class="font-mono text-slate-200">{fundingCountdown()}</span>
-            </div>
-            <span class="text-xs text-brand-slate-500">
-              Funding / Next payment
+              <span class="market-funding-countdown font-mono">
+                {fundingCountdown()}
+              </span>
             </span>
           </div>
         </Show>

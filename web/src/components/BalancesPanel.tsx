@@ -1,4 +1,5 @@
 import { Component, For, Show, createMemo } from "solid-js";
+import "./AccountTables.css";
 import { hyperliquidAppUrl } from "../lib/hyperliquidNetwork";
 import {
   getAvailableBalance,
@@ -33,6 +34,15 @@ const baseColumns = [
   "Contract",
 ];
 
+const numericColumns = new Set([
+  "LTV",
+  "Net Balance",
+  "Total Balance",
+  "Available Balance",
+  "USDC Value",
+  "PNL (ROE %)",
+]);
+
 const formatUsd = (value: number) => {
   if (!Number.isFinite(value)) return "--";
   return `$${value.toLocaleString("en-US", {
@@ -65,12 +75,12 @@ const spotAssets: {
 }[] = [
   {
     symbol: "HYPE",
-    accent: "text-emerald-300",
+    accent: "text-brand-slate-100",
     contract: "0x0d01...11ec",
   },
   {
     symbol: "BTC",
-    accent: "text-amber-300",
+    accent: "text-brand-slate-100",
   },
 ];
 
@@ -91,9 +101,6 @@ const BalancesPanel: Component<{
       ? "Shared collateral"
       : "Spot";
   });
-  const headerPadding = () => (props.compact ? "px-3 py-2" : "px-3 py-2.5");
-  const cellPadding = () => (props.compact ? "px-3 py-1.5" : "px-3 py-2");
-  const textSize = () => (props.compact ? "text-xs" : "text-sm");
   const showLtvColumn = createMemo(
     () =>
       isHyperliquidExecution() &&
@@ -116,7 +123,7 @@ const BalancesPanel: Component<{
             )
             .map((symbol) => ({
               symbol,
-              accent: "text-slate-100",
+              accent: "text-brand-slate-100",
               contract: undefined,
             }))
         : spotAssets.filter((asset) => getSpotBalance(asset.symbol) > 0),
@@ -136,15 +143,13 @@ const BalancesPanel: Component<{
     <div class="space-y-4">
       <div class="overflow-x-auto">
         <table
-          class={`w-full ${showLtvColumn() ? "min-w-[1040px]" : "min-w-[980px]"}`}
+          class={`account-table ${showLtvColumn() ? "min-w-[1040px]" : "min-w-[980px]"} ${props.compact ? "is-compact" : ""}`}
         >
           <thead>
-            <tr class="border-b border-brand-border">
+            <tr>
               <For each={columns()}>
                 {(col) => (
-                  <th
-                    class={`${headerPadding()} text-xs font-medium text-brand-slate-400 text-left`}
-                  >
+                  <th class={numericColumns.has(col) ? "num" : undefined}>
                     {col}
                   </th>
                 )}
@@ -159,37 +164,37 @@ const BalancesPanel: Component<{
                 hyperliquidAccountMode() === "disabled"
               }
             >
-            <tr class="border-b border-brand-border/40">
-              <td class={`${cellPadding()} ${textSize()}`}>
+            <tr>
+              <td>
                 <div class="flex items-center gap-2">
-                  <span class="font-semibold text-slate-100">USDC</span>
-                  <span class="text-xs text-brand-slate-500">
+                  <span class="font-semibold text-brand-slate-100">USDC</span>
+                  <span class="text-[12px] text-brand-slate-500">
                     {isHyperliquidExecution() ? "Standard" : "Perps"}
                   </span>
                 </div>
               </td>
               <Show when={showLtvColumn()}>
-                <td class={`${cellPadding()} ${textSize()}`}>
+                <td class="num">
                   <span class="text-brand-slate-500">N/A</span>
                 </td>
               </Show>
-              <td class={`${cellPadding()} ${textSize()}`}>
+              <td class="num">
                 <span class="font-mono">
                   {formatAmountWithUnit(perpsTotal(), 2, "USDC")}
                 </span>
               </td>
-              <td class={`${cellPadding()} ${textSize()}`}>
+              <td class="num">
                 <span class="font-mono">
                   {formatAmountWithUnit(perpsAvailable(), 2, "USDC")}
                 </span>
               </td>
-              <td class={`${cellPadding()} ${textSize()}`}>
+              <td class="num">
                 <span class="font-mono">{formatUsd(perpsTotal())}</span>
               </td>
-              <td class={`${cellPadding()} ${textSize()}`}>
+              <td class="num">
                 <span class="text-brand-slate-500">--</span>
               </td>
-              <td class={`${cellPadding()} ${textSize()}`}>
+              <td>
                 <div class="flex items-center gap-4 whitespace-nowrap">
                   <Show
                     when={!isHyperliquidExecution()}
@@ -223,7 +228,7 @@ const BalancesPanel: Component<{
                   </Show>
                 </div>
               </td>
-              <td class={`${cellPadding()} ${textSize()}`}>
+              <td>
                 <span class="text-brand-slate-500">--</span>
               </td>
             </tr>
@@ -234,45 +239,45 @@ const BalancesPanel: Component<{
                 (spotUsdcBalance() !== 0 || spotUsdcIsBorrowed())
               }
             >
-              <tr class="border-b border-brand-border/40">
-                <td class={`${cellPadding()} ${textSize()}`}>
+              <tr>
+                <td>
                   <div class="flex items-center gap-2">
-                    <span class="font-semibold text-slate-100">USDC</span>
-                    <span class="text-xs text-brand-slate-500">
+                    <span class="font-semibold text-brand-slate-100">USDC</span>
+                    <span class="text-[12px] text-brand-slate-500">
                       {spotUsdcContext()}
                     </span>
                   </div>
                 </td>
                 <Show when={showLtvColumn()}>
-                  <td class={`${cellPadding()} ${textSize()}`}>
+                  <td class="num">
                     <span class="text-brand-slate-500">N/A</span>
                   </td>
                 </Show>
-                <td class={`${cellPadding()} ${textSize()}`}>
+                <td class="num">
                   <span
-                    class={`font-mono ${spotUsdcBalance() < 0 ? "text-rose-300" : ""}`}
+                    class={`font-mono ${spotUsdcBalance() < 0 ? "text-brand-red-400" : ""}`}
                   >
                     {formatAmountWithUnit(spotUsdcBalance(), 2, "USDC")}
                   </span>
                   <Show when={spotUsdcIsBorrowed()}>
-                    <span class="mt-0.5 block whitespace-nowrap font-mono text-xs text-rose-300">
+                    <span class="mt-0.5 block whitespace-nowrap font-mono text-[12px] text-brand-red-400">
                       Borrowed{" "}
                       {formatAmountWithUnit(spotUsdcBorrowed(), 4, "USDC")}
                     </span>
                   </Show>
                 </td>
-                <td class={`${cellPadding()} ${textSize()}`}>
+                <td class="num">
                   <span class="font-mono">
                     {formatAmountWithUnit(spotUsdcAvailable(), 2, "USDC")}
                   </span>
                 </td>
-                <td class={`${cellPadding()} ${textSize()}`}>
+                <td class="num">
                   <span class="font-mono">{formatUsd(spotUsdcBalance())}</span>
                 </td>
-                <td class={`${cellPadding()} ${textSize()}`}>
+                <td class="num">
                   <span class="text-brand-slate-500">--</span>
                 </td>
-                <td class={`${cellPadding()} ${textSize()}`}>
+                <td>
                   <div class="flex items-center gap-4 whitespace-nowrap">
                     <Show
                       when={!isHyperliquidExecution()}
@@ -302,7 +307,7 @@ const BalancesPanel: Component<{
                     </Show>
                   </div>
                 </td>
-                <td class={`${cellPadding()} ${textSize()}`}>
+                <td>
                   <span class="text-brand-slate-500">--</span>
                 </td>
               </tr>
@@ -332,25 +337,25 @@ const BalancesPanel: Component<{
                 const decimals = asset.symbol === "BTC" ? 6 : 4;
 
                 return (
-                  <tr class="border-b border-brand-border/40">
-                    <td class={`${cellPadding()} ${textSize()}`}>
+                  <tr>
+                    <td>
                       <div class="flex items-center gap-2">
                         <span class={`font-semibold ${asset.accent}`}>
                           {asset.symbol}
                         </span>
-                        <span class="text-xs text-brand-slate-500">Spot</span>
+                        <span class="text-[12px] text-brand-slate-500">Spot</span>
                       </div>
                     </td>
                     <Show when={showLtvColumn()}>
-                      <td class={`${cellPadding()} ${textSize()}`}>
-                        <span class="font-mono text-slate-200">
+                      <td class="num">
+                        <span class="font-mono text-brand-slate-100">
                           {collateralLtv() === undefined
                             ? "N/A"
                             : `${((collateralLtv() ?? 0) * 100).toFixed(0)}%`}
                         </span>
                       </td>
                     </Show>
-                    <td class={`${cellPadding()} ${textSize()}`}>
+                    <td class="num">
                       <span class="font-mono">
                         {formatAmountWithUnit(
                           balance(),
@@ -359,7 +364,7 @@ const BalancesPanel: Component<{
                         )}
                       </span>
                     </td>
-                    <td class={`${cellPadding()} ${textSize()}`}>
+                    <td class="num">
                       <span class="font-mono">
                         {formatAmountWithUnit(
                           available(),
@@ -368,13 +373,13 @@ const BalancesPanel: Component<{
                         )}
                       </span>
                     </td>
-                    <td class={`${cellPadding()} ${textSize()}`}>
+                    <td class="num">
                       <span class="font-mono">{formatUsd(value())}</span>
                     </td>
-                    <td class={`${cellPadding()} ${textSize()}`}>
+                    <td class="num">
                       <span class="text-brand-slate-500">--</span>
                     </td>
-                    <td class={`${cellPadding()} ${textSize()}`}>
+                    <td>
                       <div class="flex items-center gap-4 whitespace-nowrap">
                         <Show
                           when={!isHyperliquidExecution()}
@@ -407,7 +412,7 @@ const BalancesPanel: Component<{
                         </Show>
                       </div>
                     </td>
-                    <td class={`${cellPadding()} ${textSize()}`}>
+                    <td>
                       <span class="font-mono text-xs text-brand-slate-400">
                         {asset.contract ?? "--"}
                       </span>

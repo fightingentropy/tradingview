@@ -17,8 +17,8 @@ const ChartPlaceholder: Component = () => (
     aria-label="Loading chart"
     aria-busy="true"
   >
-    <div class="h-9 shrink-0 border-b border-brand-border bg-brand-surface/50" />
-    <div class="flex flex-1 items-center justify-center text-xs text-brand-slate-500">
+    <div class="market-ticker" />
+    <div class="flex flex-1 items-center justify-center text-sm text-brand-slate-500">
       <Spinner label="Loading chart" />
     </div>
   </div>

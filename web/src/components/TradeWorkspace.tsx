@@ -162,12 +162,12 @@ const TradeWorkspace: Component = () => {
       >
         <Show when={showWatchlist()}>
           <div
-            class="relative hidden lg:flex shrink-0 border-r border-brand-border bg-brand-surface"
+            class="relative hidden lg:flex shrink-0 border-r border-brand-hairline bg-brand-surface"
             style={{ width: `${watchlistWidth()}px` }}
           >
             <WatchlistPanel />
             <div
-              class="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-brand-border/60"
+              class="absolute right-0 top-0 h-full w-1.5 cursor-col-resize transition-colors duration-150 hover:bg-brand-slate-600/50"
               onMouseDown={startWatchlistResize}
             />
           </div>

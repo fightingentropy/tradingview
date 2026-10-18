@@ -9,10 +9,10 @@
   overflow: hidden;
   border-radius: 50%;
   color: var(--avatar-tint, #a0b4c9);
-  background: color-mix(in srgb, var(--avatar-tint, #a0b4c9) 14%, #14181d);
-  box-shadow: inset 0 0 0 1px #ffffff08;
-  font-size: calc(var(--avatar-size, 30px) * .32);
-  font-weight: 700;
-  letter-spacing: -.5px;
+  background: color-mix(in srgb, var(--avatar-tint, #a0b4c9) 14%, var(--color-brand-surface));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.05);
+  font-size: calc(var(--avatar-size, 30px) * .34);
+  font-weight: 600;
+  letter-spacing: -.02em;
 }
-.market-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #1b2128; }
+.market-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--color-brand-raised); }

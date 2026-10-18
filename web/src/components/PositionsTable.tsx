@@ -1,4 +1,5 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import "./AccountTables.css";
 import { formatPrice } from "../lib/hyperliquid";
 import {
   Collateral,
@@ -35,6 +36,17 @@ const columns = [
   "Close",
   "TP/SL",
 ];
+
+const numericColumns = new Set([
+  "Size",
+  "Position Value",
+  "Entry Price",
+  "Mark Price",
+  "PNL (ROE %)",
+  "Liq. Price",
+  "Margin",
+  "Funding",
+]);
 
 const formatTpslValue = (value?: number | null) => {
   if (!Number.isFinite(value ?? NaN) || (value ?? 0) <= 0) return "--";
@@ -75,9 +87,6 @@ const PositionsTable: Component<{
   sideFilter?: AccountSideFilter;
   marketFilter?: string;
 }> = (props) => {
-  const cellPadding = props.compact ? "px-3 py-1.5" : "px-3 py-2";
-  const headerPadding = props.compact ? "px-3 py-2" : "px-3 py-2.5";
-  const textSize = props.compact ? "text-xs" : "text-sm";
   const [editingSymbol, setEditingSymbol] = createSignal<string | null>(null);
   const [tpInput, setTpInput] = createSignal("");
   const [slInput, setSlInput] = createSignal("");
@@ -211,14 +220,14 @@ const PositionsTable: Component<{
 
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-300">
+      <table
+        class={`account-table min-w-300 ${props.compact ? "is-compact" : ""}`}
+      >
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(col) => (
-                <th
-                  class={`${headerPadding} text-xs font-medium text-brand-slate-400 text-left`}
-                >
+                <th class={numericColumns.has(col) ? "num" : undefined}>
                   {col}
                 </th>
               )}
@@ -230,10 +239,7 @@ const PositionsTable: Component<{
             when={filteredPositions().length > 0}
             fallback={
               <tr>
-                <td
-                  class={`${cellPadding} text-brand-slate-400 ${textSize}`}
-                  colSpan={columns.length}
-                >
+                <td class="account-empty" colSpan={columns.length}>
                   No open positions
                 </td>
               </tr>
@@ -363,10 +369,9 @@ const PositionsTable: Component<{
 
                 return (
                   <tr
-                    class="border-b border-brand-border/40"
                     classList={{ "opacity-50 animate-pulse": !hasValidPrice() }}
                   >
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td>
                       <div class="flex items-center gap-2">
                         <button
                           type="button"
@@ -375,12 +380,12 @@ const PositionsTable: Component<{
                         >
                           {formatPositionSymbol(position.symbol)}
                         </button>
-                        <span class="text-xs text-brand-slate-400">
+                        <span class="text-[12px] text-brand-slate-500">
                           {position.leverage}x
                         </span>
                       </div>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td class="num">
                       <span
                         class={`font-mono ${isLong ? "text-brand-green-400" : "text-brand-red-400"}`}
                       >
@@ -388,24 +393,24 @@ const PositionsTable: Component<{
                         {formatPositionSymbol(position.symbol)}
                       </span>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td class="num">
                       <span class="font-mono">
                         {hasValidPrice()
                           ? `${formatUsd(positionValue())} ${position.collateral}`
                           : "--"}
                       </span>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td class="num">
                       <span class="font-mono">
                         {formatPrice(position.entryPrice)}
                       </span>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td class="num">
                       <span class="font-mono">
                         {hasValidPrice() ? formatPrice(mark()) : "--"}
                       </span>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td class="num">
                       <span
                         class={`font-mono ${hasValidPrice() ? (pnl() >= 0 ? "text-brand-green-400" : "text-brand-red-400") : "text-brand-slate-400"}`}
                       >
@@ -414,7 +419,7 @@ const PositionsTable: Component<{
                           : "--"}
                       </span>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td class="num">
                       <span class="font-mono">
                         {hasValidPrice() &&
                         Number.isFinite(liqPrice()) &&
@@ -423,21 +428,21 @@ const PositionsTable: Component<{
                           : "--"}
                       </span>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td class="num">
                       <span class="font-mono">
                         {hasValidPrice()
                           ? `${formatUsd(margin())} (${marginLabel})`
                           : `-- (${marginLabel})`}
                       </span>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td class="num">
                       {hasValidPrice() ? (
                         fundingDisplay()
                       ) : (
                         <span class="font-mono text-brand-slate-400">--</span>
                       )}
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td>
                       <div class="max-w-64 space-y-1">
                         <button
                           class="text-brand-accent hover:underline disabled:cursor-wait disabled:opacity-60"
@@ -462,7 +467,7 @@ const PositionsTable: Component<{
                         >
                           {(message) => (
                             <div
-                              class="whitespace-normal text-[10px] leading-4 text-brand-red-400"
+                              class="whitespace-normal text-[12px] leading-4 text-brand-red-400"
                               role="alert"
                             >
                               {message()}
@@ -471,12 +476,12 @@ const PositionsTable: Component<{
                         </Show>
                       </div>
                     </td>
-                    <td class={`${cellPadding} ${textSize}`}>
+                    <td>
                       <Show
                         when={editingSymbol() === position.symbol}
                         fallback={
                           <button
-                            class="flex items-center gap-1 text-brand-slate-300 hover:text-slate-100"
+                            class="flex items-center gap-1 text-brand-slate-400 hover:text-brand-slate-100"
                             onClick={() => openTpslEditor(position)}
                           >
                             <span class="font-mono">
@@ -499,16 +504,16 @@ const PositionsTable: Component<{
                         }
                       >
                         <div class="flex items-center gap-2">
-                          <div class="flex items-center gap-1 rounded-md border border-brand-border bg-brand-screen px-2 py-1">
+                          <div class="flex items-center gap-1 rounded-md border border-brand-border bg-brand-screen px-2 py-1 transition-colors focus-within:border-brand-accent/60">
                             <input
-                              class="w-16 bg-transparent text-right font-mono text-xs text-slate-100 placeholder:text-brand-slate-500 outline-none"
+                              class="w-16 bg-transparent text-right font-mono text-xs text-brand-slate-100 placeholder:text-brand-slate-500 outline-none"
                               value={tpInput()}
                               onInput={(e) => setTpInput(e.currentTarget.value)}
                               placeholder="TP"
                             />
                             <span class="text-brand-slate-500">/</span>
                             <input
-                              class="w-16 bg-transparent text-right font-mono text-xs text-slate-100 placeholder:text-brand-slate-500 outline-none"
+                              class="w-16 bg-transparent text-right font-mono text-xs text-brand-slate-100 placeholder:text-brand-slate-500 outline-none"
                               value={slInput()}
                               onInput={(e) => setSlInput(e.currentTarget.value)}
                               placeholder="SL"
@@ -522,14 +527,14 @@ const PositionsTable: Component<{
                             {tpslSaving() ? "Saving" : "Save"}
                           </button>
                           <button
-                            class="text-xs text-brand-slate-400 hover:text-slate-200"
+                            class="text-xs text-brand-slate-400 hover:text-brand-slate-100"
                             onClick={closeTpslEditor}
                           >
                             Cancel
                           </button>
                         </div>
                         <Show when={tpslError()}>
-                          <div class="mt-1 text-[10px] text-brand-red-400">
+                          <div class="mt-1 text-[12px] text-brand-red-400">
                             {tpslError()}
                           </div>
                         </Show>
