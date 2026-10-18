@@ -4,6 +4,8 @@ import test from 'node:test';
 import type Anthropic from '@anthropic-ai/sdk';
 
 import {
+  briefRelayItemAllowed,
+  hyperliquidMarksEvidence,
   loadPublicationContext,
   publishDailyBrief,
   relayEvidence,
@@ -77,6 +79,39 @@ test('summarizes fresh relay items and flags a stale or missing relay', () => {
   assert.doesNotMatch(fresh, /Item 3/);
   assert.match(relayEvidence({ items: [], updatedAt: '2026-09-15T20:00:00Z' }, now), /stale/);
   assert.match(relayEvidence(null, now), /unavailable/);
+});
+
+test('applies the BRIEF.md feed rules before items reach Claude', () => {
+  const base = { id: '1', text: 'Story', publishedAt: '2026-09-16T07:00:00Z', author: { name: 'Feed' } };
+  assert.equal(briefRelayItemAllowed({ ...base, source: 'telegram', author: { name: 'Chain', handle: 'chain_alerts' } }), false);
+  assert.equal(briefRelayItemAllowed({ ...base, source: 'telegram', author: { name: 'TradFi', handle: 'tradfi_t3' } }), true);
+  for (const section of ['ai', 'tech', 'world-business']) {
+    assert.equal(briefRelayItemAllowed({ ...base, source: 'digg', url: `https://digg.com/${section}/story` }), true);
+  }
+  assert.equal(briefRelayItemAllowed({ ...base, source: 'digg', url: 'https://digg.com/sports/story' }), false);
+  assert.equal(briefRelayItemAllowed({ ...base, source: 'x', url: 'https://x.com/desk/status/1' }), true);
+});
+
+test('formats Hyperliquid marks with 24-hour changes and reports a missing feed', () => {
+  const payload = [
+    { universe: [{ name: 'BTC' }, { name: 'ETH' }, { name: 'HYPE' }] },
+    [{ markPx: '80842.0', prevDayPx: '81605.0' }, { markPx: '2344.1', prevDayPx: '2419.5' }, { markPx: '76.371', prevDayPx: '79.227' }],
+  ];
+  const evidence = hyperliquidMarksEvidence(payload, new Date('2026-10-18T20:45:00Z'));
+  assert.match(evidence, /^Hyperliquid perp marks at 2026-10-18T20:45:00.000Z: BTC mark 80842 \(-0\.93% over 24 hours\); ETH mark 2344\.1/);
+  assert.match(evidence, /HYPE mark 76\.371 \(-3\.60% over 24 hours\)\.$/);
+  assert.match(hyperliquidMarksEvidence(null, new Date()), /unavailable/);
+});
+
+test('returns a brief without confidence tags for correction', async () => {
+  const untagged = markdown.replaceAll(/\s*\[(?:High|Med|Low)\]/g, '');
+  const { client, requests } = fakeClaude([
+    submit('call-1', { title, markdown: untagged }),
+    submit('call-2', { title, markdown }),
+  ]);
+  await researchDailyBrief({ apiKey: undefined, contract: 'c', day: '2026-09-16', previousEdition: undefined, feed: null, client, now: () => submittedAt });
+  const [result] = (requests[1]!.messages as Array<{ content: unknown }>)[2]!.content as Array<{ content: string }>;
+  assert.match(result!.content, /\[High\], \[Med\] or \[Low\]/);
 });
 
 test('returns a failed submission to Claude, then accepts the corrected brief', async () => {

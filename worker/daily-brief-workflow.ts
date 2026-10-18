@@ -5,6 +5,7 @@ import { londonDateKey } from '@tradingview/shared/brief';
 import briefContract from '../docs/BRIEF.md';
 import {
   NEWS_FEED_KEY,
+  fetchHyperliquidMarks,
   loadPublicationContext,
   publishDailyBrief,
   researchDailyBrief,
@@ -43,6 +44,7 @@ export class DailyBriefWorkflow extends WorkflowEntrypoint<DailyBriefEnv, DailyB
           day,
           previousEdition: context.previousEdition,
           feed: await this.env.NEWS_RELAY_KV.get<NewsFeedSnapshot>(NEWS_FEED_KEY, 'json'),
+          marks: await fetchHyperliquidMarks(),
         });
       },
     );
