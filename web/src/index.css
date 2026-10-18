@@ -1,27 +1,60 @@
 @import "tailwindcss";
 
+/* Inter Variable 5.3.0 (OFL, public/licenses/inter-OFL.txt), served from this origin. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(/fonts/inter-5.3.0-latin-wght.woff2) format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(/fonts/inter-5.3.0-latin-ext-wght.woff2) format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* Metric-matched fallback so text does not shift when Inter arrives. */
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  size-adjust: 107.12%;
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+}
+
 @theme {
-  --color-brand-screen: #101317;
-  --color-brand-surface: #14181d;
-  --color-brand-border: #272c33;
+  /* Surfaces: near-black, separated by tone more than by borders. */
+  --color-brand-screen: #0b0e11;
+  --color-brand-surface: #11151a;
+  --color-brand-raised: #171c22;
+  --color-brand-border: #20262d;
+  --color-brand-hairline: #191e24;
   --color-brand-accent: #43c6a1;
   --color-brand-green-400: #43c6a1;
-  --color-brand-red-400: #e87887;
-  --color-brand-slate-100: #e8ebef;
-  --color-brand-slate-400: #9ba3ae;
-  --color-brand-slate-500: #818a96;
-  --color-brand-slate-600: #4b5563;
+  --color-brand-red-400: #ef6f7f;
+  --color-brand-slate-100: #eef1f4;
+  --color-brand-slate-400: #a1aab5;
+  --color-brand-slate-500: #7d8692;
+  --color-brand-slate-600: #4a525d;
   --font-sans:
-    "Golos Text", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    "Inter", "Inter Fallback", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Numbers use Inter's tabular figures rather than a second typeface. */
   --font-mono:
-    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
-  --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.5rem;
+    "Inter", "Inter Fallback", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-code:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
   --radius-control: 999px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 html {
@@ -30,9 +63,27 @@ html {
 
 body {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 15px;
+  line-height: 1.5;
+  letter-spacing: -0.006em;
+  color: var(--color-brand-slate-100);
+  font-variant-numeric: tabular-nums;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.font-mono {
+  font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: -0.01em;
 }
 
 /* Terminal layout: a quiet frame around prices, charts and execution. */

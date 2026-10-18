@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site wss://*.convex.site https://api.hyperliquid.xyz https://api.hyperliquid-testnet.xyz wss://api.hyperliquid.xyz wss://api.hyperliquid-testnet.xyz; img-src 'self' data: https://s3-symbol-logo.tradingview.com https://pbs.twimg.com https://*.telesco.pe https://*.cdn-telegram.org https://digg.com https://app.paste.trade https://i.ytimg.com; font-src https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://challenges.cloudflare.com; worker-src 'self'; frame-src https://challenges.cloudflare.com; base-uri 'self'; object-src 'none'"
+      content="default-src 'self'; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site wss://*.convex.site https://api.hyperliquid.xyz https://api.hyperliquid-testnet.xyz wss://api.hyperliquid.xyz wss://api.hyperliquid-testnet.xyz; img-src 'self' data: https://s3-symbol-logo.tradingview.com https://pbs.twimg.com https://*.telesco.pe https://*.cdn-telegram.org https://digg.com https://app.paste.trade https://i.ytimg.com; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com; worker-src 'self'; frame-src https://challenges.cloudflare.com; base-uri 'self'; object-src 'none'"
     />
     <meta
       name="viewport"
@@ -14,12 +14,7 @@
     <meta name="description" content="A live trading terminal with charts, watchlists, portfolio tools and market research." />
     <link rel="icon" type="image/svg+xml" href="/hyperliquid.svg" />
     <meta name="theme-color" content="#0a0d11" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="preload" href="/fonts/inter-5.3.0-latin-wght.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>

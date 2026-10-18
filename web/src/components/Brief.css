@@ -4,7 +4,7 @@
   overscroll-behavior: contain;
   background: var(--color-brand-screen);
   color: #b9c0c9;
-  font-family: 'Golos Text', sans-serif;
+  font-family: var(--font-sans);
   -webkit-user-select: text;
   user-select: text;
 }
@@ -80,7 +80,7 @@
 .brief-prose h4 { font-size: 15px; font-weight: 500; color: #d8e0e6; margin: 24px 0 10px; }
 .brief-prose em { color: #a3afba; }
 .brief-prose blockquote { margin: 20px 0; padding-left: 18px; border-left: 2px solid #547166; }
-.brief-prose code { font-family: 'JetBrains Mono', monospace; font-size: .84em; }
+.brief-prose code { font-family: var(--font-code); font-size: .84em; }
 .brief-prose pre { overflow: auto; padding: 12px; background: #191e24; border-radius: var(--radius-md); }
 .brief-prose hr { border: 0; border-top: 1px solid #30373e; margin: 25px 0; }
 .brief-verdict .brief-prose { font-size: 16px; line-height: 1.8; }
