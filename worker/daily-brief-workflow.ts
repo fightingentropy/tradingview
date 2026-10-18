@@ -20,22 +20,22 @@ function requireSameLondonDay(day: string): void {
 }
 
 /**
- * One instance per London day. Completed steps are durable: a publication
+ * One instance per on-demand run. Completed steps are durable: a publication
  * retry reuses the validated edition instead of researching again.
  */
 export class DailyBriefWorkflow extends WorkflowEntrypoint<DailyBriefEnv, DailyBriefParams> {
   async run(event: WorkflowEvent<DailyBriefParams>, step: WorkflowStep) {
-    const { day } = event.payload;
+    const { day, replace = false } = event.payload;
     const context = await step.do('load publication context', async () => {
       requireSameLondonDay(day);
-      return loadPublicationContext(this.env.DAILY_BRIEFS, day);
+      return loadPublicationContext(this.env.DAILY_BRIEFS, day, { replace });
     });
     if (context.published) return { state: 'already-published', day };
 
-    // Retries after 30, 60 and 120 minutes: four research attempts per day.
+    // Runs are on demand, so one quick retry; press the button again after a failure.
     const edition = await step.do(
       'research edition',
-      { retries: { limit: 3, delay: '30 minutes', backoff: 'exponential' }, timeout: '45 minutes' },
+      { retries: { limit: 1, delay: '1 minute', backoff: 'constant' }, timeout: '45 minutes' },
       async () => {
         requireSameLondonDay(day);
         return researchDailyBrief({
@@ -54,7 +54,7 @@ export class DailyBriefWorkflow extends WorkflowEntrypoint<DailyBriefEnv, DailyB
       { retries: { limit: 6, delay: '1 minute', backoff: 'exponential' }, timeout: '2 minutes' },
       async () => {
         requireSameLondonDay(day);
-        return publishDailyBrief(this.env.DAILY_BRIEFS, edition);
+        return publishDailyBrief(this.env.DAILY_BRIEFS, edition, new Date(), { replace });
       },
     );
     return { state: 'published', day, title: edition.title };

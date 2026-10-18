@@ -2,7 +2,16 @@ import { usePageActive } from "./PageView";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type Component } from 'solid-js';
 import { editionStatus, formatBriefDate, type DailyBrief } from '../lib/dailyBrief';
 import { parseBriefIndex, parseBriefPayload } from '../lib/dailyBriefFeed';
+import { convex } from '../lib/convex';
+import { isAdmin } from '../stores/auth';
+import { api } from '../../convex/_generated/api';
 import './Brief.css';
+
+type RunState = { status: string; startedAt?: string; error?: string };
+const ACTIVE_RUN = new Set(['queued', 'running', 'waiting', 'paused', 'waitingForPause', 'rollingBack']);
+const runClock = (iso?: string) => iso
+  ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso))
+  : '';
 import BriefContent from './BriefContent';
 
 const generationTime = (generated: string) => {
@@ -31,6 +40,11 @@ const Brief: Component = () => {
   const [now, setNow] = createSignal(new Date());
   const [sourcesOpen, setSourcesOpen] = createSignal(false);
   const status = createMemo(() => { const brief = edition(); return brief ? editionStatus(brief, brief.id, now()) : undefined; });
+  const [run, setRun] = createSignal<RunState>();
+  const [runError, setRunError] = createSignal('');
+  const [starting, setStarting] = createSignal(false);
+  const running = createMemo(() => starting() || ACTIVE_RUN.has(run()?.status ?? ''));
+  let runTimer: number | undefined;
 
   const fetchJson = async (path: string): Promise<unknown> => {
     const controller = new AbortController();
@@ -75,7 +89,38 @@ const Brief: Component = () => {
     }
   };
 
+  // On-demand runs: poll the Worker's run status until the new edition lands.
+  const checkRun = async () => {
+    try {
+      const response = await fetch('/api/daily-briefs/run', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) return;
+      const next = await response.json() as RunState;
+      const wasActive = ACTIVE_RUN.has(run()?.status ?? '');
+      setRun(next);
+      if (wasActive && next.status === 'complete') void refreshEdition();
+      if (!ACTIVE_RUN.has(next.status) && runTimer) { window.clearInterval(runTimer); runTimer = undefined; }
+    } catch { /* The next poll retries. */ }
+  };
+  const watchRun = () => {
+    if (!runTimer) runTimer = window.setInterval(() => void checkRun(), 15_000);
+    void checkRun();
+  };
+  const startRun = async () => {
+    if (running()) return;
+    setStarting(true);
+    setRunError('');
+    try {
+      setRun(await convex.action(api.brief.runDailyBrief, {}));
+      watchRun();
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message.replace(/^.*ConvexError:\s*/, '') : 'The brief could not start.');
+    } finally {
+      setStarting(false);
+    }
+  };
+
   onMount(() => {
+    void checkRun().then(() => { if (ACTIVE_RUN.has(run()?.status ?? '')) watchRun(); });
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     const refresh = () => { if (pageActive() && document.visibilityState === 'visible') void refreshEdition(); };
     const feedTimer = window.setInterval(refresh, 5 * 60_000);
@@ -84,6 +129,7 @@ const Brief: Component = () => {
       disposed = true;
       window.clearInterval(timer);
       window.clearInterval(feedTimer);
+      if (runTimer) window.clearInterval(runTimer);
       document.removeEventListener('visibilitychange', refresh);
       for (const request of requests) request.abort();
     });
@@ -121,11 +167,27 @@ const Brief: Component = () => {
           <div>
             <h1>Daily brief<span aria-hidden="true">.</span></h1>
           </div>
+          <div class="brief-actions">
+          <Show when={isAdmin()}>
+            <button type="button" class="brief-download brief-run" disabled={running()} onClick={() => void startRun()}
+              title="Research and publish a fresh brief now (about 10–20 minutes)">
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" /></svg>
+              {running() ? 'Researching…' : 'Run brief now'}
+            </button>
+          </Show>
           <Show when={edition()}>{(brief) => <a class="brief-download" download={`market-overview-${brief().id}.md`} href={`data:text/markdown;charset=utf-8,${encodeURIComponent(brief().raw)}`}>
             <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg>
             Save brief
           </a>}</Show>
+          </div>
         </header>
+        <Show when={isAdmin() && (runError() || running() || run()?.status === 'errored')}>
+          <div class="brief-feed-status" role="status">
+            {runError() || (running()
+              ? `Researching a fresh brief since ${runClock(run()?.startedAt) || 'now'} (London). It replaces today's edition when done.`
+              : `The last run failed${run()?.error ? `: ${run()?.error}` : '.'} Run it again to retry.`)}
+          </div>
+        </Show>
 
         <Show when={feedError() && !loading()}><div class="brief-feed-status" role="status">{feedError()}<button type="button" onClick={() => void refreshEdition()}>Retry</button></div></Show>
         <Show when={loading() && !edition()}><div class="brief-loading" role="status" aria-label="Loading daily brief"><span class="brief-spinner" aria-hidden="true" /></div></Show>

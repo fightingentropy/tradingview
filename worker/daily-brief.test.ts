@@ -9,8 +9,8 @@ import {
   loadPublicationContext,
   publishDailyBrief,
   relayEvidence,
+  handleDailyBriefRunRequest,
   researchDailyBrief,
-  scheduleDailyBrief,
   stampGenerated,
   type DailyBriefEnv,
 } from './daily-brief';
@@ -168,21 +168,52 @@ test('loads the prior edition unless the day is already published', async () => 
   assert.deepEqual(await loadPublicationContext(kv, '2026-09-07'), { published: true });
 });
 
-test('starts at most one Workflow per London day from 08:00', async () => {
-  const created: unknown[] = [];
-  let existing = false;
+test('an on-demand run replaces the day\'s edition and loads it for comparison', async () => {
+  const kv = memoryKV({ 'index:v1': priorIndex });
+  await publishDailyBrief(kv, { title, markdown }, submittedAt);
+  await assert.rejects(publishDailyBrief(kv, { title: 'Evening headline', markdown }, submittedAt), /Refusing to overwrite/);
+  assert.equal(await publishDailyBrief(kv, { title: 'Evening headline', markdown }, submittedAt, { replace: true }), '2026-09-16');
+  assert.equal(JSON.parse(kv.values.get('edition:v1:2026-09-16')!).title, 'Evening headline');
+  assert.equal(JSON.parse(kv.values.get('index:v1')!).editions[0].title, 'Evening headline');
+  const context = await loadPublicationContext(kv, '2026-09-16', { replace: true });
+  assert.equal(context.published, false);
+  assert.match(context.previousEdition!, /PM Bottom Line/);
+});
+
+test('runs start only with the access token, one at a time, and report their status', async () => {
+  const instances = new Map<string, { status: string }>();
   const env = {
-    DAILY_BRIEFS: memoryKV({ 'index:v1': priorIndex }),
+    APP_ACCESS_TOKEN: 'test-token',
+    DAILY_BRIEFS: memoryKV(),
     DAILY_BRIEF_WORKFLOW: {
-      async get() { if (!existing) throw new Error('instance.not_found'); return {}; },
-      async create(options: unknown) { created.push(options); existing = true; return {}; },
+      async get(id: string) {
+        const instance = instances.get(id);
+        if (!instance) throw new Error('instance.not_found');
+        return { status: async () => ({ status: instance.status, output: { title: 'Fresh brief' } }) };
+      },
+      async create({ id, params }: { id: string; params: { replace: boolean } }) {
+        assert.equal(params.replace, true);
+        instances.set(id, { status: 'running' });
+        return {};
+      },
     },
   } as unknown as DailyBriefEnv;
-  assert.equal(await scheduleDailyBrief(env, new Date('2026-09-16T06:00:00Z')), 'before-schedule');
-  assert.equal(await scheduleDailyBrief(env, new Date('2026-09-16T07:00:00Z')), 'started');
-  assert.deepEqual(created, [{ id: 'daily-brief-2026-09-16', params: { day: '2026-09-16' } }]);
-  assert.equal(await scheduleDailyBrief(env, new Date('2026-09-16T08:00:00Z')), 'already-started');
-  assert.equal(await scheduleDailyBrief(env, new Date('2026-09-07T09:00:00Z')), 'already-published');
-  // In GMT, 07:00 UTC is still before 08:00 London.
-  assert.equal(await scheduleDailyBrief(env, new Date('2026-12-07T07:00:00Z')), 'before-schedule');
+  const call = (method: string, token?: string) => handleDailyBriefRunRequest(new Request('https://trade.erlin.org/api/daily-briefs/run', {
+    method, headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }), env);
+
+  assert.deepEqual(await (await call('GET')).json(), { status: 'idle' });
+  assert.equal((await call('POST')).status, 401);
+  assert.equal((await call('POST', 'wrong-token')).status, 401);
+  const started = await call('POST', 'test-token');
+  assert.equal(started.status, 202);
+  const run = await started.json() as { id: string; status: string };
+  assert.match(run.id, /^daily-brief-\d{4}-\d{2}-\d{2}-\d{6}$/);
+  assert.equal((await call('POST', 'test-token')).status, 409);
+  instances.get(run.id)!.status = 'complete';
+  const status = await (await call('GET')).json() as { status: string; title: string };
+  assert.equal(status.status, 'complete');
+  assert.equal(status.title, 'Fresh brief');
+  assert.equal((await call('POST', 'test-token')).status, 202);
+  assert.equal((await call('DELETE', 'test-token')).status, 405);
 });

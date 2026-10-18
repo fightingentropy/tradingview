@@ -22,6 +22,9 @@
 .brief-masthead p { margin: 10px 0 0; font-size: 12px; color: #87919d; }
 .brief-download { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #30363e; border-radius: var(--radius-control); font-size: 12px; color: #c1c9d0; text-decoration: none; transition: background .15s, border-color .15s; }
 .brief-download:hover { background: #1b2126; border-color: #59636c; }
+.brief-actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+.brief-run { cursor: pointer; background: transparent; font: inherit; }
+.brief-run:disabled { cursor: progress; opacity: .65; }
 .brief-edition-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid #30353d; border-bottom: 1px solid #30353d; }
 .brief-edition-stamp { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: #a9b4bc; font-size: 12px; }
 .brief-edition-time { color: #d8dee3; white-space: nowrap; }

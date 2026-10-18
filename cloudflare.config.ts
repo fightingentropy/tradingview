@@ -14,9 +14,8 @@ export default defineConfig((ctx) => {
           exports: {
             DailyBriefWorkflow: exports.workflow({ name: "tradingview-daily-brief" }),
           },
-          // Hourly, so 08:00 Europe/London is hit in both GMT and BST.
-          triggers: [triggers.scheduled({ schedule: "0 * * * *" })],
           // Workflow steps stream long Claude research turns.
+          // The brief runs on demand only, so this Worker has no cron trigger.
           limits: { cpuMs: 300_000 },
           workersDev: true,
           previewUrls: false,
@@ -54,6 +53,8 @@ export default defineConfig((ctx) => {
               exportName: "DailyBriefWorkflow",
             }),
             ANTHROPIC_API_KEY: bindings.secret(),
+            // Shared with the relay; it authorizes on-demand brief runs.
+            APP_ACCESS_TOKEN: bindings.secret(),
             ASSETS: bindings.assets(),
           },
         }),

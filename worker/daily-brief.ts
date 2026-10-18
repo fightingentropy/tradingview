@@ -36,6 +36,8 @@ const CONFIDENCE_TAG_PATTERN = /\[(?:High|Med|Low)\]/;
 
 export interface DailyBriefParams {
   day: string;
+  /** On-demand runs replace an edition already published for the same London day. */
+  replace?: boolean;
 }
 
 export interface DailyBriefEnv {
@@ -43,7 +45,18 @@ export interface DailyBriefEnv {
   NEWS_RELAY_KV: KVNamespace;
   DAILY_BRIEF_WORKFLOW: Workflow<DailyBriefParams>;
   ANTHROPIC_API_KEY?: string;
+  /** The relay access token; the iPhone app and the Convex admin action present it to start a run. */
+  APP_ACCESS_TOKEN?: string;
 }
+
+export interface BriefRunRecord {
+  id: string;
+  day: string;
+  startedAt: string;
+}
+
+const RUN_KEY = 'run:last';
+const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'waiting', 'paused', 'waitingForPause', 'rollingBack']);
 
 export interface DailyBriefEdition {
   title: string;
@@ -268,32 +281,44 @@ export async function researchDailyBrief(options: {
   }
 }
 
-/** Reports whether the day's edition already exists and returns the latest prior edition for comparison. */
-export async function loadPublicationContext(storage: KVNamespace, day: string): Promise<{ published: boolean; previousEdition?: string }> {
+/** Reports whether the day's edition already exists and returns the latest edition for comparison. */
+export async function loadPublicationContext(
+  storage: KVNamespace,
+  day: string,
+  { replace = false }: { replace?: boolean } = {},
+): Promise<{ published: boolean; previousEdition?: string }> {
   const stored = await storage.get<unknown>(INDEX_KEY, 'json');
   if (stored === null) throw new Error('No publication index. Initialize it with web/scripts/publish-daily-brief.ts --initialize.');
   const latest = parseBriefIndex(stored).editions[0]!;
-  if (latest.id === day) return { published: true };
+  if (latest.id === day && !replace) return { published: true };
   const previous = parseBriefPayload(await storage.get<unknown>(editionKey(latest.id), 'json'), latest);
   return { published: false, previousEdition: previous.raw };
 }
 
-/** Same rules as web/scripts/publish-daily-brief.ts: never overwrite an edition, publish discovery last. */
-export async function publishDailyBrief(storage: KVNamespace, edition: DailyBriefEdition, now = new Date()): Promise<string> {
+/**
+ * Same rules as web/scripts/publish-daily-brief.ts, publishing discovery last.
+ * An edition is overwritten only by an on-demand run with `replace`.
+ */
+export async function publishDailyBrief(
+  storage: KVNamespace,
+  edition: DailyBriefEdition,
+  now = new Date(),
+  { replace = false }: { replace?: boolean } = {},
+): Promise<string> {
   const current = validateFreshBrief(edition.title, edition.markdown, now);
   const stored = await storage.get<unknown>(INDEX_KEY, 'json');
   if (stored === null) throw new Error('No publication index. Initialize it with web/scripts/publish-daily-brief.ts --initialize.');
   if (parseBriefIndex(stored).editions[0]!.generated > current.generated) throw new Error('A newer edition is already published.');
   const key = editionKey(current.id);
   const existing = await storage.get<unknown>(key, 'json');
-  if (existing !== null) {
+  const unchanged = existing !== null && (() => {
     const published = parseBriefPayload(existing);
-    if (published.raw !== current.raw || published.title !== current.title) {
-      throw new Error(`Edition ${current.id} is already published. Refusing to overwrite its original analysis.`);
-    }
-  } else {
-    await storage.put(key, JSON.stringify({ title: current.title, markdown: current.raw }));
+    return published.raw === current.raw && published.title === current.title;
+  })();
+  if (existing !== null && !unchanged && !replace) {
+    throw new Error(`Edition ${current.id} is already published. Refusing to overwrite its original analysis.`);
   }
+  if (!unchanged) await storage.put(key, JSON.stringify({ title: current.title, markdown: current.raw }));
   const index = parseBriefIndex({ version: 1, publishedAt: now.toISOString(), editions: [briefEntry(current)] });
   await storage.put(INDEX_KEY, JSON.stringify(index));
   const verified = parseBriefIndex(await storage.get<unknown>(INDEX_KEY, 'json'));
@@ -303,19 +328,56 @@ export async function publishDailyBrief(storage: KVNamespace, edition: DailyBrie
   return current.id;
 }
 
-/** Hourly cron: from 08:00 London, start at most one Workflow per London day. */
-export async function scheduleDailyBrief(env: DailyBriefEnv, now = new Date()): Promise<string> {
-  if (londonHour(now) < 8) return 'before-schedule';
-  const day = londonDateKey(now);
-  const index = await env.DAILY_BRIEFS.get<unknown>(INDEX_KEY, 'json');
-  if (index !== null && parseBriefIndex(index).editions[0]!.id === day) return 'already-published';
-  const id = `daily-brief-${day}`;
+async function runStatus(env: DailyBriefEnv, record: BriefRunRecord) {
   try {
-    // An instance for this day exists already; its own retries own the outcome.
-    await env.DAILY_BRIEF_WORKFLOW.get(id);
-    return 'already-started';
+    const { status, error, output } = await (await env.DAILY_BRIEF_WORKFLOW.get(record.id)).status();
+    const title = (output as { title?: unknown } | undefined)?.title;
+    return { ...record, status, ...(error ? { error: error.message } : {}), ...(typeof title === 'string' ? { title } : {}) };
   } catch {
-    await env.DAILY_BRIEF_WORKFLOW.create({ id, params: { day } });
-    return 'started';
+    return { ...record, status: 'unknown' };
   }
+}
+
+/** The latest on-demand run and its Workflow status, or `idle` before the first run. */
+export async function dailyBriefRunStatus(env: DailyBriefEnv): Promise<Record<string, unknown>> {
+  const record = await env.DAILY_BRIEFS.get<BriefRunRecord>(RUN_KEY, 'json');
+  return record ? runStatus(env, record) : { status: 'idle' };
+}
+
+/** Starts one on-demand research run unless another is still in progress. */
+export async function startDailyBriefRun(env: DailyBriefEnv, now = new Date()): Promise<{ started: boolean; run: Record<string, unknown> }> {
+  const previous = await env.DAILY_BRIEFS.get<BriefRunRecord>(RUN_KEY, 'json');
+  if (previous) {
+    const current = await runStatus(env, previous);
+    if (ACTIVE_RUN_STATUSES.has(String(current.status))) return { started: false, run: current };
+  }
+  const day = londonDateKey(now);
+  const clock = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).format(now).replaceAll(':', '');
+  const record: BriefRunRecord = { id: `daily-brief-${day}-${clock}`, day, startedAt: now.toISOString() };
+  await env.DAILY_BRIEF_WORKFLOW.create({ id: record.id, params: { day, replace: true } });
+  await env.DAILY_BRIEFS.put(RUN_KEY, JSON.stringify(record));
+  return { started: true, run: { ...record, status: 'queued' } };
+}
+
+function sameSecret(presented: string, expected: string): boolean {
+  if (presented.length !== expected.length) return false;
+  let difference = 0;
+  for (let index = 0; index < expected.length; index += 1) difference |= presented.charCodeAt(index) ^ expected.charCodeAt(index);
+  return difference === 0;
+}
+
+/** GET reports the latest run; POST, with the relay access token, starts one. */
+export async function handleDailyBriefRunRequest(request: Request, env: DailyBriefEnv): Promise<Response> {
+  const headers = { 'Cache-Control': 'no-store' };
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    return Response.json(await dailyBriefRunStatus(env), { headers });
+  }
+  if (request.method !== 'POST') return Response.json({ error: 'method_not_allowed' }, { status: 405, headers: { ...headers, Allow: 'GET, HEAD, POST' } });
+  if (!env.APP_ACCESS_TOKEN) return Response.json({ error: 'runs_not_configured' }, { status: 503, headers });
+  const presented = request.headers.get('Authorization')?.match(/^Bearer (.+)$/)?.[1] ?? '';
+  if (!sameSecret(presented, env.APP_ACCESS_TOKEN)) return Response.json({ error: 'unauthorized' }, { status: 401, headers });
+  const { started, run } = await startDailyBriefRun(env);
+  return Response.json(run, { status: started ? 202 : 409, headers });
 }

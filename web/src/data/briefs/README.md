@@ -7,12 +7,12 @@ When available, read the latest original at
 
 ## Daily workflow
 
-A Cloudflare Workflow in the `tradingview-web` Worker starts research at **08:00
-Europe/London every day** with the Claude API and publishes through the Worker's
-KV binding; no local machine needs to stay on. Publication follows research and
-validation; 08:00 is the start time, not a promised completion time. See
+Briefs run **on demand**: press **Run brief now** on the website (as an admin)
+or the refresh button in the iPhone Daily brief. A Cloudflare Workflow in the
+`tradingview-web` Worker researches with the Claude API, replaces today's edition
+and publishes through the Worker's KV binding, usually within 10–20 minutes. See
 [the daily brief service](../../../../docs/daily-brief-service.md) for retry
-behavior, credentials and troubleshooting. The steps below describe a manual
+behavior, credentials and troubleshooting. The steps below describe a hand-written
 edition.
 
 1. Read the latest published edition from

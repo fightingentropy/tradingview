@@ -14,12 +14,10 @@
   "workflows": [
     { "name": "tradingview-daily-brief", "binding": "DAILY_BRIEF_WORKFLOW", "class_name": "DailyBriefWorkflow" }
   ],
-  // Hourly, so 08:00 Europe/London is hit in both GMT and BST.
-  "triggers": { "crons": ["0 * * * *"] },
   "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
   "limits": { "cpu_ms": 300000 },
   "secrets": {
-    "required": ["ANTHROPIC_API_KEY"]
+    "required": ["ANTHROPIC_API_KEY", "APP_ACCESS_TOKEN"]
   },
   "routes": [
     { "pattern": "trade.erlin.org", "custom_domain": true }

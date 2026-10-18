@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DailyBriefContent, openBriefSource } from '@/components/DailyBriefContent';
 import { AppText } from '@/components/ui/AppText';
 import { Colors } from '@/constants/theme';
+import { useBriefRun } from '@/data/useBriefRun';
 import { useDailyBrief } from '@/data/useDailyBrief';
-import { DAILY_BRIEF_URL } from '@/providers/briefs/client';
+import { DAILY_BRIEF_URL, canRunBrief } from '@/providers/briefs/client';
 import { editionStatus, formatBriefDate } from '@tradingview/shared/brief';
 
 export function DailyBriefReader() {
@@ -18,6 +19,16 @@ export function DailyBriefReader() {
   const scroller = useRef<ScrollView>(null);
   const sectionPositions = useRef<Record<string, number>>({});
   const insets = useSafeAreaInsets();
+  const onRunComplete = useCallback(() => { void refresh(); }, [refresh]);
+  const briefRun = useBriefRun(onRunComplete);
+  const confirmRun = () => Alert.alert(
+    'Run a fresh brief?',
+    'Claude researches and publishes a new brief in about 10–20 minutes. It replaces today’s edition and costs about $1–3.',
+    [{ text: 'Cancel', style: 'cancel' }, { text: 'Run brief', onPress: briefRun.start }],
+  );
+  const runClock = briefRun.run?.startedAt
+    ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(briefRun.run.startedAt))
+    : undefined;
   useEffect(() => {
     scroller.current?.scrollTo({ y: 0, animated: false });
   }, [brief?.id]);
@@ -52,7 +63,16 @@ export function DailyBriefReader() {
         <Pressable accessibilityRole="button" accessibilityLabel="Share this brief" onPress={() => void share()} style={styles.iconButton}>
           <Ionicons name="share-outline" size={21} color={Colors.textMuted} />
         </Pressable>
+        {canRunBrief && <Pressable accessibilityRole="button" accessibilityLabel="Run a fresh brief now" accessibilityState={{ busy: briefRun.active, disabled: briefRun.active }} disabled={briefRun.active} onPress={confirmRun} style={styles.iconButton}>
+          {briefRun.active ? <ActivityIndicator color={Colors.accent} /> : <Ionicons name="refresh-circle-outline" size={23} color={Colors.textMuted} />}
+        </Pressable>}
       </View>
+
+      {canRunBrief && (briefRun.active || briefRun.error || briefRun.run?.status === 'errored') && <View style={styles.notice}><AppText style={styles.noticeText}>
+        {briefRun.error ?? (briefRun.active
+          ? `Researching a fresh brief since ${runClock ?? 'now'} (London). It replaces today’s edition when done.`
+          : `The last run failed${briefRun.run?.error ? `: ${briefRun.run.error}` : '.'} Run it again to retry.`)}
+      </AppText></View>}
 
       <View style={styles.editionBar}>
         <AppText style={styles.dateText}>{formatBriefDate(brief.id, 'short')}</AppText>

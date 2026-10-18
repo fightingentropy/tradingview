@@ -1,5 +1,5 @@
 import webApp from './web-app.mjs';
-import { scheduleDailyBrief, type DailyBriefEnv } from './daily-brief';
+import { handleDailyBriefRunRequest, type DailyBriefEnv } from './daily-brief';
 
 export { DailyBriefWorkflow } from './daily-brief-workflow';
 
@@ -8,9 +8,9 @@ interface WebEnv extends DailyBriefEnv {
 }
 
 export default {
-  fetch: webApp.fetch,
-  async scheduled(controller, env): Promise<void> {
-    const result = await scheduleDailyBrief(env, new Date(controller.scheduledTime));
-    console.log(JSON.stringify({ event: 'daily_brief_schedule', result }));
+  async fetch(request, env): Promise<Response> {
+    // The daily brief runs only on demand: the iPhone app or the admin-only Convex action starts it.
+    if (new URL(request.url).pathname === '/api/daily-briefs/run') return handleDailyBriefRunRequest(request, env);
+    return webApp.fetch(request, env);
   },
 } satisfies ExportedHandler<WebEnv>;

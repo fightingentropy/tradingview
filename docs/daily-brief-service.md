@@ -1,20 +1,33 @@
 # Daily brief service
 
 The brief is researched and published by the `tradingview-web` Worker on
-Cloudflare with the Claude API. Neither the Mac mini nor the laptop needs to be
-on for it; the Mac mini only keeps feeding the news relay that the brief reads.
+Cloudflare with the Claude API. It runs only when you press a run button
+(see below); nothing needs to be on but the Oracle VM, which feeds the news relay
+the brief reads.
 
-## Schedule and failure handling
+## Running a brief (on demand only)
 
-- An hourly cron (`0 * * * *`) checks the Europe/London clock. From 08:00 London,
-  including weekends and daylight-saving changes, it starts one Cloudflare
-  Workflow instance named `daily-brief-YYYY-MM-DD`. Later cron ticks see that
-  instance and leave it alone.
-- An edition already in the public index for the London date is never
-  regenerated or overwritten.
-- The research step retries after 30, 60, then 120 minutes: four attempts per
-  day. Each attempt has a 45-minute limit. The last published edition stays
-  online until a new one is published.
+The brief no longer runs on a schedule. Start one when you want it:
+
+- **Website:** signed in as an admin, press **Run brief now** on
+  trade.erlin.org/brief. The button calls the admin-only Convex action
+  `brief:runDailyBrief`, which presents `BRIEF_RUN_TOKEN` (set in the Convex
+  production deployment) to the Worker. The token never reaches the browser.
+- **iPhone:** the refresh button in the Daily brief header asks for confirmation,
+  then starts a run with the relay access token the app already carries.
+
+Both call `POST /api/daily-briefs/run` on the `tradingview-web` Worker, which
+accepts only the relay access token (`APP_ACCESS_TOKEN`). `GET` on the same path
+reports the latest run and its Workflow status, and both buttons poll it every
+15 seconds and load the new edition when the run completes.
+
+- Each press starts one Workflow instance named `daily-brief-YYYY-MM-DD-HHMMSS`
+  (London time). A press while a run is still in progress returns that run (409).
+- A run replaces the edition already published for the same London day, and
+  Claude compares against it. Earlier days' editions are never overwritten.
+- Research gets one quick retry after a minute; each attempt has a 45-minute
+  limit. After a failure, press the button again. The last published edition
+  stays online until a new one is published.
 - Completed Workflow steps are durable. A publication failure retries the exact
   validated edition (up to six times, with exponential backoff from one minute)
   without paying for research again.
@@ -58,7 +71,13 @@ security add-generic-password -U -s com.erlinhoxha.tradingview.anthropic -a api-
 ```
 
 `npm run web:deploy` and `npm run relay:deploy` read it from Keychain and upload
-it with the Worker version. Writes to `DAILY_BRIEFS` go through the Worker's KV
+it with the Worker version. `npm run web:deploy` also uploads the relay access
+token from Keychain as `APP_ACCESS_TOKEN`, which authorizes brief runs. Set the
+same token in Convex once, without printing it:
+
+```sh
+security find-generic-password -s com.erlinhoxha.tradingview.news-relay -a app-access-token -w | (cd web && bun x convex env set BRIEF_RUN_TOKEN --prod)
+``` Writes to `DAILY_BRIEFS` go through the Worker's KV
 binding; no Wrangler sign-in or write endpoint is involved.
 
 `web/scripts/publish-daily-brief.ts` remains for manual publication and the first

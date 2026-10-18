@@ -11,6 +11,7 @@
 import type * as admin from "../admin.js";
 import type * as auth from "../auth.js";
 import type * as authData from "../authData.js";
+import type * as brief from "../brief.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as jwks from "../jwks.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   auth: typeof auth;
   authData: typeof authData;
+  brief: typeof brief;
   crons: typeof crons;
   http: typeof http;
   jwks: typeof jwks;
