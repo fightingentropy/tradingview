@@ -7,6 +7,7 @@ import { build } from 'esbuild';
 
 // Ships the news bridge and price-alert monitor to the Linux VM: only the files
 // they import, their npm packages at the lockfile versions, and the systemd units.
+// Bun installs the packages and runs both services.
 const ENTRIES = ['scripts/news-feed-server.mjs', 'scripts/price-alert-monitor.mjs'];
 const args = process.argv.slice(2);
 const start = !args.includes('--no-start');
@@ -46,11 +47,11 @@ try {
   }, null, 2)}\n`);
   const archive = execFileSync('/usr/bin/tar', ['-czf', '-', '-C', staging, '.']);
   const remote = [
-    'set -e', 'R="$HOME/tradingview-services"',
+    'set -e', 'R="$HOME/tradingview-services"', 'BUN="$HOME/.bun/bin/bun"',
     'rm -rf "$R.next" && mkdir -p "$R.next" && tar -xzf - -C "$R.next"',
-    'cd "$R.next" && npm install --omit=dev --no-audit --no-fund --loglevel=error',
+    'cd "$R.next" && "$BUN" install --production --no-progress',
     'rm -rf "$R.previous" && if [ -d "$R" ]; then mv "$R" "$R.previous"; fi && mv "$R.next" "$R"',
-    `node "$R/scripts/linux-services.mjs" install${start ? '' : ' --no-start'}`,
+    `"$BUN" "$R/scripts/linux-services.mjs" install${start ? '' : ' --no-start'}`,
   ].join('\n');
   execFileSync('ssh', ['-o', 'BatchMode=yes', host, remote], { input: archive, stdio: ['pipe', 'inherit', 'inherit'] });
   console.log(`Deployed ${files.size} files and ${Object.keys(dependencies).join(', ')} to ${host}:~/tradingview-services.`);

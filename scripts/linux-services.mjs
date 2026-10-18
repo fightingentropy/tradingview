@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Runs on the Linux VM from the deployed services directory. Installs the news
-// bridge and price-alert monitor as systemd units for the deploying user.
+// bridge and price-alert monitor as systemd units for the deploying user, run by Bun.
 const SERVICES = {
   'tradingview-news': {
     description: 'TradingView news bridge (X, Telegram, Digg, Paste)',
@@ -23,8 +23,7 @@ const user = os.userInfo();
 const directory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sudo = (args, stdio = 'inherit') => execFileSync('/usr/bin/sudo', ['-n', ...args], { stdio });
 const units = Object.keys(SERVICES).map((name) => `${name}.service`);
-// The stable symlink survives Node upgrades; the versioned path would not.
-const node = existsSync('/usr/local/bin/node') ? '/usr/local/bin/node' : process.execPath;
+const bun = path.join(user.homedir, '.bun', 'bin', 'bun');
 
 function curlImpersonate() {
   const root = path.join(user.homedir, '.local', 'opt');
@@ -38,7 +37,7 @@ function curlImpersonate() {
 function unitFile({ description, entry, environment }) {
   const values = {
     HOME: user.homedir,
-    PATH: `${path.join(user.homedir, '.local', 'bin')}:/usr/local/bin:/usr/bin:/bin`,
+    PATH: `${path.join(user.homedir, '.local', 'bin')}:${path.dirname(bun)}:/usr/local/bin:/usr/bin:/bin`,
     ...(curlImpersonate() ? { CURL_IMPERSONATE_PATH: curlImpersonate() } : {}),
     ...environment,
   };
@@ -51,7 +50,7 @@ Wants=network-online.target
 User=${user.username}
 WorkingDirectory=${directory}
 ${Object.entries(values).map(([key, value]) => `Environment=${key}=${value}`).join('\n')}
-ExecStart=${node} --disable-warning=MODULE_TYPELESS_PACKAGE_JSON ${entry}
+ExecStart=${bun} ${entry}
 Restart=always
 RestartSec=10
 
@@ -61,6 +60,7 @@ WantedBy=multi-user.target
 }
 
 if (process.platform !== 'linux' || user.uid === 0) throw new Error('Run on the Linux VM as the service user with sudo access.');
+if (!existsSync(bun)) throw new Error(`Bun is not installed at ${bun}.`);
 if (action === 'install') {
   const staging = mkdtempSync(path.join(os.tmpdir(), 'tradingview-units-'));
   try {

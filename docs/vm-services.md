@@ -1,7 +1,8 @@
 # Oracle VM services
 
 The news bridge and the price-alert monitor run on the Oracle VM
-(`oracle-free-01`, Ubuntu 24.04 on arm64) as the `ubuntu` user. They need a
+(`oracle-free-01`, Ubuntu 24.04 on arm64) as the `ubuntu` user, run by Bun 1.3.10
+(`~/.bun/bin/bun`, the same version as `web/.bun-version`). They need a
 logged-in X session and a long-lived Hyperliquid connection, which Cloudflare
 Workers cannot hold. The AI steps (news pulse and daily brief) run on Cloudflare;
 see [the daily brief service](daily-brief-service.md).
@@ -16,17 +17,18 @@ see [the daily brief service](daily-brief-service.md).
 From this repository on the laptop:
 
 ```sh
-node scripts/vm-deploy.mjs oracle
+bun scripts/vm-deploy.mjs oracle
 ```
 
 The script uses esbuild to find the files the two services import, ships only
 those plus a `package.json` with their npm packages at the lockfile versions,
-runs `npm install` on the VM and installs and restarts both units. The previous
+runs `bun install --production` on the VM and installs and restarts both units.
+Bun blocks the `es5-ext` postinstall script, which only prints a message. The previous
 release stays at `~/tradingview-services.previous`; to roll back, move it back to
-`~/tradingview-services` and run `node ~/tradingview-services/scripts/linux-services.mjs start`.
+`~/tradingview-services` and run `~/.bun/bin/bun ~/tradingview-services/scripts/linux-services.mjs start`.
 Pass `--no-start` to install without restarting.
 
-On the VM, `node ~/tradingview-services/scripts/linux-services.mjs status|start|stop`
+On the VM, `~/.bun/bin/bun ~/tradingview-services/scripts/linux-services.mjs status|start|stop`
 manages both units. Logs: `journalctl -u tradingview-news -u tradingview-price-alerts`.
 
 ## Credentials and state
