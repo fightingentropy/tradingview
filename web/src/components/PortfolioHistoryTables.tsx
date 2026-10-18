@@ -23,7 +23,7 @@ const emptyMessage = (label: string) => {
 const PortfolioNotice: Component = () => (
   <Show when={hyperliquidPortfolioRefreshError()}>
     {(message) => (
-      <div class="border-t border-brand-border px-3 py-2 text-xs text-brand-red-400">
+      <div class="border-t border-brand-hairline px-5 py-3 text-[13px] text-brand-red-400">
         {message()}
       </div>
     )}
@@ -35,9 +35,25 @@ const formatTokenAmount = (amount: number, asset: string, signed = false) => {
   return `${sign}${formatAccountSize(Math.abs(amount))} ${asset}`;
 };
 
+const ExportFooter: Component<{ disabled: boolean; onExport: () => void }> = (
+  props,
+) => (
+  <div class="flex justify-end border-t border-brand-hairline px-3 py-1.5">
+    <button
+      type="button"
+      class="pf-ghost"
+      disabled={props.disabled}
+      onClick={props.onExport}
+    >
+      Export CSV
+    </button>
+  </div>
+);
+
 export const InterestHistoryTable: Component = () => {
   const rows = hyperliquidInterestPayments;
   const columns = ["Time", "Asset", "Paid", "Earned"];
+  const numeric = new Set(["Paid", "Earned"]);
   const exportCsv = () =>
     downloadAccountCsv(
       `trade-xyz-interest-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -52,14 +68,12 @@ export const InterestHistoryTable: Component = () => {
 
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[680px]">
+      <table class="pf-table min-w-[560px]">
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(column) => (
-                <th class="whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium text-brand-slate-400">
-                  {column}
-                </th>
+                <th classList={{ "pf-num": numeric.has(column) }}>{column}</th>
               )}
             </For>
           </tr>
@@ -69,7 +83,7 @@ export const InterestHistoryTable: Component = () => {
             when={rows().length > 0}
             fallback={
               <tr>
-                <td class="px-3 py-3 text-sm text-brand-slate-400" colSpan={4}>
+                <td class="pf-empty" colSpan={4}>
                   {emptyMessage("Interest history")}
                 </td>
               </tr>
@@ -77,19 +91,19 @@ export const InterestHistoryTable: Component = () => {
           >
             <For each={rows()}>
               {(payment) => (
-                <tr class="border-b border-brand-border/40">
-                  <td class="whitespace-nowrap px-3 py-2 font-mono text-sm text-brand-slate-400">
+                <tr>
+                  <td class="whitespace-nowrap font-mono text-brand-slate-400">
                     {formatAccountTime(payment.time)}
                   </td>
-                  <td class="px-3 py-2 text-sm font-semibold">
+                  <td class="font-medium text-brand-slate-100">
                     {payment.asset}
                   </td>
-                  <td class="px-3 py-2 font-mono text-sm text-brand-red-400">
+                  <td class="pf-num font-mono text-brand-red-400">
                     {payment.paid > 0
                       ? formatTokenAmount(payment.paid, payment.asset)
                       : "--"}
                   </td>
-                  <td class="px-3 py-2 font-mono text-sm text-brand-green-400">
+                  <td class="pf-num font-mono text-brand-green-400">
                     {payment.earned > 0
                       ? formatTokenAmount(payment.earned, payment.asset)
                       : "--"}
@@ -100,16 +114,7 @@ export const InterestHistoryTable: Component = () => {
           </Show>
         </tbody>
       </table>
-      <div class="flex justify-end border-t border-brand-border px-3 py-2">
-        <button
-          type="button"
-          class="text-xs font-medium text-brand-slate-300 hover:text-slate-100 disabled:opacity-50"
-          disabled={rows().length === 0}
-          onClick={exportCsv}
-        >
-          Export CSV
-        </button>
-      </div>
+      <ExportFooter disabled={rows().length === 0} onExport={exportCsv} />
       <Show when={rows().length > 0}>
         <PortfolioNotice />
       </Show>
@@ -128,6 +133,7 @@ export const TransfersHistoryTable: Component = () => {
     "Account Value Change",
     "Fee",
   ];
+  const numeric = new Set(["Account Value Change", "Fee"]);
   const exportCsv = () =>
     downloadAccountCsv(
       `trade-xyz-transfers-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -145,14 +151,12 @@ export const TransfersHistoryTable: Component = () => {
 
   return (
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[1120px]">
+      <table class="pf-table min-w-[1040px]">
         <thead>
-          <tr class="border-b border-brand-border">
+          <tr>
             <For each={columns}>
               {(column) => (
-                <th class="whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium text-brand-slate-400">
-                  {column}
-                </th>
+                <th classList={{ "pf-num": numeric.has(column) }}>{column}</th>
               )}
             </For>
           </tr>
@@ -162,7 +166,7 @@ export const TransfersHistoryTable: Component = () => {
             when={rows().length > 0}
             fallback={
               <tr>
-                <td class="px-3 py-3 text-sm text-brand-slate-400" colSpan={7}>
+                <td class="pf-empty" colSpan={7}>
                   {emptyMessage("Deposits and withdrawals")}
                 </td>
               </tr>
@@ -170,24 +174,22 @@ export const TransfersHistoryTable: Component = () => {
           >
             <For each={rows()}>
               {(transfer) => (
-                <tr class="border-b border-brand-border/40">
-                  <td class="whitespace-nowrap px-3 py-2 font-mono text-sm text-brand-slate-400">
+                <tr>
+                  <td class="whitespace-nowrap font-mono text-brand-slate-400">
                     {formatAccountTime(transfer.time)}
                   </td>
-                  <td class="px-3 py-2 text-sm text-brand-green-400">
-                    {transfer.status}
-                  </td>
-                  <td class="px-3 py-2 text-sm font-medium">
+                  <td class="text-brand-green-400">{transfer.status}</td>
+                  <td class="font-medium text-brand-slate-100">
                     {transfer.action}
                   </td>
-                  <td class="px-3 py-2 font-mono text-sm text-brand-slate-300">
+                  <td class="font-mono text-brand-slate-400">
                     {transfer.source}
                   </td>
-                  <td class="px-3 py-2 font-mono text-sm text-brand-slate-300">
+                  <td class="font-mono text-brand-slate-400">
                     {transfer.destination}
                   </td>
                   <td
-                    class={`px-3 py-2 font-mono text-sm ${
+                    class={`pf-num font-mono ${
                       transfer.amount >= 0
                         ? "text-brand-green-400"
                         : "text-brand-red-400"
@@ -199,7 +201,7 @@ export const TransfersHistoryTable: Component = () => {
                       true,
                     )}
                   </td>
-                  <td class="px-3 py-2 font-mono text-sm text-brand-slate-300">
+                  <td class="pf-num font-mono text-brand-slate-400">
                     {transfer.fee && transfer.fee > 0
                       ? formatTokenAmount(
                           transfer.fee,
@@ -213,16 +215,7 @@ export const TransfersHistoryTable: Component = () => {
           </Show>
         </tbody>
       </table>
-      <div class="flex justify-end border-t border-brand-border px-3 py-2">
-        <button
-          type="button"
-          class="text-xs font-medium text-brand-slate-300 hover:text-slate-100 disabled:opacity-50"
-          disabled={rows().length === 0}
-          onClick={exportCsv}
-        >
-          Export CSV
-        </button>
-      </div>
+      <ExportFooter disabled={rows().length === 0} onExport={exportCsv} />
       <Show when={rows().length > 0}>
         <PortfolioNotice />
       </Show>

@@ -1,4 +1,5 @@
 import { usePageActive } from "./PageView";
+import "./Portfolio.css";
 import {
   Component,
   For,
@@ -158,28 +159,29 @@ const Portfolio: Component = () => {
   );
 
   return (
-    <div class="h-full overflow-y-auto bg-brand-screen text-slate-200">
-      <main class="mx-auto w-full max-w-[1600px] px-4 py-5 lg:px-6">
-        <header class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 class="text-2xl font-semibold tracking-tight text-slate-100">
+    <div class="h-full overflow-y-auto bg-brand-screen text-brand-slate-100">
+      <main class="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
+        <header class="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
+          <div class="min-w-0">
+            <h1 class="text-[28px] font-semibold leading-tight tracking-[-0.02em] text-brand-slate-100 sm:text-[32px]">
               Portfolio
             </h1>
             <Show
               when={connection()?.masterAddress}
               fallback={
-                <p class="mt-2 text-sm text-brand-slate-400">Paper account</p>
+                <p class="mt-1 text-[15px] text-brand-slate-400">Paper account</p>
               }
             >
               {(address) => (
-                <div class="mt-2 flex items-center gap-2 text-sm">
-                  <span class="font-medium text-slate-200">Master:</span>
-                  <span class="font-mono text-brand-slate-300">
+                <div class="mt-1 flex items-center gap-1.5 text-[15px]">
+                  <span class="text-brand-slate-500">Master</span>
+                  <span class="font-mono text-brand-slate-100">
                     {shortAddress(address())}
                   </span>
                   <button
                     type="button"
-                    class="text-brand-slate-400 hover:text-brand-accent"
+                    class="-my-1.5 grid h-11 w-11 place-items-center rounded-full text-brand-slate-500 transition-colors duration-150 ease-[var(--ease-out)] motion-reduce:transition-none hover:bg-brand-raised hover:text-brand-slate-100 sm:h-9 sm:w-9"
+                    classList={{ "text-brand-accent": copied() }}
                     aria-label="Copy master address"
                     title={copied() ? "Copied" : "Copy address"}
                     onClick={() => void copyMasterAddress()}
@@ -190,9 +192,20 @@ const Portfolio: Component = () => {
                       fill="none"
                       stroke="currentColor"
                       stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
                     >
-                      <rect x="8" y="8" width="11" height="11" rx="2" />
-                      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+                      <Show
+                        when={copied()}
+                        fallback={
+                          <>
+                            <rect x="8" y="8" width="11" height="11" rx="2" />
+                            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+                          </>
+                        }
+                      >
+                        <path d="m5 12.5 4.5 4.5L19 7.5" />
+                      </Show>
                     </svg>
                   </button>
                 </div>
@@ -201,11 +214,7 @@ const Portfolio: Component = () => {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="rounded-full border border-brand-border bg-brand-surface px-3.5 py-2 text-sm font-medium text-slate-200 hover:border-brand-slate-500"
-              onClick={openSettings}
-            >
+            <button type="button" class="pf-btn" onClick={openSettings}>
               Account Type
             </button>
             <Show when={liveMode()}>
@@ -216,7 +225,7 @@ const Portfolio: Component = () => {
                     target="_blank"
                     rel="noreferrer"
                     title="Opens Hyperliquid"
-                    class="rounded-full border border-brand-border bg-brand-surface px-3.5 py-2 text-sm font-medium text-slate-200 hover:border-brand-slate-500"
+                    class="pf-btn"
                   >
                     {label}
                   </a>
@@ -227,7 +236,7 @@ const Portfolio: Component = () => {
                 target="_blank"
                 rel="noreferrer"
                 title="Opens Hyperliquid"
-                class="rounded-full border border-brand-accent bg-brand-accent px-4 py-2 text-sm font-semibold text-brand-screen hover:bg-brand-accent/90"
+                class="pf-btn pf-btn-primary"
               >
                 Deposit
               </a>
@@ -235,49 +244,7 @@ const Portfolio: Component = () => {
           </div>
         </header>
 
-        <section class="grid gap-2 lg:grid-cols-[240px_350px_minmax(0,1fr)]">
-          <div class="order-3 grid gap-2 lg:order-none">
-            <div class="rounded-lg border border-brand-border bg-brand-surface p-4">
-              <div class="text-sm text-brand-slate-400">
-                {liveMode() ? "14 Day Volume" : "Paper Volume"}
-              </div>
-              <div class="mt-3 text-3xl font-medium tracking-tight text-slate-100">
-                {formatCompactUsd(
-                  liveMode() ? feeSummary()?.volume14d : metrics()?.volume,
-                )}
-              </div>
-            </div>
-
-            <div class="rounded-lg border border-brand-border bg-brand-surface p-4">
-              <div class="flex items-center justify-between text-sm text-brand-slate-400">
-                <span>Fees</span>
-                <span>Taker / Maker</span>
-              </div>
-              <div class="mt-4 space-y-3">
-                <FeeRow
-                  label="Perps"
-                  value={
-                    feeSummary()
-                      ? `${formatRate(feeSummary()?.perpTakerRate)} / ${formatRate(
-                          feeSummary()?.perpMakerRate,
-                        )}`
-                      : "-- / --"
-                  }
-                />
-                <FeeRow
-                  label="Spot"
-                  value={
-                    feeSummary()
-                      ? `${formatRate(feeSummary()?.spotTakerRate)} / ${formatRate(
-                          feeSummary()?.spotMakerRate,
-                        )}`
-                      : "-- / --"
-                  }
-                />
-              </div>
-            </div>
-          </div>
-
+        <section class="pf-overview">
           <PortfolioPerformance
             live={liveMode()}
             active={pageActive()}
@@ -287,33 +254,65 @@ const Portfolio: Component = () => {
             paperEquity={metrics()}
             loading={liveMode() && hyperliquidPortfolioRefreshPending()}
           />
+
+          <div class="pf-side pf-card">
+            <div>
+              <div class="pf-label">
+                {liveMode() ? "14 Day Volume" : "Paper Volume"}
+              </div>
+              <div class="pf-figure">
+                {formatCompactUsd(
+                  liveMode() ? feeSummary()?.volume14d : metrics()?.volume,
+                )}
+              </div>
+            </div>
+
+            <div class="pf-side-head">
+              <span>Fees</span>
+              <span>Taker / Maker</span>
+            </div>
+            <FeeRow
+              label="Perps"
+              value={
+                feeSummary()
+                  ? `${formatRate(feeSummary()?.perpTakerRate)} / ${formatRate(
+                      feeSummary()?.perpMakerRate,
+                    )}`
+                  : "-- / --"
+              }
+            />
+            <FeeRow
+              label="Spot"
+              value={
+                feeSummary()
+                  ? `${formatRate(feeSummary()?.spotTakerRate)} / ${formatRate(
+                      feeSummary()?.spotMakerRate,
+                    )}`
+                  : "-- / --"
+              }
+            />
+          </div>
         </section>
 
         <Show when={hyperliquidPortfolioRefreshError()}>
           {(message) => (
-            <p class="mt-2 text-xs text-brand-red-400">{message()}</p>
+            <p class="mt-3 text-[13px] text-brand-red-400">{message()}</p>
           )}
         </Show>
 
-        <section class="mt-2 overflow-hidden rounded-lg border border-brand-border bg-brand-surface">
+        <section class="pf-card mt-3 overflow-hidden">
           <div class="flex items-center border-b border-brand-border">
-            <div class="flex min-w-0 flex-1 items-center overflow-x-auto">
+            <div class="pf-tabs">
               <For each={PORTFOLIO_TABS}>
                 {(tab) => (
                   <button
                     type="button"
-                    class={`whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium ${
-                      activeTab() === tab.id
-                        ? "border-brand-accent text-slate-100"
-                        : "border-transparent text-brand-slate-400 hover:text-slate-200"
-                    }`}
+                    aria-pressed={activeTab() === tab.id}
                     onClick={() => setActiveTab(tab.id)}
                   >
                     {tab.label}
                     <Show when={tabCountFor(tab.id) > 0}>
-                      <span class="ml-1 text-xs text-brand-slate-500">
-                        ({tabCountFor(tab.id)})
-                      </span>
+                      <span class="pf-count">{tabCountFor(tab.id)}</span>
                     </Show>
                   </button>
                 )}
@@ -386,9 +385,13 @@ const Portfolio: Component = () => {
 };
 
 const FeeRow: Component<{ label: string; value: string }> = (props) => (
-  <div class="flex items-center justify-between gap-3 text-sm">
-    <span class="text-brand-slate-400">{props.label}</span>
-    <span class="font-mono text-slate-100">{props.value}</span>
+  <div class="pf-fee">
+    <span class="pf-fee-label">
+      {props.label}
+      <span class="pf-fee-suffix"> fees</span>
+    </span>
+    <span class="pf-fee-value font-mono">{props.value}</span>
+    <span class="pf-fee-caption">Taker / Maker</span>
   </div>
 );
 
