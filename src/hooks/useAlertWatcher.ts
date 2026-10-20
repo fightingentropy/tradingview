@@ -12,7 +12,7 @@ import { useLivePrices } from '@/store/livePrices';
 import { usePreferences } from '@/store/preferences';
 
 /**
- * Foreground-only alerts when remote monitoring is off. The Mac mini is the sole
+ * Foreground-only alerts when remote monitoring is off. The alert server is the sole
  * trigger authority while notifications are enabled, avoiding duplicate dispatch.
  */
 export function AlertWatcher() {

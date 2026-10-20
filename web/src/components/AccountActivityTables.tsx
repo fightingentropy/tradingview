@@ -177,44 +177,6 @@ const TwapTable: Component<ActivityTableProps> = (props) => {
   );
 };
 
-const ChaseTable: Component<ActivityTableProps> = (props) => {
-  const columns = [
-    "Market",
-    "Size",
-    "Executed Size",
-    "Average Price",
-    "Max Distance",
-    "% Completed",
-    "Reduce Only",
-    "Creation Time",
-    "Terminate",
-  ];
-  const numericColumns = new Set(["Size", "Executed Size", "Average Price", "Max Distance", "% Completed"]);
-  return (
-    <div class="overflow-x-auto">
-      <table class={tableClass("min-w-[1040px]", props.compact)}>
-        <thead>
-          <tr>
-            <For each={columns}>
-              {(column) => (
-                <th class={numericColumns.has(column) ? "num" : undefined}>
-                  {column}
-                </th>
-              )}
-            </For>
-          </tr>
-        </thead>
-        <tbody>
-          <TableEmptyRow
-            columns={columns.length}
-            label="Chase orders"
-          />
-        </tbody>
-      </table>
-    </div>
-  );
-};
-
 const FundingHistoryTable: Component<ActivityTableProps> = (props) => {
   const columns = [
     "Time",
@@ -427,4 +389,4 @@ const OrderHistoryTable: Component<ActivityTableProps> = (props) => {
   );
 };
 
-export { ChaseTable, FundingHistoryTable, OrderHistoryTable, TwapTable };
+export { FundingHistoryTable, OrderHistoryTable, TwapTable };

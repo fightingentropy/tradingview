@@ -66,14 +66,14 @@ test('distinguishes offline monitor, unapplied rules and stale individual price 
   const now = rule.createdAt;
   const monitor = { seenAt: now, lastHyperliquidAt: now, lastCboeAt: now, connected: true, pendingEvents: 0, version: '1' };
   const result = { now, enabled: true, revision: 2, monitorRevision: 2, monitor, events: [] };
-  assert.equal(priceMonitorLabel(result, ['hyperliquid'], now), 'Monitoring on Mac mini');
-  assert.equal(priceMonitorLabel({ ...result, monitor: null }, ['hyperliquid'], now), 'Mac mini is offline');
-  assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, seenAt: now - 60_001 } }, ['hyperliquid'], now), 'Mac mini is offline');
-  assert.equal(priceMonitorLabel({ ...result, monitorRevision: 1 }, ['hyperliquid'], now), 'Waiting for Mac mini to sync');
-  assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, lastHyperliquidAt: now - 45_001 } }, ['hyperliquid'], now), 'Mac mini is reconnecting to prices');
-  assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, connected: false } }, ['hyperliquid'], now), 'Mac mini is reconnecting to prices');
+  assert.equal(priceMonitorLabel(result, ['hyperliquid'], now), 'Monitoring in the cloud');
+  assert.equal(priceMonitorLabel({ ...result, monitor: null }, ['hyperliquid'], now), 'Alert server is offline');
+  assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, seenAt: now - 60_001 } }, ['hyperliquid'], now), 'Alert server is offline');
+  assert.equal(priceMonitorLabel({ ...result, monitorRevision: 1 }, ['hyperliquid'], now), 'Waiting for the alert server to sync');
+  assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, lastHyperliquidAt: now - 45_001 } }, ['hyperliquid'], now), 'Alert server is reconnecting to prices');
+  assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, connected: false } }, ['hyperliquid'], now), 'Alert server is reconnecting to prices');
   assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, lastCboeAt: now - 150_001 } }, ['cboe'], now), 'Cboe quotes are unavailable');
-  assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, connected: false } }, ['cboe'], now), 'Monitoring on Mac mini · Cboe delayed');
+  assert.equal(priceMonitorLabel({ ...result, monitor: { ...monitor, connected: false } }, ['cboe'], now), 'Monitoring in the cloud · Cboe delayed');
 });
 
 test('keeps push acceptance distinct from final receipt status', () => {

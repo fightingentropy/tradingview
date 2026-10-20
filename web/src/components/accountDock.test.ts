@@ -16,7 +16,6 @@ describe("account dock structure", () => {
       "Positions",
       "Open Orders",
       "TWAP",
-      "Chase",
       "Trade History",
       "Funding History",
       "Order History",
@@ -42,8 +41,6 @@ describe("account dock structure", () => {
   test("shows only filters that apply to each table", () => {
     expect(accountTabHasSideFilter("balances")).toBe(false);
     expect(accountTabHasMarketFilter("balances")).toBe(false);
-    expect(accountTabHasSideFilter("chase")).toBe(false);
-    expect(accountTabHasMarketFilter("chase")).toBe(true);
   });
 
   test("removes builder DEX prefixes from display markets", () => {

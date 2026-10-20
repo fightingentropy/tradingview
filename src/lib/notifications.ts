@@ -1,5 +1,5 @@
 /**
- * Shared iOS presentation and permission handling for news and Mac mini price alerts.
+ * Shared iOS presentation and permission handling for news and remote price alerts.
  */
 import * as Notifications from 'expo-notifications';
 

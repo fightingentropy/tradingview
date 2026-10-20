@@ -32,7 +32,6 @@ import { openOrders, positions } from "../stores/clob";
 import { portfolioMetrics, tradeHistory } from "../stores/portfolio";
 import { openSettings } from "../stores/settings";
 import {
-  ChaseTable,
   FundingHistoryTable,
   OrderHistoryTable,
   TwapTable,
@@ -350,9 +349,6 @@ const Portfolio: Component = () => {
               sideFilter={sideFilter()}
               marketFilter={marketFilter()}
             />
-          </Show>
-          <Show when={activeTab() === "chase"}>
-            <ChaseTable marketFilter={marketFilter()} />
           </Show>
           <Show when={activeTab() === "tradeHistory"}>
             <TradeHistoryTable

@@ -39,11 +39,6 @@ const TwapTable = lazy(() =>
     default: module.TwapTable,
   })),
 );
-const ChaseTable = lazy(() =>
-  import("./AccountActivityTables").then((module) => ({
-    default: module.ChaseTable,
-  })),
-);
 const FundingHistoryTable = lazy(() =>
   import("./AccountActivityTables").then((module) => ({
     default: module.FundingHistoryTable,
@@ -260,9 +255,6 @@ const TradePanel: Component = () => {
               sideFilter={sideFilter()}
               marketFilter={marketFilter()}
             />
-          </Show>
-          <Show when={activeTab() === "chase"}>
-            <ChaseTable compact marketFilter={marketFilter()} />
           </Show>
           <Show when={activeTab() === "tradeHistory"}>
             <TradeHistoryTable

@@ -1,4 +1,4 @@
-/** Wire contract shared by the phone, relay and the Mac mini price monitor. */
+/** Wire contract shared by the phone, relay and the price-alert monitor. */
 export interface RemotePriceRule {
   id: string;
   instrumentId: string;
@@ -114,12 +114,12 @@ export function priceAlertDeliveryLabel(state: PriceDeliveryState): string {
 export function priceMonitorLabel(result: PriceAlertSyncResult | null, sources: readonly string[], now = Date.now()): string {
   if (!result?.enabled) return 'Waiting for alert sync';
   const health = result.monitor;
-  if (!health || now - health.seenAt > 60_000) return 'Mac mini is offline';
-  if (result.monitorRevision !== result.revision) return 'Waiting for Mac mini to sync';
+  if (!health || now - health.seenAt > 60_000) return 'Alert server is offline';
+  if (result.monitorRevision !== result.revision) return 'Waiting for the alert server to sync';
   if (sources.includes('hyperliquid') && (!health.connected || !health.lastHyperliquidAt || now - health.lastHyperliquidAt > 45_000)) {
-    return 'Mac mini is reconnecting to prices';
+    return 'Alert server is reconnecting to prices';
   }
-  if (sources.includes('xyz') && (!health.connected || !health.lastXyzAt || now - health.lastXyzAt > 45_000)) return 'Mac mini is reconnecting to trade.xyz';
+  if (sources.includes('xyz') && (!health.connected || !health.lastXyzAt || now - health.lastXyzAt > 45_000)) return 'Alert server is reconnecting to trade.xyz';
   if (sources.includes('cboe') && (!health.lastCboeAt || now - health.lastCboeAt > 150_000)) return 'Cboe quotes are unavailable';
-  return sources.includes('cboe') ? 'Monitoring on Mac mini · Cboe delayed' : 'Monitoring on Mac mini';
+  return sources.includes('cboe') ? 'Monitoring in the cloud · Cboe delayed' : 'Monitoring in the cloud';
 }

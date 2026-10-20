@@ -302,7 +302,7 @@ export default function OutcomesScreen() {
         )}
 
         <AppText variant="caption" muted style={styles.disclaimer}>
-          View only · Probabilities and market data are provided by Hyperliquid.
+          Probabilities and market data are provided by Hyperliquid.
         </AppText>
       </ScrollView>
     </Screen>

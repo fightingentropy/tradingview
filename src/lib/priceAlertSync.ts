@@ -46,7 +46,7 @@ async function request(enabled: boolean, expoPushToken: string, rules: unknown[]
 }
 
 async function token(prompt: boolean): Promise<string> {
-  if (Platform.OS === 'web') throw new Error('Mac mini notifications require the iPhone app.');
+  if (Platform.OS === 'web') throw new Error('Price alert notifications require the iPhone app.');
   const allowed = prompt ? await ensureNotificationPermission() : await hasNotificationPermission();
   if (!allowed) throw new Error('Enable TradingView notifications in iOS Settings to receive price alerts.');
   if (currentToken) return currentToken;
@@ -90,7 +90,7 @@ async function sync(force?: boolean): Promise<void> {
     }
     const expoPushToken = await token(force === true);
     // A foreground alert can fire while permission/token acquisition is pending.
-    // Re-read immediately before switching trigger authority to the Mac mini.
+    // Re-read immediately before switching trigger authority to the alert server.
     const markets = queryClient.getQueryData<MarketsData>(queryKeys.instruments());
     const rules = buildRemotePriceRules(useAlerts.getState().alerts, markets?.byId ?? {}, usePreferences.getState().showOutcomeMarkets);
     if (force === true) usePreferences.getState().setAlertNotifications(true);

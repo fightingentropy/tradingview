@@ -45,7 +45,7 @@ interface PreferencesState {
   watchlistSort: SortMode;
   setWatchlistSort: (value: SortMode) => void;
   /**
-   * Monitor price alerts on the Mac mini. Off by default; enabling requests push permission.
+   * Monitor price alerts on the alert server. Off by default; enabling requests push permission.
    */
   alertNotifications: boolean;
   setAlertNotifications: (value: boolean) => void;

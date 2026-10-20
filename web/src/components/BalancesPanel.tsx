@@ -212,13 +212,6 @@ const BalancesPanel: Component<{
                       </a>
                     }
                   >
-                    <button class="text-brand-accent hover:underline">
-                      Send
-                    </button>
-                  </Show>
-                  <Show
-                    when={!isHyperliquidExecution()}
-                  >
                     <button
                       class="text-brand-accent hover:underline"
                       onClick={() => openTransferModal("perpsToSpot")}
@@ -295,9 +288,6 @@ const BalancesPanel: Component<{
                         </a>
                       }
                     >
-                      <button class="text-brand-accent hover:underline">
-                        Send
-                      </button>
                       <button
                         class="text-brand-accent hover:underline"
                         onClick={() => openTransferModal("spotToPerps")}
@@ -402,12 +392,6 @@ const BalancesPanel: Component<{
                             onClick={() => goToTrade(asset.symbol, "spot")}
                           >
                             Buy Spot
-                          </button>
-                          <button class="text-brand-accent hover:underline">
-                            Send
-                          </button>
-                          <button class="text-brand-accent hover:underline">
-                            Transfer to/from EVM
                           </button>
                         </Show>
                       </div>

@@ -175,7 +175,7 @@ export default function SettingsScreen() {
             <View style={styles.rowText}>
               <AppText variant="body">Outcome markets</AppText>
               <AppText variant="caption" muted>
-                Browse predictions. View only.
+                Browse and trade predictions.
               </AppText>
             </View>
             <GlassToggle
@@ -219,7 +219,7 @@ export default function SettingsScreen() {
             <View style={styles.rowText}>
               <AppText variant="body">Price notifications</AppText>
               <AppText variant="caption" muted>
-                Runs on your Mac mini, even when this app is closed.
+                Runs in the cloud, even when this app is closed.
               </AppText>
             </View>
             <GlassToggle
@@ -236,7 +236,7 @@ export default function SettingsScreen() {
               <View style={styles.row}>
                 <View style={styles.rowText}>
                   <AppText variant="caption" muted>
-                    {disablePriceAlertsPending ? 'Alerts may stay active until your Mac mini confirms.' : monitor.error ?? (alertChangesPending
+                    {disablePriceAlertsPending ? 'Alerts may stay active until the alert server confirms.' : monitor.error ?? (alertChangesPending
                       ? 'Previous alerts stay active until changes are saved.'
                       : priceMonitorLabel(monitor.result, monitor.sources))}
                   </AppText>
@@ -279,7 +279,7 @@ export default function SettingsScreen() {
                       <AppText variant="caption" muted>
                         {(() => {
                           const event = monitor.result?.events.find(event => event.alertId === a.id && event.createdAt === a.createdAt);
-                          return event ? priceAlertDeliveryLabel(event.delivery) : 'Previously triggered on Mac mini';
+                          return event ? priceAlertDeliveryLabel(event.delivery) : 'Previously triggered by the alert server';
                         })()}
                       </AppText>
                     ) : null}

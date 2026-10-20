@@ -3,7 +3,6 @@ export type AccountTab =
   | "positions"
   | "openOrders"
   | "twap"
-  | "chase"
   | "tradeHistory"
   | "fundingHistory"
   | "orderHistory";
@@ -20,7 +19,6 @@ export const ACCOUNT_TABS: { id: AccountTab; label: string }[] = [
   { id: "positions", label: "Positions" },
   { id: "openOrders", label: "Open Orders" },
   { id: "twap", label: "TWAP" },
-  { id: "chase", label: "Chase" },
   { id: "tradeHistory", label: "Trade History" },
   { id: "fundingHistory", label: "Funding History" },
   { id: "orderHistory", label: "Order History" },
@@ -33,7 +31,7 @@ export const isAccountActivityTab = (tab: AccountTab) =>
   tab === "orderHistory";
 
 export const accountTabHasSideFilter = (tab: AccountTab) =>
-  tab !== "balances" && tab !== "chase";
+  tab !== "balances";
 
 export const accountTabHasMarketFilter = (tab: AccountTab) =>
   tab !== "balances";
