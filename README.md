@@ -84,11 +84,6 @@ Run the trading-risk math and Hyperliquid signing regression suite with
 
 In production the feed and the price-alert monitor run as systemd services on the Oracle VM;
 deploy them with `bun scripts/vm-deploy.ts oracle` (see [docs/vm-services.md](docs/vm-services.md)).
-To run the feed as a per-user background service on a Mac instead:
-
-```bash
-npm run news:install
-```
 
 The relay Worker calls the Claude API (`claude-opus-5-5`, `xhigh` effort) at 09:35 and 16:05
 `America/New_York`, Monday through Friday, to filter duplicates and noise into the News tab's

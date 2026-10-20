@@ -44,7 +44,7 @@ then calls a `submit_brief` tool with the headline and Markdown.
 
 The relay items are the brief's CT, Telegram, Digg and Paste Trade evidence: the
 curated X list, the Telegram channels BRIEF.md names, the Digg homepage and Paste
-Trade, as last ingested from the Mac mini bridge, limited to the past 72 hours.
+Trade, as last ingested from the VM bridge, limited to the past 72 hours.
 `scripts/ct-pulse.mjs` is not part of the cloud brief, so there is no Following or
 Home / For You sample. A missing or stale relay is disclosed in Data Caveats.
 

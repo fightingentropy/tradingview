@@ -27,7 +27,11 @@ type JsonRow = { payload: string };
 const SEND = 'https://exp.host/--/api/v2/push/send';
 const RECEIPTS = 'https://exp.host/--/api/v2/push/getReceipts';
 
-/** A mailbox per monitor installation. No price polling, timers or alarms run here. */
+/**
+ * A mailbox per monitor installation. No price polling, timers or alarms run here.
+ * The class name predates the move to the VM; it is bound to the `price-alerts-v1`
+ * migration and its stored state, so it stays.
+ */
 export class MacMiniAlertRelay extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -145,7 +149,7 @@ export class MacMiniAlertRelay extends DurableObject<Env> {
       ).toArray().length);
       subscriptions.push({ device: row.device, revision: subscription.revision, rules });
     }
-    // Notification receipts/retries advance only when the Mac mini checks in.
+    // Notification receipts/retries advance only when the alert monitor checks in.
     // Keep old event records for the active generation so restarts never rearm it.
     this.ctx.waitUntil(this.advanceDelivery());
     return { subscriptions, now };
@@ -270,6 +274,6 @@ export class MacMiniAlertRelay extends DurableObject<Env> {
         event.updatedAt, JSON.stringify(event), event.key, event.receiptId ?? '');
       }
       this.pruneSupersededEvents();
-    } catch { /* Keep accepted events pending for the next Mac mini check-in. */ }
+    } catch { /* Keep accepted events pending for the next monitor check-in. */ }
   }
 }

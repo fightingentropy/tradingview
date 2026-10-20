@@ -52,7 +52,8 @@ export async function handlePriceAlertRequest(request: Request, env: Env, appAut
     if (!value || typeof value !== 'object' || Array.isArray(value)) return json({ error: 'Invalid payload' }, 400);
     payload = value as Record<string, unknown>;
   } catch { return json({ error: 'Invalid JSON' }, 400); }
-  // One coordination atom for this personal app's Mac mini installation.
+  // One coordination atom for this personal app's alert monitor. The object name
+  // predates the move to the VM and addresses existing stored state.
   const relay = env.PRICE_ALERTS.getByName('mac-mini-v1');
   if (pathname === '/price-alerts/sync') {
     const token = payload.expoPushToken;

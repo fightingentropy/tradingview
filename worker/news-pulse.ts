@@ -20,7 +20,7 @@ export const NEWS_FEED_KEY = 'feed:all';
 const MAX_ANALYSIS_ITEMS = 180;
 const MAX_ITEM_TEXT_LENGTH = 1_600;
 const CONTEXT_WINDOW_MS = 72 * 60 * 60_000;
-// The Mac mini bridge publishes every few minutes; an older feed means it is offline.
+// The VM bridge publishes every few minutes; an older feed means it is offline.
 const MAX_FEED_AGE_MS = 3 * 60 * 60_000;
 const CLAUDE_TIMEOUT_MS = 20 * 60_000;
 const SUBMIT_TOOL_NAME = 'submit_pulse';
@@ -497,7 +497,7 @@ export function pulseInstanceId(slot: string): string {
 
 /**
  * Called by the relay's cron. Starts at most one generation Workflow per New
- * York slot, once the Mac mini bridge's feed is fresh. The Workflow's own
+ * York slot, once the bridge's feed is fresh. The Workflow's own
  * retries own the outcome.
  */
 export async function scheduleExecutiveSummary(
