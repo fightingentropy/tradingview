@@ -31,12 +31,12 @@ changes, and turns each recent source into a compact card containing up to six e
 LONG/SHORT theses. No Paste account, session, or credential is required.
 
 The production relay is deployed at
-`https://tradingview-news-relay.erlinhoxha.workers.dev`. The Mac bridge signs each
+`https://tradingview-news-relay.erlinhoxha.workers.dev`. The bridge signs each
 snapshot with an ingest secret, then publishes it to the relay. Cloudflare KV holds
 the latest normalized feed and per-device Expo push subscriptions. Both relay secrets are
-stored in Cloudflare encrypted secret bindings. The always-on Mac mini keeps its copy in
-`~/Library/Application Support/TradingView News/relay.json` with user-only permissions;
-the bridge also supports macOS Keychain for interactive installations.
+stored in Cloudflare encrypted secret bindings. The Oracle VM bridge keeps its copy in
+`~/Library/Application Support/TradingView News/relay.json` with user-only permissions
+(see [Oracle VM services](vm-services.md)); on a Mac the bridge also reads macOS Keychain.
 
 The app uses `EXPO_PUBLIC_NEWS_FEED_URL` and
 `EXPO_PUBLIC_NEWS_RELAY_ACCESS_TOKEN`. The access token is a lightweight guard for
@@ -46,7 +46,7 @@ credentials, the Telegram session, and the relay ingest secret never ship in the
 
 Deploy or update the relay with `npm run relay:deploy`. Wrangler validates the
 Worker, provisions its KV namespace, uploads the encrypted secrets, and stores the
-workers.dev URL in Keychain for the background bridge.
+workers.dev URL in Keychain for a bridge run on this Mac. The VM bridge reads `relay.json`.
 
 ## Web reader
 
@@ -146,7 +146,8 @@ The included bridge:
 - Fetches the Digg homepage independently, so a temporary Digg failure does not blank X or Telegram.
 - Fetches Paste independently and reuses unchanged show histories, so its larger public payloads
   are not downloaded on every scheduler tick.
-- Runs a lightweight scheduler once per minute when installed with `npm run news:install`.
+- Runs a lightweight scheduler once per minute. In production the bridge is the
+  `tradingview-news` systemd unit on the Oracle VM (see [Oracle VM services](vm-services.md)).
   Upstream pulls are cached independently: X refreshes hourly, Telegram every five minutes,
   Digg hourly, and Paste hourly. Each scheduler tick detects newly published items and publishes an
   HMAC-authenticated snapshot to the relay without re-fetching sources that are still fresh.
@@ -172,7 +173,7 @@ The Cloudflare relay:
   generation attempts, five minutes apart, and only while the slot is current; the previous pulse
   stays visible if they fail. A feed older than three hours (the bridge is offline) delays the slot.
 - Ignores any pulse in ingested snapshots. Until the first cloud pulse exists, `/feed` serves the
-  last pulse the Mac mini published.
+  legacy pulse the retired Mac mini bridge last published.
 
 - Requires a separate bearer token for feed reads and device registration.
 - Stores each device token under its own hashed KV key, avoiding shared-key write races.
