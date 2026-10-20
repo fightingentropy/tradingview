@@ -1,14 +1,82 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, type Component } from 'solid-js';
-import type { NewsFeedPage } from '../../../src/domain/news';
-import { NEWS_SOURCE_TABS, formatNewsTime, loadNewsFeed, type NewsItem, type NewsSourceFilter } from '../lib/newsFeed';
+import type { NewsConfidence, NewsFeedPage, NewsPulseChange, NewsPulseLabel, NewsSource } from '../../../src/domain/news';
+import { NEWS_SOURCE_TABS, formatNewsTime, formatPulseTime, loadNewsFeed, type NewsExecutiveSummary, type NewsItem, type NewsSourceFilter } from '../lib/newsFeed';
 import { usePageActive } from './PageView';
 import './News.css';
 
 const ExternalLink: Component = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7M21 3l-9 9M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5" /></svg>;
+const ChevronIcon: Component = () => <svg class="news-pulse-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>;
 const RefreshIcon: Component = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-2L20 8M4 16l2.4 3A7 7 0 0 0 18 17" /></svg>;
 
+const sourceName = (source: NewsSource) => NEWS_SOURCE_TABS.find(tab => tab.key === source)!.label;
+
+const PULSE_MOOD: Record<NewsPulseLabel, string> = { 'risk-on': 'Risk on', 'risk-off': 'Risk off', mixed: 'Mixed signals', calm: 'Calm', 'event-driven': 'Event risk elevated' };
+const PULSE_CHANGE: Record<NewsPulseChange, string> = { new: 'New', changed: 'Changed', unchanged: 'Unchanged' };
+const PULSE_CONFIDENCE: Record<NewsConfidence, string> = { confirmed: 'Confirmed', reported: 'Reported', disputed: 'Disputed', speculative: 'Speculative' };
+const ordinal = (index: number) => String(index + 1).padStart(2, '0');
+
+/** The twice-daily Claude read of the feed, in the same order as the iPhone's Brief tab. */
+const NewsPulse: Component<{ summary: NewsExecutiveSummary; now: number }> = (props) => {
+  const scanned = () => props.summary.analyzedItems || Object.values(props.summary.sourceCounts).reduce((sum, count) => sum + count, 0);
+  return <section class="news-pulse" data-mood={props.summary.pulse.label} aria-labelledby="news-pulse-title">
+    <div class="news-pulse-topline">
+      <span class="news-pulse-mood"><span class="news-pulse-dot" aria-hidden="true" /><span class="news-pulse-kicker">Pulse</span><span class="news-pulse-separator" aria-hidden="true">·</span><span>{PULSE_MOOD[props.summary.pulse.label]}</span></span>
+      <span class="news-pulse-updated">Updated <time dateTime={props.summary.generatedAt} title={new Date(props.summary.generatedAt).toLocaleString()}>{formatPulseTime(props.summary.generatedAt, props.now)}</time> London</span>
+    </div>
+    <h2 id="news-pulse-title" class="news-pulse-headline">{props.summary.headline}</h2>
+    <p class="news-pulse-overview">{props.summary.overview}</p>
+    <div class="news-pulse-read"><p class="news-pulse-label">Market read</p><p>{props.summary.pulse.summary}</p></div>
+
+    <div class="news-pulse-section-heading"><h3>Key developments</h3><span>{props.summary.bullets.length} {props.summary.bullets.length === 1 ? 'story' : 'stories'}</span></div>
+    <ol class="news-pulse-bullets">
+      <For each={props.summary.bullets}>{(bullet, index) => <li class="news-pulse-bullet">
+        <div class="news-pulse-meta">
+          <span class="news-pulse-number">{ordinal(index())}</span>
+          <span data-change={bullet.change}>{PULSE_CHANGE[bullet.change]}</span>
+          <span class="news-pulse-meta-divider" aria-hidden="true" />
+          <span data-confidence={bullet.confidence}>{PULSE_CONFIDENCE[bullet.confidence]}</span>
+          <span class="news-pulse-refs">{bullet.sources.length} {bullet.sources.length === 1 ? 'ref' : 'refs'}</span>
+        </div>
+        <h4 class="news-pulse-bullet-headline">{bullet.headline}</h4>
+        <p class="news-pulse-bullet-summary">{bullet.summary}</p>
+        <div class="news-pulse-impact"><p class="news-pulse-label">Market effect</p><p>{bullet.marketImpact}</p></div>
+        <details class="news-pulse-evidence">
+          <summary>Evidence<ChevronIcon /></summary>
+          <div class="news-pulse-evidence-body">
+            <p>{bullet.details}</p>
+            <ul class="news-pulse-sources">
+              <For each={bullet.sources}>{reference => <li><a href={reference.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${reference.author} on ${sourceName(reference.source)}`}>
+                <span class="news-pulse-source-copy"><span class="news-pulse-source-author">{reference.author}</span><span class="news-pulse-source-title">{reference.title.split('\n')[0]}</span></span>
+                <span class="news-source-label">{sourceName(reference.source)}</span>
+                <ExternalLink />
+              </a></li>}</For>
+            </ul>
+          </div>
+        </details>
+      </li>}</For>
+    </ol>
+
+    <Show when={props.summary.secondarySignals.length}>
+      <details class="news-pulse-more">
+        <summary><span>More signals</span><span class="news-pulse-count">{props.summary.secondarySignals.length}</span><ChevronIcon /></summary>
+        <ul><For each={props.summary.secondarySignals}>{signal => <li>{signal}</li>}</For></ul>
+      </details>
+    </Show>
+    <Show when={props.summary.watchNext.length}>
+      <div class="news-pulse-watch">
+        <h3>Watch next</h3>
+        <ol><For each={props.summary.watchNext}>{(item, index) => <li><span class="news-pulse-number">{ordinal(index())}</span><span>{item}</span></li>}</For></ol>
+      </div>
+    </Show>
+    <footer class="news-pulse-footer">
+      <p>{scanned()} source items scanned · weekdays at 09:35 & 16:05 ET</p>
+      <Show when={props.summary.noiseSummary}><p>{props.summary.noiseSummary}</p></Show>
+    </footer>
+  </section>;
+};
+
 const NewsEntry: Component<{ item: NewsItem; now: number }> = (props) => {
-  const sourceLabel = () => NEWS_SOURCE_TABS.find(tab => tab.key === props.item.source)!.label;
+  const sourceLabel = () => sourceName(props.item.source);
   const split = createMemo(() => {
     const text = props.item.text;
     const newline = text.indexOf('\n');
@@ -56,6 +124,8 @@ const News: Component = () => {
   let scroller!: HTMLElement;
   const items = createMemo(() => (feed()?.items ?? []).filter(item => source() === 'all' || item.source === source()));
   const notices = createMemo(() => (feed()?.notices ?? []).filter(notice => source() === 'all' || notice.source === source()));
+  // Each refresh parses a fresh copy; keep the same pulse so open evidence survives the minute poll.
+  const pulse = createMemo(() => source() === 'all' ? feed()?.executiveSummary : undefined, undefined, { equals: (previous, next) => previous?.id === next?.id });
 
   const refresh = async () => {
     controller?.abort();
@@ -106,8 +176,9 @@ const News: Component = () => {
         <For each={NEWS_SOURCE_TABS}>{tab => <button type="button" role="tab" id={`news-tab-${tab.key}`} aria-controls="news-feed-panel" aria-selected={source() === tab.key} tabIndex={source() === tab.key ? 0 : -1} onClick={() => selectSource(tab.key)}>{tab.label}</button>}</For>
       </div>
       <section id="news-feed-panel" role="tabpanel" aria-labelledby={`news-tab-${source()}`} aria-busy={loading()}>
-        <Show when={feed()}>{snapshot => <div class="news-feed-meta"><span>{items().length} {items().length === 1 ? 'story' : 'stories'}</span><span>Updated <time dateTime={snapshot().updatedAt} title={new Date(snapshot().updatedAt).toLocaleString()}>{formatNewsTime(snapshot().updatedAt, now())}</time></span></div>}</Show>
         <Show when={error()}><div class="news-notice news-error" role="status"><span>{error()}<Show when={feed()}> Showing the last loaded feed.</Show></span><button onClick={() => void refresh()} disabled={loading()}>Retry</button></div></Show>
+        <Show when={pulse()}>{summary => <NewsPulse summary={summary()} now={now()} />}</Show>
+        <Show when={feed()}>{snapshot => <div class="news-feed-meta"><span>{items().length} {items().length === 1 ? 'story' : 'stories'}</span><span>Updated <time dateTime={snapshot().updatedAt} title={new Date(snapshot().updatedAt).toLocaleString()}>{formatNewsTime(snapshot().updatedAt, now())}</time></span></div>}</Show>
         <For each={notices()}>{notice => <p class="news-notice" role="status">{notice.message}</p>}</For>
         <Show when={loading() && !feed()}><div class="news-loading" role="status" aria-label="Loading news"><span class="news-spinner" /></div></Show>
         <Show when={feed() && !items().length}><div class="news-empty"><h2>No stories yet</h2><p>No {source() === 'all' ? 'news' : NEWS_SOURCE_TABS.find(tab => tab.key === source())!.label} stories in the latest feed.</p></div></Show>

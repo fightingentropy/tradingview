@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { parseNewsFeed } from './newsFeed';
+import { formatPulseTime, parseNewsFeed } from './newsFeed';
 
 const item = { id: 'story', source: 'digg', text: 'A story\n\nIts summary.', publishedAt: '2026-10-03T12:00:00Z', author: { name: 'Digg', handle: 'digg' }, url: 'https://digg.com/world-business/example', media: [] };
 const updatedAt = '2026-10-03T12:05:00Z';
@@ -29,4 +29,63 @@ test('does not invent a fresh timestamp for an invalid snapshot', () => {
   expect(() => parseNewsFeed({ items: [item] })).toThrow('Invalid news feed response');
   expect(() => parseNewsFeed({ items: [item], updatedAt: 'invalid' })).toThrow('Invalid news feed response');
   expect(() => parseNewsFeed({ items: 'invalid', updatedAt })).toThrow('Invalid news feed response');
+});
+
+const reference = (author: string, url = `https://x.com/${author}/status/1`) => ({ itemKey: `x:${author}`, source: 'x', title: `${author} headline\n\nbody`, author, publishedAt: '2026-10-19T17:06:33Z', url });
+const bullet = (headline: string, sources: unknown[] = [reference('DeItaone')]) => ({ headline, summary: 'What happened.', marketImpact: 'Why it moves markets.', details: 'The evidence.', change: 'changed', confidence: 'reported', sources });
+const pulse = {
+  formatVersion: 2, id: 'pulse:2026-10-19T20:05:56.024Z', generatedAt: '2026-10-19T20:05:56.024Z', windowStart: '2026-10-19T13:35:30.396Z', windowEnd: '2026-10-19T20:05:56.024Z',
+  headline: 'Tech rebound holds', overview: 'Stocks closed higher.', pulse: { label: 'mixed', summary: 'Oil keeps yields up.' },
+  bullets: [bullet('One'), bullet('Two'), bullet('Three')], secondarySignals: ['Gold flat'], watchNext: ['CPI on Thursday'],
+  noiseSummary: 'Ignored repeats.', analyzedItems: 180, sourceCounts: { x: 120, telegram: 40, digg: 15, paste: 5 }, model: 'claude-opus-5-5', reasoningEffort: 'xhigh',
+};
+
+test('reads the Claude pulse alongside the feed', () => {
+  const summary = parseNewsFeed({ items: [item], executiveSummary: pulse, updatedAt }).executiveSummary;
+  expect(summary?.headline).toBe('Tech rebound holds');
+  expect(summary?.pulse).toEqual({ label: 'mixed', summary: 'Oil keeps yields up.' });
+  expect(summary?.bullets.map(bullet => bullet.headline)).toEqual(['One', 'Two', 'Three']);
+  expect(summary?.bullets[0].sources[0]).toEqual(reference('DeItaone'));
+  expect(summary?.watchNext).toEqual(['CPI on Thursday']);
+  expect(summary?.analyzedItems).toBe(180);
+});
+
+test('keeps the feed when the pulse is missing, malformed or unusable', () => {
+  for (const executiveSummary of [undefined, null, 'pulse', [], { ...pulse, pulse: { label: 'euphoric', summary: 'x' } }, { ...pulse, generatedAt: 'invalid' }, { ...pulse, bullets: [bullet('No sources', [])] }]) {
+    const feed = parseNewsFeed({ items: [item], executiveSummary, updatedAt });
+    expect(feed.items).toHaveLength(1);
+    expect(feed.executiveSummary).toBeUndefined();
+  }
+});
+
+test('trims the pulse to safe links and its editorial limits', () => {
+  const sources = [reference('DeItaone'), reference('DeItaone', 'https://x.com/DeItaone/status/2'), reference('Unsafe', 'javascript:alert(1)'), ...['a', 'b', 'c', 'd'].map(author => reference(author))];
+  const summary = parseNewsFeed({ items: [], updatedAt, executiveSummary: {
+    ...pulse, bullets: [bullet('One', sources), bullet('Two'), bullet('Three'), bullet('Four')],
+    secondarySignals: ['1', '2', '3', '4'], watchNext: ['1', '2', '3'],
+  } }).executiveSummary;
+  expect(summary?.bullets).toHaveLength(3);
+  expect(summary?.bullets[0].sources.map(source => source.author)).toEqual(['DeItaone', 'a', 'b', 'c']);
+  expect(summary?.secondarySignals).toHaveLength(3);
+  expect(summary?.watchNext).toHaveLength(2);
+});
+
+test('accepts an older pulse shape with defaults', () => {
+  const { marketImpact: _, ...legacy } = bullet('Legacy');
+  const summary = parseNewsFeed({ items: [], updatedAt, executiveSummary: {
+    ...pulse, formatVersion: undefined, sourceCounts: undefined, analyzedItems: undefined, secondarySignals: undefined,
+    bullets: [{ ...legacy, whyItMatters: 'Older field name.', change: 'unknown', confidence: undefined }],
+  } }).executiveSummary;
+  expect(summary?.formatVersion).toBe(1);
+  expect(summary?.bullets[0]).toMatchObject({ marketImpact: 'Older field name.', change: 'unchanged', confidence: 'reported' });
+  expect(summary?.sourceCounts).toEqual({ x: 0, telegram: 0, digg: 0, paste: 0 });
+  expect(summary?.secondarySignals).toEqual([]);
+});
+
+test('shows pulse times on the London clock, with the date once it is not today', () => {
+  const now = Date.parse('2026-10-20T12:00:00Z');
+  expect(formatPulseTime('2026-10-20T13:35:00Z', now)).toBe('14:35');
+  expect(formatPulseTime('2026-10-19T23:30:00Z', now)).toBe('00:30');
+  expect(formatPulseTime('2026-10-19T20:05:56.024Z', now)).toBe('Mon 19 Oct, 21:05');
+  expect(formatPulseTime('2026-12-01T09:00:00Z', Date.parse('2026-12-03T10:00:00Z'))).toBe('Tue 1 Dec, 09:00');
 });
