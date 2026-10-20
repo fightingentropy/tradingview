@@ -1,6 +1,9 @@
-import type { NewsFeedNotice, NewsFeedPage, NewsItem, NewsMedia, NewsSource } from '../../../src/domain/news';
+import type {
+  NewsConfidence, NewsExecutiveSummary, NewsExecutiveSummaryBullet, NewsFeedNotice, NewsFeedPage, NewsItem, NewsMedia,
+  NewsPulseChange, NewsPulseLabel, NewsSource, NewsSummarySourceReference,
+} from '../../../src/domain/news';
 
-export type { NewsItem, NewsSourceFilter } from '../../../src/domain/news';
+export type { NewsExecutiveSummary, NewsItem, NewsSourceFilter } from '../../../src/domain/news';
 
 export const NEWS_SOURCE_TABS = [
   { key: 'all', label: 'All' },
@@ -18,6 +21,71 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 function httpsUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   try { return new URL(value).protocol === 'https:' ? value : undefined; } catch { return undefined; }
+}
+
+const pulseLabels = new Set<string>(['risk-on', 'risk-off', 'mixed', 'calm', 'event-driven']);
+const changeLabels = new Set<string>(['new', 'changed', 'unchanged']);
+const confidenceLabels = new Set<string>(['confirmed', 'reported', 'disputed', 'speculative']);
+const text = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value.trim() : undefined;
+const isDate = (value: unknown): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value));
+const count = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+const texts = (value: unknown, limit: number): string[] => Array.isArray(value) ? value.flatMap(entry => text(entry) ?? []).slice(0, limit) : [];
+
+function parseSummarySources(value: unknown): NewsSummarySourceReference[] {
+  const publishers = new Set<string>();
+  return (Array.isArray(value) ? value : []).flatMap((entry): NewsSummarySourceReference[] => {
+    const source = record(entry);
+    const author = text(source?.author);
+    const url = httpsUrl(source?.url);
+    if (!source || !author || !url || typeof source.itemKey !== 'string' || !isSource(source.source) || !isDate(source.publishedAt)) return [];
+    // One link per publisher, as on the iPhone.
+    const publisher = author.toLowerCase().replace(/[^a-z0-9]/g, '') || source.itemKey;
+    if (publishers.has(publisher)) return [];
+    publishers.add(publisher);
+    return [{ itemKey: source.itemKey, source: source.source, title: text(source.title) ?? author, author, publishedAt: source.publishedAt, url }];
+  }).slice(0, 4);
+}
+
+/** The Claude pulse is optional: a missing, malformed or outdated one is dropped, never allowed to break the feed. */
+export function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined {
+  const summary = record(value);
+  const pulse = record(summary?.pulse);
+  const id = text(summary?.id), headline = text(summary?.headline), overview = text(summary?.overview), pulseSummary = text(pulse?.summary);
+  if (!summary || !pulse || !id || !headline || !overview || !pulseSummary || typeof pulse.label !== 'string' ||
+    !pulseLabels.has(pulse.label) || !isDate(summary.generatedAt) || !Array.isArray(summary.bullets)) return undefined;
+  const bullets = summary.bullets.flatMap((entry): NewsExecutiveSummaryBullet[] => {
+    const bullet = record(entry);
+    const sources = parseSummarySources(bullet?.sources);
+    const bulletHeadline = text(bullet?.headline), bulletSummary = text(bullet?.summary), details = text(bullet?.details);
+    // Version 1 pulses called the market effect `whyItMatters`.
+    const marketImpact = text(bullet?.marketImpact) ?? text(bullet?.whyItMatters);
+    if (!bullet || !bulletHeadline || !bulletSummary || !marketImpact || !details || !sources.length) return [];
+    return [{
+      headline: bulletHeadline, summary: bulletSummary, marketImpact, details, sources,
+      change: typeof bullet.change === 'string' && changeLabels.has(bullet.change) ? bullet.change as NewsPulseChange : 'unchanged',
+      confidence: typeof bullet.confidence === 'string' && confidenceLabels.has(bullet.confidence) ? bullet.confidence as NewsConfidence : 'reported',
+    }];
+  }).slice(0, 3);
+  if (!bullets.length) return undefined;
+  const sourceCounts = record(summary.sourceCounts);
+  return {
+    formatVersion: Math.max(1, count(summary.formatVersion)),
+    id,
+    generatedAt: summary.generatedAt,
+    windowStart: isDate(summary.windowStart) ? summary.windowStart : summary.generatedAt,
+    windowEnd: isDate(summary.windowEnd) ? summary.windowEnd : summary.generatedAt,
+    headline,
+    overview,
+    pulse: { label: pulse.label as NewsPulseLabel, summary: pulseSummary },
+    bullets,
+    secondarySignals: texts(summary.secondarySignals, 3),
+    watchNext: texts(summary.watchNext, 2),
+    noiseSummary: text(summary.noiseSummary) ?? '',
+    analyzedItems: count(summary.analyzedItems),
+    sourceCounts: { x: count(sourceCounts?.x), telegram: count(sourceCounts?.telegram), digg: count(sourceCounts?.digg), paste: count(sourceCounts?.paste) },
+    model: text(summary.model) ?? '',
+    reasoningEffort: text(summary.reasoningEffort) ?? '',
+  };
 }
 
 export function parseNewsFeed(value: unknown): NewsFeedPage {
@@ -51,7 +119,7 @@ export function parseNewsFeed(value: unknown): NewsFeedPage {
     return notice && typeof notice.id === 'string' && isSource(notice.source) && typeof notice.message === 'string'
       ? [{ id: notice.id, source: notice.source, message: notice.message }] : [];
   }) : [];
-  return { items, notices, updatedAt: payload.updatedAt };
+  return { items, notices, executiveSummary: parseExecutiveSummary(payload.executiveSummary), updatedAt: payload.updatedAt };
 }
 
 export async function loadNewsFeed(signal: AbortSignal): Promise<NewsFeedPage> {
@@ -74,4 +142,15 @@ export function formatNewsTime(timestamp: string, now: number): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
   return new Date(timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+const londonDay = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' });
+const londonClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const londonDate = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short' });
+
+/** London wall-clock time, with the date once the pulse is from an earlier London day. */
+export function formatPulseTime(timestamp: string, now: number): string {
+  const date = new Date(timestamp);
+  const clock = londonClock.format(date);
+  return londonDay.format(date) === londonDay.format(now) ? clock : `${londonDate.format(date)}, ${clock}`;
 }
