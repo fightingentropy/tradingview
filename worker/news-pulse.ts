@@ -23,6 +23,8 @@ const CONTEXT_WINDOW_MS = 72 * 60 * 60_000;
 // The VM bridge publishes every few minutes; an older feed means it is offline.
 const MAX_FEED_AGE_MS = 3 * 60 * 60_000;
 const CLAUDE_TIMEOUT_MS = 20 * 60_000;
+// Each run makes up to three Claude attempts, so a failing slot costs at most nine.
+const MAX_SLOT_RUNS = 3;
 const SUBMIT_TOOL_NAME = 'submit_pulse';
 const MAX_SUBMISSIONS = 2;
 const sourceTypes = ['x', 'telegram', 'digg', 'paste'] as const;
@@ -192,10 +194,19 @@ function stringValue(value: unknown, maxLength: number): string | undefined {
   return trimmed ? trimmed.slice(0, maxLength) : undefined;
 }
 
+/** Keeps whole words within both limits and ends a shortened value with an ellipsis. */
 function wordLimitedValue(value: unknown, maxWords: number, maxLength: number): string | undefined {
-  const text = stringValue(value, maxLength);
-  if (!text) return undefined;
-  return text.split(/\s+/).slice(0, maxWords).join(' ');
+  if (typeof value !== 'string') return undefined;
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return undefined;
+  let text = words.slice(0, maxWords).join(' ');
+  if (words.length <= maxWords && text.length <= maxLength) return text;
+  if (text.length > maxLength - 1) {
+    // Leave room for the ellipsis; only a single overlong word is cut mid-word.
+    const boundary = text.lastIndexOf(' ', maxLength - 1);
+    text = boundary > 0 ? text.slice(0, boundary) : text.slice(0, maxLength - 1);
+  }
+  return `${text.replace(/[\s.,;:–—-]+$/, '')}…`;
 }
 
 function publisherKey(value: unknown): string {
@@ -491,14 +502,16 @@ export async function generateExecutiveSummary(options: {
 }
 
 /** Workflow instance IDs allow only letters, digits, hyphens and underscores. */
-export function pulseInstanceId(slot: string): string {
-  return `news-pulse-${slot.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+export function pulseInstanceId(slot: string, run = 1): string {
+  const id = `news-pulse-${slot.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+  return run > 1 ? `${id}-${run}` : id;
 }
 
 /**
- * Called by the relay's cron. Starts at most one generation Workflow per New
- * York slot, once the bridge's feed is fresh. The Workflow's own
- * retries own the outcome.
+ * Called by the relay's cron. Starts one generation Workflow per New York
+ * slot, once the bridge's feed is fresh. The Workflow's own retries cover
+ * brief failures; if a run still errors, a later cron starts a fresh run, up
+ * to MAX_SLOT_RUNS per slot.
  */
 export async function scheduleExecutiveSummary(
   env: NewsPulseEnv,
@@ -519,12 +532,16 @@ export async function scheduleExecutiveSummary(
   snapshot ??= await loadFeed();
   if (!snapshot || !(now - Date.parse(snapshot.updatedAt) <= MAX_FEED_AGE_MS)) return 'feed-stale';
   if (selectExecutiveSummaryItems(snapshot.items, now).length === 0) return 'no-items';
-  const id = pulseInstanceId(slot);
-  try {
-    await env.NEWS_PULSE_WORKFLOW.get(id);
-    return 'already-started';
-  } catch {
-    await env.NEWS_PULSE_WORKFLOW.create({ id, params: { slot, scheduledAt: now } });
-    return 'started';
+  for (let run = 1; run <= MAX_SLOT_RUNS; run += 1) {
+    const id = pulseInstanceId(slot, run);
+    let instance: WorkflowInstance;
+    try {
+      instance = await env.NEWS_PULSE_WORKFLOW.get(id);
+    } catch {
+      await env.NEWS_PULSE_WORKFLOW.create({ id, params: { slot, scheduledAt: now } });
+      return run === 1 ? 'started' : 'retried';
+    }
+    if ((await instance.status()).status !== 'errored') return 'already-started';
   }
+  return 'slot-failed';
 }

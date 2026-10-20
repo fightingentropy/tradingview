@@ -88,7 +88,21 @@ test('rejects a summary without three sourced bullets', () => {
 
 test('enforces editorial word limits after generation', () => {
   const wordy = { ...claudeSummary, headline: 'one two three four five six seven eight nine ten eleven' };
-  assert.equal(hydrateExecutiveSummary(wordy, items, { now }).headline, 'one two three four five six seven eight nine');
+  assert.equal(hydrateExecutiveSummary(wordy, items, { now }).headline, 'one two three four five six seven eight nine…');
+});
+
+test('cuts an over-long field at a word boundary, never mid-word', () => {
+  // The 19 Oct 2026 close pulse: 44 words, within the word limit but over 240 characters.
+  const overview = 'US stocks closed higher, Nasdaq up 1.1%, while WTI rose 1.5% after Houthis claimed strikes on Saudi oil sites and Paris imposed a curfew. Brent above $110 keeps pressure on yields, testing a tech bounce that follows hedge funds\' fastest technology selling in months.';
+  const result = hydrateExecutiveSummary({ ...claudeSummary, overview }, items, { now });
+  assert.ok(result.overview.endsWith('hedge funds\' fastest…'), result.overview);
+  assert.ok(result.overview.length <= 240);
+
+  const clause = 'Brent above $110 keeps pressure on yields, testing a tech bounce';
+  const pulse = { ...claudeSummary.pulse, summary: `${clause}. ${'x'.repeat(200)}` };
+  assert.equal(hydrateExecutiveSummary({ ...claudeSummary, pulse }, items, { now }).pulse.summary, `${clause}…`);
+  const unbroken = { ...claudeSummary, headline: 'y'.repeat(100) };
+  assert.equal(hydrateExecutiveSummary(unbroken, items, { now }).headline, `${'y'.repeat(79)}…`);
 });
 
 test('runs after the New York open and close on weekdays', () => {
@@ -143,13 +157,17 @@ test('keeps overnight and weekend context for the next scheduled pulse', () => {
   assert.deepEqual(selected.map(({ id }) => id), ['inside']);
 });
 
-function fakeWorkflow(existing = new Set<string>()) {
-  const created: unknown[] = [];
+function fakeWorkflow(statuses = new Map<string, string>()) {
+  const created: { id: string }[] = [];
   return {
     created,
-    async get(id: string) { if (!existing.has(id)) throw new Error('instance.not_found'); return {}; },
-    async create(options: { id: string }) { created.push(options); existing.add(options.id); return {}; },
-  } as unknown as Workflow<never> & { created: unknown[] };
+    statuses,
+    async get(id: string) {
+      if (!statuses.has(id)) throw new Error('instance.not_found');
+      return { status: async () => ({ status: statuses.get(id) }) };
+    },
+    async create(options: { id: string }) { created.push(options); statuses.set(options.id, 'running'); return {}; },
+  } as unknown as Workflow<never> & { created: { id: string }[]; statuses: Map<string, string> };
 }
 
 test('the cron starts one Workflow per slot, only when a pulse is due and the feed is fresh', async () => {
@@ -179,6 +197,20 @@ test('the cron starts one Workflow per slot, only when a pulse is due and the fe
   assert.deepEqual(workflow.created, [{ id: 'news-pulse-2026-07-13-open', params: { slot: '2026-07-13:open', scheduledAt: openSlot } }]);
   assert.equal(await scheduleExecutiveSummary(env(due, workflow), freshFeed, openSlot + 5 * 60_000), 'already-started');
   assert.equal(pulseInstanceId('2026-07-13:close'), 'news-pulse-2026-07-13-close');
+
+  // An errored run (20 Oct 2026: Claude returned 403 on all three attempts) must not hold the slot.
+  workflow.statuses.set('news-pulse-2026-07-13-open', 'errored');
+  assert.equal(await scheduleExecutiveSummary(env(due, workflow), freshFeed, openSlot + 15 * 60_000), 'retried');
+  assert.equal(await scheduleExecutiveSummary(env(due, workflow), freshFeed, openSlot + 20 * 60_000), 'already-started');
+  workflow.statuses.set('news-pulse-2026-07-13-open-2', 'errored');
+  assert.equal(await scheduleExecutiveSummary(env(due, workflow), freshFeed, openSlot + 30 * 60_000), 'retried');
+  workflow.statuses.set('news-pulse-2026-07-13-open-3', 'errored');
+  assert.equal(await scheduleExecutiveSummary(env(due, workflow), freshFeed, openSlot + 45 * 60_000), 'slot-failed');
+  assert.deepEqual(workflow.created.map(({ id }) => id), [
+    'news-pulse-2026-07-13-open',
+    'news-pulse-2026-07-13-open-2',
+    'news-pulse-2026-07-13-open-3',
+  ]);
 });
 
 function fakeClaude(responses: Array<Record<string, unknown>>) {
