@@ -89,6 +89,16 @@ export default function RootLayout() {
                       gestureDirection: 'vertical',
                     }}
                   />
+                  <Stack.Screen
+                    name="earnings-calendar"
+                    options={{
+                      headerShown: false,
+                      presentation: 'modal',
+                      animation: 'slide_from_bottom',
+                      gestureEnabled: true,
+                      gestureDirection: 'vertical',
+                    }}
+                  />
                 </Stack>
               </SymbolMenuProvider>
               <AlertWatcher />

@@ -175,6 +175,14 @@ export default function NewsScreen() {
           <Ionicons name="calendar-outline" size={14} color={Colors.textMuted} />
           <AppText style={styles.toolLabel}>Calendar</AppText>
         </Pressable>
+        <Pressable
+          onPress={() => router.push('/earnings-calendar' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Open earnings calendar"
+          style={styles.toolButton}>
+          <Ionicons name="bar-chart-outline" size={14} color={Colors.textMuted} />
+          <AppText style={styles.toolLabel}>Earnings</AppText>
+        </Pressable>
       </View>
       <ScrollView
         horizontal

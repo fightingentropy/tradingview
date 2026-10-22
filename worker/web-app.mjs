@@ -1,4 +1,12 @@
+import {
+  EARNINGS_SCANNER_URL,
+  buildEarningsScannerRequest,
+  earningsRange,
+  parseEarningsScannerResponse,
+} from '../src/domain/earningsCalendar.ts';
+
 const ECONOMIC_CALENDAR_PATH = '/api/economic-calendar';
+const EARNINGS_CALENDAR_PATH = '/api/earnings-calendar';
 const ECONOMIC_CALENDAR_UPSTREAM = 'https://economic-calendar.tradingview.com/events';
 const MAX_CALENDAR_RANGE_MS = 45 * 24 * 60 * 60 * 1000;
 const ALLOWED_COUNTRIES = new Set([
@@ -149,6 +157,76 @@ export async function handleEconomicCalendarRequest(request, fetcher = fetch) {
   }
 }
 
+/**
+ * Maps TradingView's public screener to one week of US earnings. The screener
+ * takes a POST, which the edge cache ignores, so responses go through the Cache API.
+ */
+export async function handleEarningsCalendarRequest(request, fetcher = fetch, cache = globalThis.caches?.default) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...calendarHeaders(),
+        'Access-Control-Allow-Headers': 'Accept',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
+  }
+  if (request.method !== 'GET') {
+    return calendarError(405, 'method_not_allowed');
+  }
+
+  const incoming = new URL(request.url);
+  let range;
+  try {
+    range = earningsRange(incoming.searchParams.get('from'), incoming.searchParams.get('to'));
+  } catch (error) {
+    return calendarError(400, error instanceof RangeError ? error.message : 'invalid_request');
+  }
+
+  const cacheKey = new Request(`https://earnings-calendar.internal/v1?from=${range.from}&to=${range.to}`);
+  const cached = await cache?.match(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const upstream = await fetcher(EARNINGS_SCANNER_URL, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Origin: 'https://www.tradingview.com',
+        Referer: 'https://www.tradingview.com/',
+      },
+      body: JSON.stringify(buildEarningsScannerRequest(range.from, range.to)),
+    });
+    const contentType = upstream.headers.get('content-type') ?? '';
+    if (!upstream.ok || !contentType.includes('application/json')) {
+      await upstream.body?.cancel();
+      console.error(JSON.stringify({
+        message: 'earnings calendar upstream failed',
+        status: upstream.status,
+        contentType,
+      }));
+      return calendarError(502, 'earnings_upstream_unavailable');
+    }
+
+    const reports = parseEarningsScannerResponse(await upstream.json(), range.from, range.to);
+    const response = Response.json(
+      { ...range, updatedAt: new Date().toISOString(), reports },
+      { headers: { ...calendarHeaders(), 'Cache-Control': 'public, max-age=120, stale-while-revalidate=300' } },
+    );
+    await cache?.put(cacheKey, response.clone());
+    return response;
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: 'earnings calendar proxy error',
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return calendarError(502, 'earnings_upstream_unavailable');
+  }
+}
+
 export async function handleDailyBriefRequest(request, storage) {
   const path = new URL(request.url).pathname;
   const id = path.match(/^\/api\/daily-briefs\/(\d{4}-\d{2}-\d{2})$/)?.[1];
@@ -225,6 +303,10 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === ECONOMIC_CALENDAR_PATH) {
       return handleEconomicCalendarRequest(request);
+    }
+
+    if (url.pathname === EARNINGS_CALENDAR_PATH) {
+      return handleEarningsCalendarRequest(request);
     }
 
     if (url.pathname === '/api/daily-briefs' || url.pathname.startsWith('/api/daily-briefs/')) {

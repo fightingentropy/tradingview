@@ -7,6 +7,8 @@ export const loadBrief = () => import("../components/Brief");
 export const loadNews = () => import("../components/News");
 export const loadEconomicCalendar = () =>
   import("../components/EconomicCalendar");
+export const loadEarningsCalendar = () =>
+  import("../components/EarningsCalendar");
 export const loadChartsGrid = () => import("../components/ChartsGrid");
 export const loadAdminDashboard = () => import("../components/AdminDashboard");
 
@@ -17,6 +19,7 @@ const pageLoaders: Partial<Record<Page, () => Promise<unknown>>> = {
   brief: loadBrief,
   news: loadNews,
   calendar: loadEconomicCalendar,
+  earnings: loadEarningsCalendar,
   charts: loadChartsGrid,
   admin: loadAdminDashboard,
 };

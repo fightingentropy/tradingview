@@ -29,6 +29,7 @@ import {
   loadNews,
   loadChartsGrid,
   loadEconomicCalendar,
+  loadEarningsCalendar,
   loadPortfolio,
   loadStats,
   prefetchPage,
@@ -43,6 +44,7 @@ const AdminDashboard = lazy(loadAdminDashboard);
 const Brief = lazy(loadBrief);
 const News = lazy(loadNews);
 const EconomicCalendar = lazy(loadEconomicCalendar);
+const EarningsCalendar = lazy(loadEarningsCalendar);
 
 const CHARTS_NAV_HIDE_DELAY_MS = 2000;
 
@@ -342,6 +344,12 @@ const App: Component = () => {
         </div>
       </PageView>
 
+      <PageView name="earnings" active={currentPage() === "earnings"}>
+        <Suspense fallback={<div class="flex flex-1 items-center justify-center"><Spinner label="Loading earnings" /></div>}>
+          <EarningsCalendar />
+        </Suspense>
+      </PageView>
+
       {/* Charts View */}
       <PageView name="charts" active={currentPage() === "charts"}>
         <div class="flex-1 overflow-hidden">
@@ -498,6 +506,19 @@ const App: Component = () => {
             <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
           </svg>
           <span>Calendar</span>
+        </button>
+        <button
+          type="button"
+          aria-current={currentPage() === "earnings" ? "page" : undefined}
+          onPointerEnter={() => prefetchPage("earnings")}
+          onFocus={() => prefetchPage("earnings")}
+          onClick={() => setCurrentPage("earnings")}
+        >
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 20h16M7 16v-3M12 16V8M17 16V4" />
+            <path d="m4 9 4-4 3 3" />
+          </svg>
+          <span>Earnings</span>
         </button>
         <button
           type="button"

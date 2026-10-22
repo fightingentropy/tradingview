@@ -23,9 +23,11 @@ const colors: Record<string, string> = { SP500: "#ef6172", XYZ100: "#7fafff", TL
 const palette = ["#8bb1d8", "#b39ac9", "#80b8aa", "#cfad80", "#c991a2"];
 const failedImages = new Set<string>();
 
-const MarketAvatar: Component<{ symbol: string; size?: number }> = (props) => {
+/** `logo` is a TradingView logo id; listed equities pass it so tickers never borrow a crypto or commodity mark. */
+const MarketAvatar: Component<{ symbol: string; size?: number; logo?: string | null }> = (props) => {
   const ticker = () => props.symbol.split(":").pop()!.toUpperCase();
-  const source = () => flags[ticker()] ?? (localLogos.has(ticker()) ? `/${ticker().toLowerCase()}.svg`
+  const source = () => props.logo ? `https://s3-symbol-logo.tradingview.com/${encodeURIComponent(props.logo)}.svg`
+    : flags[ticker()] ?? (localLogos.has(ticker()) ? `/${ticker().toLowerCase()}.svg`
     : brandLogos[ticker()] ? `https://s3-symbol-logo.tradingview.com/${brandLogos[ticker()]}.svg` : undefined);
   const [failed, setFailed] = createSignal<string>();
   const tint = () => colors[ticker()] ?? palette[[...ticker()].reduce((hash, char) => hash + char.charCodeAt(0), 0) % palette.length];

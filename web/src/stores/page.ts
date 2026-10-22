@@ -15,6 +15,7 @@ export const MAIN_PAGES = [
   { id: "brief", label: "Brief" },
   { id: "news", label: "News" },
   { id: "calendar", label: "Calendar" },
+  { id: "earnings", label: "Earnings" },
   { id: "charts", label: "Charts" },
 ] as const;
 

@@ -1,11 +1,29 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
 import tailwindcss from '@tailwindcss/vite';
 import webTsconfig from './tsconfig.json';
 
+// The earnings proxy keeps no state, so dev runs the Worker's handler here
+// rather than proxying production like the endpoints below.
+const earningsCalendarDev = (): Plugin => ({
+  name: 'earnings-calendar-dev',
+  apply: 'serve',
+  configureServer(server) {
+    server.middlewares.use('/api/earnings-calendar', async (req, res) => {
+      const { handleEarningsCalendarRequest } = await import('../worker/web-app.mjs');
+      const response = await handleEarningsCalendarRequest(
+        new Request(new URL(req.originalUrl ?? '/', 'http://localhost'), { method: req.method }),
+      );
+      res.statusCode = response.status;
+      response.headers.forEach((value, name) => res.setHeader(name, value));
+      res.end(Buffer.from(await response.arrayBuffer()));
+    });
+  },
+});
+
 export default defineConfig(() => {
   return {
-    plugins: [solidPlugin(), tailwindcss()],
+    plugins: [solidPlugin(), tailwindcss(), earningsCalendarDev()],
     esbuild: {
       // Shared domain files use the web compiler settings, without requiring Expo.
       tsconfigRaw: JSON.stringify(webTsconfig),
