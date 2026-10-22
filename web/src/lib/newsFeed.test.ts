@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { formatPulseTime, parseNewsFeed } from './newsFeed';
+import { formatPulseMarketChange, formatPulseMarketPrice } from '../../../src/domain/news';
 
 const item = { id: 'story', source: 'digg', text: 'A story\n\nIts summary.', publishedAt: '2026-10-03T12:00:00Z', author: { name: 'Digg', handle: 'digg' }, url: 'https://digg.com/world-business/example', media: [] };
 const updatedAt = '2026-10-03T12:05:00Z';
@@ -59,6 +60,32 @@ test('reads the short version 3 pulse without the version 2 fields', () => {
   expect(summary?.pulse).toEqual({ label: 'risk-off' });
   expect(summary?.bullets).toHaveLength(3);
   expect(summary?.bullets[0]).not.toHaveProperty('marketImpact');
+});
+
+test('reads the version 4 price strip, feed sentiment and asset tags', () => {
+  const markets = [
+    { key: 'BTC', label: 'BTC', price: 81900, change: -3.2, unit: 'pct' },
+    { key: 'US10Y', label: 'US 10Y', price: 4.97, change: -16.3, unit: 'bp' },
+    { key: 'BAD', label: 'Bad', price: -1, change: 0, unit: 'pct' },
+  ];
+  const tagged = { ...bullet('Tagged'), assets: [{ asset: 'Nasdaq', direction: 'down' }, { asset: 'Nasdaq', direction: 'up' }, { asset: 'Dogecoin', direction: 'up' }] };
+  const summary = parseNewsFeed({ items: [], updatedAt, executiveSummary: {
+    ...pulse, formatVersion: 4, pulse: { label: 'risk-off' }, feedSentiment: 'Traders are fading the bounce.',
+    markets, marketsAt: '2026-10-22T20:05:00Z', bullets: [tagged, bullet('Two'), bullet('Three')],
+  } }).executiveSummary;
+  expect(summary?.markets?.map(market => market.key)).toEqual(['BTC', 'US10Y']);
+  expect(summary?.feedSentiment).toBe('Traders are fading the bounce.');
+  expect(summary?.bullets[0].assets).toEqual([{ asset: 'Nasdaq', direction: 'down' }]);
+  expect(summary?.bullets[1]).not.toHaveProperty('assets');
+  expect(parseNewsFeed({ items: [], updatedAt, executiveSummary: { ...pulse, markets } }).executiveSummary).not.toHaveProperty('markets');
+});
+
+test('formats strip prices and moves', () => {
+  expect(formatPulseMarketPrice({ key: 'BTC', label: 'BTC', price: 81907.5, change: -3.21, unit: 'pct' })).toBe('81,908');
+  expect(formatPulseMarketPrice({ key: 'BRENT', label: 'Brent', price: 108.891, change: 2.7, unit: 'pct' })).toBe('108.89');
+  expect(formatPulseMarketChange({ key: 'BTC', label: 'BTC', price: 1, change: -3.21, unit: 'pct' })).toBe('−3.2%');
+  expect(formatPulseMarketPrice({ key: 'US10Y', label: 'US 10Y', price: 4.9668, change: -16.3, unit: 'bp' })).toBe('4.97%');
+  expect(formatPulseMarketChange({ key: 'US10Y', label: 'US 10Y', price: 4.97, change: 16.3, unit: 'bp' })).toBe('+16bp');
 });
 
 test('keeps the feed when the pulse is missing, malformed or unusable', () => {

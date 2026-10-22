@@ -8,7 +8,7 @@ import type {
   NewsSourceFilter,
   NewsSummarySourceReference,
 } from '@/domain/news';
-import { DEFAULT_NEWS_FEED_LIMIT } from '@/domain/news';
+import { DEFAULT_NEWS_FEED_LIMIT, parsePulseAssets, parsePulseMarkets } from '@/domain/news';
 
 const DEV_NEWS_FEED_URL = 'http://127.0.0.1:8430/feed';
 const NEWS_FEED_URL = process.env.EXPO_PUBLIC_NEWS_FEED_URL?.trim() ||
@@ -180,6 +180,7 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
       headline: bullet.headline,
       summary: bullet.summary,
       ...(marketImpact ? { marketImpact } : {}),
+      ...(parsePulseAssets(bullet.assets).length ? { assets: parsePulseAssets(bullet.assets) } : {}),
       details: bullet.details,
       change,
       confidence,
@@ -214,6 +215,10 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
       ? summary.watchNext.filter((item): item is string => typeof item === 'string').slice(0, 2)
       : [],
     noiseSummary: summary.noiseSummary,
+    ...(typeof summary.feedSentiment === 'string' && summary.feedSentiment.trim() ? { feedSentiment: summary.feedSentiment.trim() } : {}),
+    ...(parsePulseMarkets(summary.markets).length && typeof summary.marketsAt === 'string' && Number.isFinite(Date.parse(summary.marketsAt))
+      ? { markets: parsePulseMarkets(summary.markets), marketsAt: summary.marketsAt }
+      : {}),
     analyzedItems: typeof summary.analyzedItems === 'number' && Number.isFinite(summary.analyzedItems)
       ? Math.max(0, Math.floor(summary.analyzedItems))
       : 0,

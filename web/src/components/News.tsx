@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, type Component } from 'solid-js';
 import type { NewsFeedPage, NewsPulseLabel, NewsSource } from '../../../src/domain/news';
+import { formatPulseMarketChange, formatPulseMarketPrice, pulseDirectionArrow } from '../../../src/domain/news';
 import { NEWS_SOURCE_TABS, formatNewsTime, formatPulseTime, loadNewsFeed, type NewsExecutiveSummary, type NewsItem, type NewsSourceFilter } from '../lib/newsFeed';
 import { usePageActive } from './PageView';
 import './News.css';
@@ -20,7 +21,7 @@ function pulseTags(bullet: NewsExecutiveSummary['bullets'][number]): { key: stri
   return tags;
 }
 
-/** The twice-daily Claude read of the feed: a take, three developments, what to watch. */
+/** The twice-daily Claude read of the feed: prices, a take, three developments, what to watch. */
 const NewsPulse: Component<{ summary: NewsExecutiveSummary; now: number }> = (props) => {
   const scanned = () => props.summary.analyzedItems || Object.values(props.summary.sourceCounts).reduce((sum, count) => sum + count, 0);
   const extras = () => props.summary.secondarySignals.length + (props.summary.noiseSummary ? 1 : 0);
@@ -29,8 +30,18 @@ const NewsPulse: Component<{ summary: NewsExecutiveSummary; now: number }> = (pr
       <span class="news-pulse-mood"><span class="news-pulse-dot" aria-hidden="true" /><span class="news-pulse-kicker">Pulse</span><span class="news-pulse-separator" aria-hidden="true">·</span><span>{PULSE_MOOD[props.summary.pulse.label]}</span></span>
       <span class="news-pulse-updated">Updated <time dateTime={props.summary.generatedAt} title={new Date(props.summary.generatedAt).toLocaleString()}>{formatPulseTime(props.summary.generatedAt, props.now)}</time> London</span>
     </div>
+    <Show when={props.summary.markets?.length}>
+      <ul class="news-pulse-tape" aria-label={`Prices at ${formatPulseTime(props.summary.marketsAt ?? props.summary.generatedAt, props.now)} London`}>
+        <For each={props.summary.markets}>{market => <li>
+          <span class="news-pulse-tape-label">{market.label}</span>
+          <span class="news-pulse-tape-price">{formatPulseMarketPrice(market)}</span>
+          <span class="news-pulse-tape-change" data-sign={Math.sign(market.change)}>{formatPulseMarketChange(market)}</span>
+        </li>}</For>
+      </ul>
+    </Show>
     <h2 id="news-pulse-title" class="news-pulse-headline">{props.summary.headline}</h2>
     <p class="news-pulse-overview">{props.summary.overview}</p>
+    <Show when={props.summary.feedSentiment}><p class="news-pulse-feed"><span class="news-pulse-label">Feed</span>{props.summary.feedSentiment}</p></Show>
 
     <ol class="news-pulse-bullets">
       <For each={props.summary.bullets}>{(bullet, index) => <li class="news-pulse-bullet">
@@ -38,6 +49,11 @@ const NewsPulse: Component<{ summary: NewsExecutiveSummary; now: number }> = (pr
         <div class="news-pulse-bullet-body">
           <h3 class="news-pulse-bullet-headline">{bullet.headline}<For each={pulseTags(bullet)}>{tag => <span class="news-pulse-tag" data-tag={tag.key}>{tag.label}</span>}</For></h3>
           <p class="news-pulse-bullet-summary">{bullet.summary}</p>
+          <Show when={bullet.assets?.length}>
+            <ul class="news-pulse-assets" aria-label="Likely market effect">
+              <For each={bullet.assets}>{tag => <li data-direction={tag.direction}>{tag.asset} <span aria-label={tag.direction}>{pulseDirectionArrow[tag.direction]}</span></li>}</For>
+            </ul>
+          </Show>
           <details class="news-pulse-evidence">
             <summary>Sources · {bullet.sources.length}<ChevronIcon /></summary>
             <div class="news-pulse-evidence-body">

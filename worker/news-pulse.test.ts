@@ -9,11 +9,15 @@ import {
   executiveSummaryScheduleSlot,
   generateExecutiveSummary,
   hydrateExecutiveSummary,
+  loadPulseContext,
+  pulseCalendarFromEvents,
   pulseInstanceId,
+  pulseMarketsFromContexts,
   scheduleExecutiveSummary,
   selectExecutiveSummaryItems,
   shouldGenerateExecutiveSummary,
   type NewsItem,
+  type NewsPulseContext,
 } from './news-pulse';
 
 const now = Date.parse('2026-07-12T20:00:00.000Z');
@@ -43,6 +47,7 @@ const claudeSummary = {
   bullets: Array.from({ length: 3 }, (_, index) => ({
     headline: `The verified update leads ${index + 1}`,
     summary: 'One primary-source item holds the only new information, which can shift near-term expectations.',
+    assets: [{ asset: 'BTC', direction: 'down' }, { asset: 'Nasdaq', direction: 'mixed' }],
     details: 'The primary source published the update during the current window.',
     change: 'new',
     confidence: 'confirmed',
@@ -51,6 +56,14 @@ const claudeSummary = {
   secondarySignals: ['A lower-priority development remains unconfirmed.'],
   watchNext: ['Watch for direct confirmation and market follow-through.'],
   noiseSummary: 'Duplicate reactions and unsupported takes were excluded.',
+  feedSentiment: 'Traders are fading the bounce and adding BTC shorts into strength.',
+};
+
+const noContext: NewsPulseContext = { markets: [], calendar: [] };
+const context: NewsPulseContext = {
+  marketsAt: '2026-07-12T20:00:00.000Z',
+  markets: [{ key: 'BTC', label: 'BTC', price: 81_900, change: -3.2, unit: 'pct' }],
+  calendar: [{ title: 'CPI YoY', country: 'US', date: '2026-07-13T12:30:00.000Z', forecast: '3.1%', previous: '3%' }],
 };
 
 function memoryKV(initial: Record<string, unknown> = {}) {
@@ -236,7 +249,7 @@ const submitPulse = (id: string, input: unknown) => ({ stop_reason: 'tool_use', 
 
 test('generation offers web lookups and accepts a pulse submitted through the tool', async () => {
   const { client, requests } = fakeClaude([submitPulse('call-1', claudeSummary)]);
-  const summary = await generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client });
+  const summary = await generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client, context: noContext });
   assert.equal(summary.bullets.length, 3);
   const tools = (requests[0]!.tools as Array<{ type?: string; name: string; max_uses?: number }>);
   assert.deepEqual(tools.map(({ name }) => name), ['web_search', 'web_fetch', 'submit_pulse']);
@@ -246,7 +259,7 @@ test('generation offers web lookups and accepts a pulse submitted through the to
 test('an unsourced pulse is returned once for correction, then fails', async () => {
   const unsourced = { ...claudeSummary, bullets: claudeSummary.bullets.map((bullet) => ({ ...bullet, sourceKeys: ['x:missing'] })) };
   const repaired = fakeClaude([submitPulse('call-1', unsourced), submitPulse('call-2', claudeSummary)]);
-  await generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: repaired.client });
+  await generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: repaired.client, context: noContext });
   const followUp = repaired.requests[1]!.messages as Array<{ role: string; content: unknown }>;
   const [result] = followUp.at(-1)!.content as Array<{ tool_use_id: string; is_error: boolean; content: string }>;
   assert.equal(result!.tool_use_id, 'call-1');
@@ -254,12 +267,70 @@ test('an unsourced pulse is returned once for correction, then fails', async () 
 
   const failing = fakeClaude([submitPulse('call-1', unsourced), submitPulse('call-2', unsourced)]);
   await assert.rejects(
-    generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: failing.client }),
+    generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: failing.client, context: noContext }),
     /The pulse failed validation/,
   );
   const silent = fakeClaude([{ stop_reason: 'end_turn', content: [{ type: 'text', text: 'No pulse today.' }] }]);
   await assert.rejects(
-    generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: silent.client }),
+    generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client: silent.client, context: noContext }),
     /ended without submitting a pulse: No pulse today/,
   );
+});
+
+test('keeps feed sentiment, valid asset tags and the code-filled price strip', () => {
+  const tagged = {
+    ...claudeSummary,
+    bullets: claudeSummary.bullets.map((bullet, index) => index === 0 ? { ...bullet, assets: [
+      { asset: 'BTC', direction: 'down' }, { asset: 'BTC', direction: 'up' }, { asset: 'Dogecoin', direction: 'up' },
+      { asset: 'Oil', direction: 'sideways' }, { asset: 'Gold', direction: 'up' }, { asset: 'Dollar', direction: 'down' }, { asset: 'Oil', direction: 'up' },
+    ] } : bullet),
+  };
+  const result = hydrateExecutiveSummary(tagged, items, { now, context });
+  assert.deepEqual(result.bullets[0].assets, [
+    { asset: 'BTC', direction: 'down' }, { asset: 'Gold', direction: 'up' }, { asset: 'Dollar', direction: 'down' },
+  ]);
+  assert.equal(result.feedSentiment, claudeSummary.feedSentiment);
+  assert.deepEqual(result.markets, context.markets);
+  assert.equal(result.marketsAt, context.marketsAt);
+  assert.equal(hydrateExecutiveSummary(claudeSummary, items, { now }).markets, undefined);
+});
+
+test('reads strip marks per venue, in percent or basis points', () => {
+  const main = [{ universe: [{ name: 'ETH' }, { name: 'BTC' }] }, [{ markPx: '3000', prevDayPx: '3100' }, { markPx: '81900', prevDayPx: '84600' }]];
+  assert.deepEqual(pulseMarketsFromContexts(main, ''), [
+    { key: 'BTC', label: 'BTC', price: 81_900, change: -3.19, unit: 'pct' },
+    { key: 'ETH', label: 'ETH', price: 3000, change: -3.23, unit: 'pct' },
+  ]);
+  const para = [{ universe: [{ name: 'para:10Y' }] }, [{ markPx: '4.9668', prevDayPx: '5.1299' }]];
+  assert.deepEqual(pulseMarketsFromContexts(para, 'para'), [{ key: 'US10Y', label: 'US 10Y', price: 4.9668, change: -16.3, unit: 'bp' }]);
+  const delisted = [{ universe: [{ name: 'xyz:GOLD', isDelisted: true }] }, [{ markPx: '4000', prevDayPx: '4100' }]];
+  assert.deepEqual(pulseMarketsFromContexts(delisted, 'xyz'), []);
+  assert.deepEqual(pulseMarketsFromContexts(null, ''), []);
+});
+
+test('keeps the next day of high-importance releases, soonest first', () => {
+  const at = (hours: number) => new Date(now + hours * 3_600_000).toISOString();
+  const events = { result: [
+    { title: 'Retail Sales MoM', country: 'GB', date: at(10), forecast: -0.1, previous: 0.5, unit: '%' },
+    { title: 'CPI YoY', country: 'US', date: at(2), forecast: null, previous: 3, unit: '%' },
+    { title: 'Already out', country: 'US', date: at(-1) },
+    { title: 'Next week', country: 'US', date: at(30) },
+  ] };
+  assert.deepEqual(pulseCalendarFromEvents(events, now), [
+    { title: 'CPI YoY', country: 'US', date: at(2), previous: '3%' },
+    { title: 'Retail Sales MoM', country: 'GB', date: at(10), forecast: '-0.1%', previous: '0.5%' },
+  ]);
+});
+
+test('a failing market or calendar source leaves the pulse context empty, not broken', async () => {
+  const offline = (async () => { throw new Error('offline'); }) as unknown as typeof fetch;
+  assert.deepEqual(await loadPulseContext(now, offline), { markets: [], calendar: [] });
+});
+
+test('the prompt carries the market snapshot and calendar in London time', async () => {
+  const { client, requests } = fakeClaude([submitPulse('call-1', claudeSummary)]);
+  await generateExecutiveSummary({ apiKey: undefined, items, previousSummary: undefined, now, client, context });
+  const prompt = (requests[0]!.messages as Array<{ content: string }>)[0]!.content;
+  assert.match(prompt, /BTC 81900 \(-3\.2% over 24 hours\)/);
+  assert.match(prompt, /Mon 13:30 US CPI YoY, forecast 3\.1%, previous 3%/);
 });

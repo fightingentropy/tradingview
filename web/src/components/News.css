@@ -89,8 +89,19 @@
 .news-pulse-updated { white-space: nowrap; }
 .news-pulse-updated time { color: var(--color-brand-slate-400); }
 
+/* The price strip is filled in code at pulse time, so its numbers never come from the model. */
+.news-pulse-tape { display: flex; flex-wrap: wrap; gap: 1px; margin-top: 16px; overflow: hidden; border: 1px solid var(--color-brand-border); border-radius: var(--radius-md); background: var(--color-brand-border); }
+.news-pulse-tape li { flex: 1 1 64px; display: grid; gap: 1px; padding: 8px 9px; background: var(--color-brand-surface); font-variant-numeric: tabular-nums; }
+.news-pulse-tape-label { color: var(--color-brand-slate-500); font-size: 11px; font-weight: 500; line-height: 1.4; }
+.news-pulse-tape-price { color: var(--color-brand-slate-100); font-size: 14px; font-weight: 600; line-height: 1.4; }
+.news-pulse-tape-change { color: var(--color-brand-slate-400); font-size: 12px; font-weight: 500; line-height: 1.4; }
+.news-pulse-tape-change[data-sign="1"] { color: var(--color-brand-green-400); }
+.news-pulse-tape-change[data-sign="-1"] { color: var(--color-brand-red-400); }
+
 .news-pulse-headline { margin: 16px 0 0; color: var(--color-brand-slate-100); font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.022em; }
 .news-pulse-overview { margin-top: 8px; color: var(--news-text); font-size: 16px; line-height: 1.55; letter-spacing: -0.011em; }
+.news-pulse-feed { display: flex; align-items: baseline; gap: 10px; margin-top: 10px; color: var(--color-brand-slate-400); font-size: 14px; line-height: 1.55; }
+.news-pulse-feed .news-pulse-label { flex-shrink: 0; color: var(--color-brand-accent); }
 .news-pulse-label { margin: 0; color: var(--color-brand-slate-500); font-size: 11px; font-weight: 600; line-height: 1.4; letter-spacing: .06em; text-transform: uppercase; }
 
 /* Each development is a numbered headline and one line; its sources wait behind a toggle. */
@@ -103,6 +114,11 @@
 .news-pulse-tag[data-tag="disputed"] { --tag: var(--color-brand-red-400); }
 .news-pulse-tag[data-tag="speculative"] { --tag: var(--pulse-warning); }
 .news-pulse-bullet-summary { margin-top: 4px; color: var(--color-brand-slate-400); font-size: 15px; line-height: 1.55; }
+
+.news-pulse-assets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.news-pulse-assets li { --direction: var(--color-brand-slate-400); padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--direction) 12%, transparent); color: var(--direction); font-size: 12px; font-weight: 500; line-height: 20px; }
+.news-pulse-assets li[data-direction="up"] { --direction: var(--color-brand-green-400); }
+.news-pulse-assets li[data-direction="down"] { --direction: var(--color-brand-red-400); }
 
 /* Sources and "More" use native disclosure, closed until asked for. */
 .news-pulse summary { list-style: none; cursor: pointer; }

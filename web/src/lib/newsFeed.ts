@@ -2,6 +2,7 @@ import type {
   NewsConfidence, NewsExecutiveSummary, NewsExecutiveSummaryBullet, NewsFeedNotice, NewsFeedPage, NewsItem, NewsMedia,
   NewsPulseChange, NewsPulseLabel, NewsSource, NewsSummarySourceReference,
 } from '../../../src/domain/news';
+import { parsePulseAssets, parsePulseMarkets } from '../../../src/domain/news';
 
 export type { NewsExecutiveSummary, NewsItem, NewsSourceFilter } from '../../../src/domain/news';
 
@@ -60,8 +61,9 @@ export function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | un
     // Versions 1 and 2 carried a separate market effect (`whyItMatters`, then `marketImpact`); version 3 folds it into the summary.
     const marketImpact = text(bullet?.marketImpact) ?? text(bullet?.whyItMatters);
     if (!bullet || !bulletHeadline || !bulletSummary || !details || !sources.length) return [];
+    const assets = parsePulseAssets(bullet.assets);
     return [{
-      headline: bulletHeadline, summary: bulletSummary, ...(marketImpact ? { marketImpact } : {}), details, sources,
+      headline: bulletHeadline, summary: bulletSummary, ...(marketImpact ? { marketImpact } : {}), ...(assets.length ? { assets } : {}), details, sources,
       change: typeof bullet.change === 'string' && changeLabels.has(bullet.change) ? bullet.change as NewsPulseChange : 'unchanged',
       confidence: typeof bullet.confidence === 'string' && confidenceLabels.has(bullet.confidence) ? bullet.confidence as NewsConfidence : 'reported',
     }];
@@ -81,6 +83,9 @@ export function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | un
     secondarySignals: texts(summary.secondarySignals, 3),
     watchNext: texts(summary.watchNext, 2),
     noiseSummary: text(summary.noiseSummary) ?? '',
+    ...(text(summary.feedSentiment) ? { feedSentiment: text(summary.feedSentiment) } : {}),
+    ...(parsePulseMarkets(summary.markets).length && isDate(summary.marketsAt)
+      ? { markets: parsePulseMarkets(summary.markets), marketsAt: summary.marketsAt } : {}),
     analyzedItems: count(summary.analyzedItems),
     sourceCounts: { x: count(sourceCounts?.x), telegram: count(sourceCounts?.telegram), digg: count(sourceCounts?.digg), paste: count(sourceCounts?.paste) },
     model: text(summary.model) ?? '',

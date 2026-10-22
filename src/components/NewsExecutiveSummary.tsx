@@ -6,7 +6,14 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { NewsSourceIcon } from '@/components/NewsSourceIcon';
 import { AppText } from '@/components/ui/AppText';
 import { Colors, NewsColors, Spacing } from '@/constants/theme';
-import type { NewsExecutiveSummary, NewsPulseLabel } from '@/domain/news';
+import {
+  formatPulseMarketChange,
+  formatPulseMarketPrice,
+  pulseDirectionArrow,
+  type NewsExecutiveSummary,
+  type NewsPulseDirection,
+  type NewsPulseLabel,
+} from '@/domain/news';
 
 function relativeTime(value: string): string {
   const elapsed = Math.max(0, Date.now() - Date.parse(value));
@@ -35,6 +42,9 @@ const pulseLabel: Record<NewsPulseLabel, string> = {
 
 type Bullet = NewsExecutiveSummary['bullets'][number];
 
+const directionColor: Record<NewsPulseDirection, string> = { up: Colors.up, down: Colors.down, mixed: NewsColors.textMuted };
+const changeColor = (change: number) => change > 0 ? Colors.up : change < 0 ? Colors.down : NewsColors.textMuted;
+
 /** Only states worth a glance get a tag; routine ones (reported, unchanged) stay unlabelled. */
 function bulletTags(bullet: Bullet): { label: string; color: string }[] {
   const tags: { label: string; color: string }[] = bullet.change === 'new' ? [{ label: 'New', color: Colors.accent }] : [];
@@ -43,7 +53,7 @@ function bulletTags(bullet: Bullet): { label: string; color: string }[] {
   return tags;
 }
 
-/** The twice-daily Claude read of the feed: a take, three developments, what to watch. */
+/** The twice-daily Claude read of the feed: prices, a take, three developments, what to watch. */
 export function NewsExecutiveSummaryView({
   summary,
   refreshing,
@@ -74,8 +84,25 @@ export function NewsExecutiveSummaryView({
             Updated {relativeTime(summary.generatedAt)}
           </AppText>
         </View>
+        {summary.markets?.length ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tape}>
+            {summary.markets.map((market) => (
+              <View key={market.key} style={styles.tapeCell} accessible accessibilityLabel={`${market.label} ${formatPulseMarketPrice(market)}, ${formatPulseMarketChange(market)} over 24 hours`}>
+                <AppText style={styles.tapeLabel}>{market.label}</AppText>
+                <AppText style={styles.tapePrice}>{formatPulseMarketPrice(market)}</AppText>
+                <AppText style={[styles.tapeChange, { color: changeColor(market.change) }]}>{formatPulseMarketChange(market)}</AppText>
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
         <AppText variant="heading" style={styles.headline}>{summary.headline}</AppText>
         <AppText style={styles.overview}>{summary.overview}</AppText>
+        {summary.feedSentiment ? (
+          <View style={styles.feedRow}>
+            <AppText style={styles.feedLabel}>FEED</AppText>
+            <AppText style={styles.feedText}>{summary.feedSentiment}</AppText>
+          </View>
+        ) : null}
       </View>
 
       {summary.bullets.map((bullet, index) => {
@@ -94,6 +121,17 @@ export function NewsExecutiveSummaryView({
               ) : null}
               <AppText style={styles.bulletHeadline}>{bullet.headline}</AppText>
               <AppText style={styles.bulletSummary}>{bullet.summary}</AppText>
+              {bullet.assets?.length ? (
+                <View style={styles.assetRow} accessibilityLabel="Likely market effect">
+                  {bullet.assets.map((tag) => (
+                    <View key={tag.asset} style={styles.assetChip}>
+                      <AppText style={[styles.assetText, { color: directionColor[tag.direction] }]}>
+                        {tag.asset} {pulseDirectionArrow[tag.direction]}
+                      </AppText>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               <Pressable
                 onPress={() => setExpanded(isExpanded ? null : index)}
                 accessibilityRole="button"
@@ -190,8 +228,16 @@ const styles = StyleSheet.create({
   kicker: { color: NewsColors.textMuted, fontSize: 11, lineHeight: 15, fontWeight: '600' },
   updatedAt: { color: NewsColors.textFaint, fontSize: 11 },
   hero: { gap: 10, paddingTop: 20, paddingBottom: 18, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: NewsColors.border },
+  tape: { gap: 6, paddingVertical: 2 },
+  tapeCell: { minWidth: 84, gap: 1, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 10, backgroundColor: NewsColors.surface },
+  tapeLabel: { color: NewsColors.textFaint, fontSize: 10, lineHeight: 14, fontWeight: '500' },
+  tapePrice: { color: NewsColors.text, fontSize: 14, lineHeight: 19, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  tapeChange: { fontSize: 11, lineHeight: 15, fontWeight: '500', fontVariant: ['tabular-nums'] },
   headline: { color: NewsColors.text, fontSize: 25, lineHeight: 31, fontWeight: '600', letterSpacing: -0.5 },
   overview: { color: NewsColors.text, fontSize: 15, lineHeight: 22, fontWeight: '400' },
+  feedRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  feedLabel: { color: Colors.accent, fontSize: 10, lineHeight: 20, fontWeight: '600', letterSpacing: 0.7 },
+  feedText: { flex: 1, color: NewsColors.textMuted, fontSize: 13, lineHeight: 20 },
   bulletItem: { flexDirection: 'row', gap: 8, paddingTop: 16, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: NewsColors.border },
   bulletNumber: { width: 16, color: NewsColors.textFaint, fontSize: 12, lineHeight: 22, fontWeight: '500', fontVariant: ['tabular-nums'] },
   bulletBody: { flex: 1, minWidth: 0, gap: 4 },
@@ -199,6 +245,9 @@ const styles = StyleSheet.create({
   tag: { fontSize: 11, lineHeight: 15, fontWeight: '600' },
   bulletHeadline: { color: NewsColors.text, fontSize: 16, lineHeight: 22, fontWeight: '600', letterSpacing: -0.2 },
   bulletSummary: { color: NewsColors.textMuted, fontSize: 14, lineHeight: 21, fontWeight: '400' },
+  assetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  assetChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: NewsColors.surface },
+  assetText: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
   sourcesToggle: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, minHeight: 28 },
   sourcesToggleText: { color: NewsColors.textFaint, fontSize: 12, fontWeight: '500' },
   sourcesToggleOpen: { color: Colors.accent },
