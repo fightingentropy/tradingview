@@ -39,11 +39,10 @@ const items: NewsItem[] = [
 const claudeSummary = {
   headline: 'Markets digest a material update',
   overview: 'The latest verified development is the dominant signal in an otherwise noisy hour.',
-  pulse: { label: 'event-driven', summary: 'Price discovery is centered on one new catalyst.' },
+  pulse: { label: 'event-driven' },
   bullets: Array.from({ length: 3 }, (_, index) => ({
     headline: `The verified update leads ${index + 1}`,
-    summary: 'One primary-source item contains the only material new information.',
-    marketImpact: 'It can change near-term expectations while reposts add no evidence.',
+    summary: 'One primary-source item holds the only new information, which can shift near-term expectations.',
     details: 'The primary source published the update during the current window.',
     change: 'new',
     confidence: 'confirmed',
@@ -74,7 +73,9 @@ test('hydrates only valid, publisher-distinct source references', () => {
   assert.equal(result.reasoningEffort, 'xhigh');
   assert.equal(result.formatVersion, NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION);
   assert.equal(result.bullets.length, 3);
-  assert.equal(result.bullets[0].marketImpact, claudeSummary.bullets[0].marketImpact);
+  assert.equal(result.bullets[0].summary, claudeSummary.bullets[0].summary);
+  assert.equal(result.bullets[0].marketImpact, undefined);
+  assert.equal(result.pulse.summary, undefined);
   assert.deepEqual(result.sourceCounts, { x: 2, telegram: 0, digg: 0, paste: 0 });
 });
 
@@ -91,16 +92,19 @@ test('enforces editorial word limits after generation', () => {
   assert.equal(hydrateExecutiveSummary(wordy, items, { now }).headline, 'one two three four five six seven eight nine…');
 });
 
-test('cuts an over-long field at a word boundary, never mid-word', () => {
-  // The 19 Oct 2026 close pulse: 44 words, within the word limit but over 240 characters.
+test('keeps the short format to its word limits', () => {
+  // The 19 Oct 2026 close overview ran to 44 words; the take now stops at 25.
   const overview = 'US stocks closed higher, Nasdaq up 1.1%, while WTI rose 1.5% after Houthis claimed strikes on Saudi oil sites and Paris imposed a curfew. Brent above $110 keeps pressure on yields, testing a tech bounce that follows hedge funds\' fastest technology selling in months.';
-  const result = hydrateExecutiveSummary({ ...claudeSummary, overview }, items, { now });
-  assert.ok(result.overview.endsWith('hedge funds\' fastest…'), result.overview);
-  assert.ok(result.overview.length <= 240);
+  assert.equal(hydrateExecutiveSummary({ ...claudeSummary, overview }, items, { now }).overview.split(' ').length, 25);
+  const watchNext = ['one two three four five six seven eight nine ten eleven twelve'];
+  assert.deepEqual(hydrateExecutiveSummary({ ...claudeSummary, watchNext }, items, { now }).watchNext, ['one two three four five six seven eight nine ten…']);
+});
 
-  const clause = 'Brent above $110 keeps pressure on yields, testing a tech bounce';
-  const pulse = { ...claudeSummary.pulse, summary: `${clause}. ${'x'.repeat(200)}` };
-  assert.equal(hydrateExecutiveSummary({ ...claudeSummary, pulse }, items, { now }).pulse.summary, `${clause}…`);
+test('cuts an over-long field at a word boundary, never mid-word', () => {
+  const words = Array.from({ length: 24 }, (_, index) => `word${index}`.padEnd(10, 'x'));
+  const result = hydrateExecutiveSummary({ ...claudeSummary, overview: words.join(' ') }, items, { now });
+  assert.ok(result.overview.endsWith('…') && result.overview.length <= 200, result.overview);
+  for (const word of result.overview.slice(0, -1).split(' ')) assert.ok(words.includes(word), word);
   const unbroken = { ...claudeSummary, headline: 'y'.repeat(100) };
   assert.equal(hydrateExecutiveSummary(unbroken, items, { now }).headline, `${'y'.repeat(79)}…`);
 });

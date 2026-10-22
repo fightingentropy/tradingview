@@ -7,7 +7,8 @@ import type {
 
 import { CLAUDE_MODEL, createClaudeClient, runClaudeTurn } from './claude';
 
-export const NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION = 2;
+// Version 3 is the short format: a one-sentence take and one line per development.
+export const NEWS_EXECUTIVE_SUMMARY_FORMAT_VERSION = 3;
 export const NEWS_EXECUTIVE_SUMMARY_EFFORT = 'xhigh';
 export const NEWS_EXECUTIVE_SUMMARY_TIME_ZONE = 'America/New_York';
 export const NEWS_EXECUTIVE_SUMMARY_SCHEDULE = [
@@ -74,12 +75,14 @@ export interface NewsExecutiveSummary {
   overview: string;
   pulse: {
     label: 'risk-on' | 'risk-off' | 'mixed' | 'calm' | 'event-driven';
-    summary: string;
+    /** Version 2 only. */
+    summary?: string;
   };
   bullets: Array<{
     headline: string;
     summary: string;
-    marketImpact: string;
+    /** Version 2 only; version 3 folds the market effect into summary. */
+    marketImpact?: string;
     details: string;
     change: 'new' | 'changed' | 'unchanged';
     confidence: 'confirmed' | 'reported' | 'disputed' | 'speculative';
@@ -123,10 +126,9 @@ const SUMMARY_OUTPUT_SCHEMA = {
     pulse: {
       type: 'object',
       additionalProperties: false,
-      required: ['label', 'summary'],
+      required: ['label'],
       properties: {
         label: { type: 'string', enum: [...pulseLabels] },
-        summary: { type: 'string' },
       },
     },
     bullets: {
@@ -134,11 +136,10 @@ const SUMMARY_OUTPUT_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['headline', 'summary', 'marketImpact', 'details', 'change', 'confidence', 'sourceKeys'],
+        required: ['headline', 'summary', 'details', 'change', 'confidence', 'sourceKeys'],
         properties: {
           headline: { type: 'string' },
           summary: { type: 'string' },
-          marketImpact: { type: 'string' },
           details: { type: 'string' },
           change: { type: 'string', enum: [...changeLabels] },
           confidence: { type: 'string', enum: [...confidenceLabels] },
@@ -173,15 +174,16 @@ const EDITOR_INSTRUCTIONS = [
   'Cluster corroborating reports. Prefer primary or closest-to-primary items, but preserve uncertainty and disagreements.',
   'Write like a sharp human markets editor, not an AI research memo.',
   'Use concrete nouns and verbs. Never use filler such as "dominates the narrative", "underscores", "amid uncertainty", "remains unclear", "key takeaway", or "event-driven tape".',
-  'The headline must be at most 9 words. The overview must be at most 45 words and 2 sentences: what changed, then why the market should care.',
-  'The pulse summary must be one plain-English market consequence of at most 24 words.',
+  'Be brief. Lead with the fact and its number, then the consequence. Say each point once: never restate the headline, the overview or another bullet in a different field.',
+  'The headline must be at most 9 words. The overview is the one-sentence take, at most 25 words: what moved and why it matters.',
+  'Set pulse.label to the overall market mood.',
   'Return exactly 3 primary bullets ranked by likely market impact, not by posting volume.',
-  'Each bullet needs: a headline of at most 10 words; a factual summary of at most 28 words; a marketImpact of at most 22 words; and concise evidence of at most 90 words in details.',
+  'Each bullet needs: a headline of at most 10 words that states the development with its key number; a summary of at most 24 words, one sentence giving what is new and then its market effect, without repeating the headline; and evidence of at most 60 words in details.',
   'Set change to new, changed, or unchanged versus the previous pulse. On the first pulse, use new.',
   'Set confidence to confirmed only for direct official or primary evidence, from an item or your own verification; reported for credible but not primary reporting; disputed for conflicting claims; speculative for unsupported or forward-looking claims.',
-  'Put up to 3 lower-priority developments of at most 22 words each in secondarySignals. Do not repeat the primary bullets.',
-  'Return 1 or 2 concrete watchNext items of at most 18 words each.',
-  'Use noiseSummary as a rumour check of at most 30 words: name the most-shared unverified claim and its status, then what you set aside as noise.',
+  'Put up to 3 lower-priority developments of at most 15 words each in secondarySignals. Do not repeat the primary bullets.',
+  'Return 1 or 2 watchNext items of at most 10 words each, each naming a level, event or release, for example "Brent against May\'s $114.44 high".',
+  'Use noiseSummary as a rumour check of at most 20 words: name the most-shared unverified claim and its status.',
   'Give any clock times in UK time (Europe/London), the reader\'s time zone.',
   'Use sourceKeys copied exactly from the input, at most 4 per bullet. Every bullet needs at least one valid source key.',
   'Do not give personalized financial advice, price targets, or trading instructions.',
@@ -299,11 +301,10 @@ export function executiveSummaryPrompt(
       generatedAt: previousSummary.generatedAt,
       headline: previousSummary.headline,
       overview: previousSummary.overview,
-      pulse: previousSummary.pulse,
+      pulse: { label: previousSummary.pulse.label },
       bullets: previousSummary.bullets.map((bullet) => ({
         headline: bullet.headline,
         summary: bullet.summary,
-        marketImpact: bullet.marketImpact,
         confidence: bullet.confidence,
       })),
       secondarySignals: previousSummary.secondarySignals,
@@ -324,14 +325,15 @@ function normalizeGeneratedSummary(
   const generatedAt = finiteDate(value.generatedAt);
   const windowStart = finiteDate(value.windowStart);
   const windowEnd = finiteDate(value.windowEnd);
+  // Character caps allow about 8 characters a word, so the word limit Claude
+  // is given normally decides where a field ends.
   const headline = wordLimitedValue(value.headline, 9, 80);
-  const overview = wordLimitedValue(value.overview, 45, 240);
+  const overview = wordLimitedValue(value.overview, 25, 200);
   const pulseLabel = stringValue(pulse?.label, 32);
-  const pulseSummary = wordLimitedValue(pulse?.summary, 24, 180);
-  const noiseSummary = wordLimitedValue(value.noiseSummary, 30, 220);
+  const noiseSummary = wordLimitedValue(value.noiseSummary, 20, 160);
   if (
     !id || !generatedAt || !windowStart || !windowEnd || !headline || !overview || !noiseSummary ||
-    !pulseLabel || !pulseLabels.has(pulseLabel) || !pulseSummary || !Array.isArray(value.bullets)
+    !pulseLabel || !pulseLabels.has(pulseLabel) || !Array.isArray(value.bullets)
   ) {
     return undefined;
   }
@@ -340,20 +342,18 @@ function normalizeGeneratedSummary(
     if (!entry || typeof entry !== 'object') return [];
     const bullet = entry as Record<string, unknown>;
     const bulletHeadline = wordLimitedValue(bullet.headline, 10, 80);
-    const summary = wordLimitedValue(bullet.summary, 28, 220);
-    const marketImpact = wordLimitedValue(bullet.marketImpact, 22, 180);
-    const details = wordLimitedValue(bullet.details, 90, 600);
+    const summary = wordLimitedValue(bullet.summary, 24, 190);
+    const details = wordLimitedValue(bullet.details, 60, 480);
     const change = stringValue(bullet.change, 16) ?? 'unchanged';
     const confidence = stringValue(bullet.confidence, 16) ?? 'reported';
     const sources = Array.isArray(bullet.sources) ? bullet.sources as NewsSummarySourceReference[] : [];
     if (
-      !bulletHeadline || !summary || !marketImpact || !details || sources.length === 0 ||
+      !bulletHeadline || !summary || !details || sources.length === 0 ||
       !changeLabels.has(change) || !confidenceLabels.has(confidence)
     ) return [];
     return [{
       headline: bulletHeadline,
       summary,
-      marketImpact,
       details,
       change: change as NewsExecutiveSummary['bullets'][number]['change'],
       confidence: confidence as NewsExecutiveSummary['bullets'][number]['confidence'],
@@ -375,10 +375,10 @@ function normalizeGeneratedSummary(
     windowEnd,
     headline,
     overview,
-    pulse: { label: pulseLabel as NewsExecutiveSummary['pulse']['label'], summary: pulseSummary },
+    pulse: { label: pulseLabel as NewsExecutiveSummary['pulse']['label'] },
     bullets,
-    secondarySignals: listOf(value.secondarySignals, 22, 140, 3),
-    watchNext: listOf(value.watchNext, 18, 160, 2),
+    secondarySignals: listOf(value.secondarySignals, 15, 120, 3),
+    watchNext: listOf(value.watchNext, 10, 80, 2),
     noiseSummary,
     analyzedItems: Number(value.analyzedItems) || 0,
     sourceCounts: value.sourceCounts as Record<NewsSource, number>,

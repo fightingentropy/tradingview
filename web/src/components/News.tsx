@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, type Component } from 'solid-js';
-import type { NewsConfidence, NewsFeedPage, NewsPulseChange, NewsPulseLabel, NewsSource } from '../../../src/domain/news';
+import type { NewsFeedPage, NewsPulseLabel, NewsSource } from '../../../src/domain/news';
 import { NEWS_SOURCE_TABS, formatNewsTime, formatPulseTime, loadNewsFeed, type NewsExecutiveSummary, type NewsItem, type NewsSourceFilter } from '../lib/newsFeed';
 import { usePageActive } from './PageView';
 import './News.css';
@@ -11,13 +11,19 @@ const RefreshIcon: Component = () => <svg width="15" height="15" viewBox="0 0 24
 const sourceName = (source: NewsSource) => NEWS_SOURCE_TABS.find(tab => tab.key === source)!.label;
 
 const PULSE_MOOD: Record<NewsPulseLabel, string> = { 'risk-on': 'Risk on', 'risk-off': 'Risk off', mixed: 'Mixed signals', calm: 'Calm', 'event-driven': 'Event risk elevated' };
-const PULSE_CHANGE: Record<NewsPulseChange, string> = { new: 'New', changed: 'Changed', unchanged: 'Unchanged' };
-const PULSE_CONFIDENCE: Record<NewsConfidence, string> = { confirmed: 'Confirmed', reported: 'Reported', disputed: 'Disputed', speculative: 'Speculative' };
-const ordinal = (index: number) => String(index + 1).padStart(2, '0');
 
-/** The twice-daily Claude read of the feed, in the same order as the iPhone's Brief tab. */
+/** Only states worth a glance get a tag; routine ones (reported, unchanged) stay unlabelled. */
+function pulseTags(bullet: NewsExecutiveSummary['bullets'][number]): { key: string; label: string }[] {
+  const tags = bullet.change === 'new' ? [{ key: 'new', label: 'New' }] : [];
+  if (bullet.confidence === 'disputed') tags.push({ key: 'disputed', label: 'Disputed' });
+  if (bullet.confidence === 'speculative') tags.push({ key: 'speculative', label: 'Unconfirmed' });
+  return tags;
+}
+
+/** The twice-daily Claude read of the feed: a take, three developments, what to watch. */
 const NewsPulse: Component<{ summary: NewsExecutiveSummary; now: number }> = (props) => {
   const scanned = () => props.summary.analyzedItems || Object.values(props.summary.sourceCounts).reduce((sum, count) => sum + count, 0);
+  const extras = () => props.summary.secondarySignals.length + (props.summary.noiseSummary ? 1 : 0);
   return <section class="news-pulse" data-mood={props.summary.pulse.label} aria-labelledby="news-pulse-title">
     <div class="news-pulse-topline">
       <span class="news-pulse-mood"><span class="news-pulse-dot" aria-hidden="true" /><span class="news-pulse-kicker">Pulse</span><span class="news-pulse-separator" aria-hidden="true">·</span><span>{PULSE_MOOD[props.summary.pulse.label]}</span></span>
@@ -25,53 +31,44 @@ const NewsPulse: Component<{ summary: NewsExecutiveSummary; now: number }> = (pr
     </div>
     <h2 id="news-pulse-title" class="news-pulse-headline">{props.summary.headline}</h2>
     <p class="news-pulse-overview">{props.summary.overview}</p>
-    <div class="news-pulse-read"><p class="news-pulse-label">Market read</p><p>{props.summary.pulse.summary}</p></div>
 
-    <div class="news-pulse-section-heading"><h3>Key developments</h3><span>{props.summary.bullets.length} {props.summary.bullets.length === 1 ? 'story' : 'stories'}</span></div>
     <ol class="news-pulse-bullets">
       <For each={props.summary.bullets}>{(bullet, index) => <li class="news-pulse-bullet">
-        <div class="news-pulse-meta">
-          <span class="news-pulse-number">{ordinal(index())}</span>
-          <span data-change={bullet.change}>{PULSE_CHANGE[bullet.change]}</span>
-          <span class="news-pulse-meta-divider" aria-hidden="true" />
-          <span data-confidence={bullet.confidence}>{PULSE_CONFIDENCE[bullet.confidence]}</span>
-          <span class="news-pulse-refs">{bullet.sources.length} {bullet.sources.length === 1 ? 'ref' : 'refs'}</span>
+        <span class="news-pulse-number" aria-hidden="true">{index() + 1}</span>
+        <div class="news-pulse-bullet-body">
+          <h3 class="news-pulse-bullet-headline">{bullet.headline}<For each={pulseTags(bullet)}>{tag => <span class="news-pulse-tag" data-tag={tag.key}>{tag.label}</span>}</For></h3>
+          <p class="news-pulse-bullet-summary">{bullet.summary}</p>
+          <details class="news-pulse-evidence">
+            <summary>Sources · {bullet.sources.length}<ChevronIcon /></summary>
+            <div class="news-pulse-evidence-body">
+              <p>{bullet.details}</p>
+              <ul class="news-pulse-sources">
+                <For each={bullet.sources}>{reference => <li><a href={reference.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${reference.author} on ${sourceName(reference.source)}`}>
+                  <span class="news-pulse-source-copy"><span class="news-pulse-source-author">{reference.author}</span><span class="news-pulse-source-title">{reference.title.split('\n')[0]}</span></span>
+                  <span class="news-source-label">{sourceName(reference.source)}</span>
+                  <ExternalLink />
+                </a></li>}</For>
+              </ul>
+            </div>
+          </details>
         </div>
-        <h4 class="news-pulse-bullet-headline">{bullet.headline}</h4>
-        <p class="news-pulse-bullet-summary">{bullet.summary}</p>
-        <div class="news-pulse-impact"><p class="news-pulse-label">Market effect</p><p>{bullet.marketImpact}</p></div>
-        <details class="news-pulse-evidence">
-          <summary>Evidence<ChevronIcon /></summary>
-          <div class="news-pulse-evidence-body">
-            <p>{bullet.details}</p>
-            <ul class="news-pulse-sources">
-              <For each={bullet.sources}>{reference => <li><a href={reference.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${reference.author} on ${sourceName(reference.source)}`}>
-                <span class="news-pulse-source-copy"><span class="news-pulse-source-author">{reference.author}</span><span class="news-pulse-source-title">{reference.title.split('\n')[0]}</span></span>
-                <span class="news-source-label">{sourceName(reference.source)}</span>
-                <ExternalLink />
-              </a></li>}</For>
-            </ul>
-          </div>
-        </details>
       </li>}</For>
     </ol>
 
-    <Show when={props.summary.secondarySignals.length}>
-      <details class="news-pulse-more">
-        <summary><span>More signals</span><span class="news-pulse-count">{props.summary.secondarySignals.length}</span><ChevronIcon /></summary>
-        <ul><For each={props.summary.secondarySignals}>{signal => <li>{signal}</li>}</For></ul>
-      </details>
-    </Show>
     <Show when={props.summary.watchNext.length}>
       <div class="news-pulse-watch">
-        <h3>Watch next</h3>
-        <ol><For each={props.summary.watchNext}>{(item, index) => <li><span class="news-pulse-number">{ordinal(index())}</span><span>{item}</span></li>}</For></ol>
+        <h3 class="news-pulse-label">Watch</h3>
+        <ul><For each={props.summary.watchNext}>{item => <li>{item}</li>}</For></ul>
       </div>
     </Show>
-    <footer class="news-pulse-footer">
-      <p>{scanned()} source items scanned · weekdays at 09:35 & 16:05 ET</p>
-      <Show when={props.summary.noiseSummary}><p>{props.summary.noiseSummary}</p></Show>
-    </footer>
+    <Show when={extras()}>
+      <details class="news-pulse-more">
+        <summary><span>More</span><span class="news-pulse-count">{extras()}</span><ChevronIcon /></summary>
+        <Show when={props.summary.secondarySignals.length}><ul><For each={props.summary.secondarySignals}>{signal => <li>{signal}</li>}</For></ul></Show>
+        <Show when={props.summary.noiseSummary}><p class="news-pulse-noise"><span class="news-pulse-label">Rumour check</span>{props.summary.noiseSummary}</p></Show>
+        <p class="news-pulse-footer">{scanned()} source items scanned · weekdays at 09:35 & 16:05 ET</p>
+      </details>
+    </Show>
   </section>;
 };
 

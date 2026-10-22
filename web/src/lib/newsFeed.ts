@@ -50,18 +50,18 @@ function parseSummarySources(value: unknown): NewsSummarySourceReference[] {
 export function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined {
   const summary = record(value);
   const pulse = record(summary?.pulse);
-  const id = text(summary?.id), headline = text(summary?.headline), overview = text(summary?.overview), pulseSummary = text(pulse?.summary);
-  if (!summary || !pulse || !id || !headline || !overview || !pulseSummary || typeof pulse.label !== 'string' ||
+  const id = text(summary?.id), headline = text(summary?.headline), overview = text(summary?.overview);
+  if (!summary || !pulse || !id || !headline || !overview || typeof pulse.label !== 'string' ||
     !pulseLabels.has(pulse.label) || !isDate(summary.generatedAt) || !Array.isArray(summary.bullets)) return undefined;
   const bullets = summary.bullets.flatMap((entry): NewsExecutiveSummaryBullet[] => {
     const bullet = record(entry);
     const sources = parseSummarySources(bullet?.sources);
     const bulletHeadline = text(bullet?.headline), bulletSummary = text(bullet?.summary), details = text(bullet?.details);
-    // Version 1 pulses called the market effect `whyItMatters`.
+    // Versions 1 and 2 carried a separate market effect (`whyItMatters`, then `marketImpact`); version 3 folds it into the summary.
     const marketImpact = text(bullet?.marketImpact) ?? text(bullet?.whyItMatters);
-    if (!bullet || !bulletHeadline || !bulletSummary || !marketImpact || !details || !sources.length) return [];
+    if (!bullet || !bulletHeadline || !bulletSummary || !details || !sources.length) return [];
     return [{
-      headline: bulletHeadline, summary: bulletSummary, marketImpact, details, sources,
+      headline: bulletHeadline, summary: bulletSummary, ...(marketImpact ? { marketImpact } : {}), details, sources,
       change: typeof bullet.change === 'string' && changeLabels.has(bullet.change) ? bullet.change as NewsPulseChange : 'unchanged',
       confidence: typeof bullet.confidence === 'string' && confidenceLabels.has(bullet.confidence) ? bullet.confidence as NewsConfidence : 'reported',
     }];
@@ -76,7 +76,7 @@ export function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | un
     windowEnd: isDate(summary.windowEnd) ? summary.windowEnd : summary.generatedAt,
     headline,
     overview,
-    pulse: { label: pulse.label as NewsPulseLabel, summary: pulseSummary },
+    pulse: { label: pulse.label as NewsPulseLabel, ...(text(pulse.summary) ? { summary: text(pulse.summary) } : {}) },
     bullets,
     secondarySignals: texts(summary.secondarySignals, 3),
     watchNext: texts(summary.watchNext, 2),

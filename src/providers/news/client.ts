@@ -137,7 +137,6 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
     !pulse ||
     typeof pulse.label !== 'string' ||
     !pulseLabels.includes(pulse.label as (typeof pulseLabels)[number]) ||
-    typeof pulse.summary !== 'string' ||
     !Array.isArray(summary.bullets) ||
     typeof summary.noiseSummary !== 'string'
   ) {
@@ -157,6 +156,7 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
       seenPublishers.add(publisher);
       return true;
     });
+    // Versions 1 and 2 carried a separate market effect; version 3 folds it into the summary.
     const marketImpact = typeof bullet.marketImpact === 'string'
       ? bullet.marketImpact
       : typeof bullet.whyItMatters === 'string'
@@ -171,7 +171,6 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
     if (
       typeof bullet.headline !== 'string' ||
       typeof bullet.summary !== 'string' ||
-      !marketImpact ||
       typeof bullet.details !== 'string' ||
       sources.length === 0
     ) {
@@ -180,7 +179,7 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
     return [{
       headline: bullet.headline,
       summary: bullet.summary,
-      marketImpact,
+      ...(marketImpact ? { marketImpact } : {}),
       details: bullet.details,
       change,
       confidence,
@@ -205,7 +204,7 @@ function parseExecutiveSummary(value: unknown): NewsExecutiveSummary | undefined
     overview: summary.overview,
     pulse: {
       label: pulse.label as NewsExecutiveSummary['pulse']['label'],
-      summary: pulse.summary,
+      ...(typeof pulse.summary === 'string' ? { summary: pulse.summary } : {}),
     },
     bullets,
     secondarySignals: Array.isArray(summary.secondarySignals)

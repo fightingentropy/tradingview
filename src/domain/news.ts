@@ -45,7 +45,8 @@ export interface NewsSummarySourceReference {
 export interface NewsExecutiveSummaryBullet {
   headline: string;
   summary: string;
-  marketImpact: string;
+  /** Version 2 only; version 3 folds the market effect into summary. */
+  marketImpact?: string;
   details: string;
   change: NewsPulseChange;
   confidence: NewsConfidence;
@@ -60,7 +61,8 @@ export interface NewsExecutiveSummary {
   windowEnd: string;
   headline: string;
   overview: string;
-  pulse: { label: NewsPulseLabel; summary: string };
+  /** `summary` is version 2 only; version 3 keeps just the mood label. */
+  pulse: { label: NewsPulseLabel; summary?: string };
   bullets: NewsExecutiveSummaryBullet[];
   secondarySignals: string[];
   watchNext: string[];

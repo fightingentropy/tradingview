@@ -50,6 +50,17 @@ test('reads the Claude pulse alongside the feed', () => {
   expect(summary?.analyzedItems).toBe(180);
 });
 
+test('reads the short version 3 pulse without the version 2 fields', () => {
+  const { marketImpact: _, ...short } = bullet('Short');
+  const summary = parseNewsFeed({ items: [], updatedAt, executiveSummary: {
+    ...pulse, formatVersion: 3, pulse: { label: 'risk-off' }, bullets: [short, short, short],
+  } }).executiveSummary;
+  expect(summary?.formatVersion).toBe(3);
+  expect(summary?.pulse).toEqual({ label: 'risk-off' });
+  expect(summary?.bullets).toHaveLength(3);
+  expect(summary?.bullets[0]).not.toHaveProperty('marketImpact');
+});
+
 test('keeps the feed when the pulse is missing, malformed or unusable', () => {
   for (const executiveSummary of [undefined, null, 'pulse', [], { ...pulse, pulse: { label: 'euphoric', summary: 'x' } }, { ...pulse, generatedAt: 'invalid' }, { ...pulse, bullets: [bullet('No sources', [])] }]) {
     const feed = parseNewsFeed({ items: [item], executiveSummary, updatedAt });
