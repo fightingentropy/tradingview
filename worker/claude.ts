@@ -28,13 +28,14 @@ export async function runClaudeTurn(
   client: Anthropic,
   request: ClaudeRequest,
   label: string,
+  model: string = CLAUDE_MODEL,
 ): Promise<{ message: BetaMessage; messages: BetaMessageParam[] }> {
   let messages = request.messages;
   for (let pause = 0; ; pause += 1) {
     const message = await client.beta.messages.stream({
       ...request,
       messages,
-      model: CLAUDE_MODEL,
+      model,
       betas: [FALLBACK_BETA],
       fallbacks: 'default',
     }).finalMessage();

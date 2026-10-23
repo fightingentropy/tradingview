@@ -15,7 +15,10 @@ export default defineConfig((ctx) => {
             DailyBriefWorkflow: exports.workflow({ name: "tradingview-daily-brief" }),
           },
           // Workflow steps stream long Claude research turns.
-          // The brief runs on demand only, so this Worker has no cron trigger.
+          // The brief runs on demand only. The cron summarises newly reported
+          // $10B+ earnings with Sonnet; removing it later needs the schedules API,
+          // because leaving `triggers` out does not delete an existing cron.
+          triggers: [triggers.scheduled({ schedule: "*/15 * * * *" })],
           limits: { cpuMs: 300_000 },
           workersDev: true,
           previewUrls: false,
@@ -42,6 +45,10 @@ export default defineConfig((ctx) => {
           env: {
             DAILY_BRIEFS: bindings.kv({
               id: "a61b65da42314097857d47cc813a6d82",
+            }),
+            // Sonnet summaries of reported $10B+ earnings, one entry per US trading day.
+            EARNINGS_SUMMARIES: bindings.kv({
+              id: "9a9394262805424dbaeec45c2e40010e",
             }),
             // Read-only here: the relay feed is the brief's CT, Telegram, Digg and Paste Trade evidence.
             NEWS_RELAY_KV: bindings.kv({

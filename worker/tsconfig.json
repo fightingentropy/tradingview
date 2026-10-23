@@ -18,6 +18,7 @@
     "claude.ts",
     "daily-brief.ts",
     "daily-brief-workflow.ts",
+    "earnings-summaries.ts",
     "web-entry.ts",
     "modules.d.ts",
     "worker-configuration.d.ts"

@@ -5,11 +5,12 @@ import {
   buildEarningsScannerRequest,
   earningsLines,
   earningsRange,
+  earningsSummaryKey,
   fiscalQuarterLabel,
   parseEarningsCalendar,
   parseEarningsScannerResponse,
 } from '../src/domain/earningsCalendar.ts';
-import { handleEarningsCalendarRequest } from '../worker/web-app.mjs';
+import { attachEarningsSummaries, handleEarningsCalendarRequest } from '../worker/web-app.mjs';
 
 const seconds = (iso) => Date.parse(iso) / 1000;
 const COLUMNS = buildEarningsScannerRequest('2026-10-18', '2026-10-24').columns;
@@ -138,6 +139,21 @@ test('round-trips the Worker response through the client parser', () => {
   })));
   assert.deepEqual(parsed.reports, reports);
   assert.throws(() => parseEarningsCalendar({ error: 'nope' }), /invalid response/);
+});
+
+test('attaches stored summaries to reported companies only, and survives a KV failure', async () => {
+  const [reported] = parseEarningsScannerResponse({ data: [reportedRow] }, '2026-10-18', '2026-10-24');
+  const upcoming = { ...reported, symbol: 'NYSE:UPC', reported: false };
+  const day = { [reported.symbol]: { bullets: ['EPS beat.', 'Guidance kept.'], generatedAt: '2026-10-22T21:00:00.000Z', checkedAt: '2026-10-22T21:00:00.000Z' },
+    'NYSE:UPC': { bullets: ['Should not show.'], generatedAt: '2026-10-22T21:00:00.000Z' } };
+  const store = { async get(key) { return key === earningsSummaryKey(reported.date) ? day : null; } };
+  const [withSummary, without] = await attachEarningsSummaries([reported, upcoming], store);
+  assert.deepEqual(withSummary.summary, { bullets: ['EPS beat.', 'Guidance kept.'], generatedAt: '2026-10-22T21:00:00.000Z' });
+  assert.equal(without.summary, undefined);
+  assert.deepEqual(parseEarningsCalendar({ reports: [withSummary] }).reports[0].summary, withSummary.summary);
+  assert.deepEqual(earningsLines(withSummary), [{ text: 'EPS beat.' }, { text: 'Guidance kept.' }]);
+  const broken = { async get() { throw new Error('KV down'); } };
+  assert.deepEqual(await attachEarningsSummaries([reported], broken), [reported]);
 });
 
 test('proxies one bounded screener query and caches the mapped week', async () => {

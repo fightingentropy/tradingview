@@ -2,6 +2,7 @@ import {
   EARNINGS_SCANNER_URL,
   buildEarningsScannerRequest,
   earningsRange,
+  earningsSummaryKey,
   parseEarningsScannerResponse,
 } from '../src/domain/earningsCalendar.ts';
 
@@ -161,7 +162,21 @@ export async function handleEconomicCalendarRequest(request, fetcher = fetch) {
  * Maps TradingView's public screener to one week of US earnings. The screener
  * takes a POST, which the edge cache ignores, so responses go through the Cache API.
  */
-export async function handleEarningsCalendarRequest(request, fetcher = fetch, cache = globalThis.caches?.default) {
+/** Adds stored Sonnet summaries to reported companies; a KV failure leaves the calendar as it is. */
+export async function attachEarningsSummaries(reports, store) {
+  if (!store) return reports;
+  const days = [...new Set(reports.map((report) => report.date))];
+  const stored = await Promise.all(days.map((day) => store.get(earningsSummaryKey(day), 'json').catch(() => null)));
+  const byDay = new Map(days.map((day, index) => [day, stored[index]]));
+  return reports.map((report) => {
+    const summary = byDay.get(report.date)?.[report.symbol];
+    return report.reported && Array.isArray(summary?.bullets) && summary.bullets.length
+      ? { ...report, summary: { bullets: summary.bullets, generatedAt: summary.generatedAt } }
+      : report;
+  });
+}
+
+export async function handleEarningsCalendarRequest(request, fetcher = fetch, cache = globalThis.caches?.default, summaries = undefined) {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -211,7 +226,7 @@ export async function handleEarningsCalendarRequest(request, fetcher = fetch, ca
       return calendarError(502, 'earnings_upstream_unavailable');
     }
 
-    const reports = parseEarningsScannerResponse(await upstream.json(), range.from, range.to);
+    const reports = await attachEarningsSummaries(parseEarningsScannerResponse(await upstream.json(), range.from, range.to), summaries);
     const response = Response.json(
       { ...range, updatedAt: new Date().toISOString(), reports },
       { headers: { ...calendarHeaders(), 'Cache-Control': 'public, max-age=120, stale-while-revalidate=300' } },
@@ -306,7 +321,7 @@ export default {
     }
 
     if (url.pathname === EARNINGS_CALENDAR_PATH) {
-      return handleEarningsCalendarRequest(request);
+      return handleEarningsCalendarRequest(request, fetch, globalThis.caches?.default, env.EARNINGS_SUMMARIES);
     }
 
     if (url.pathname === '/api/daily-briefs' || url.pathname.startsWith('/api/daily-briefs/')) {

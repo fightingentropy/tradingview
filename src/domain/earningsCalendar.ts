@@ -73,7 +73,18 @@ export type EarningsReport = {
     eps: EarningsFigure;
     revenue: EarningsFigure;
   } | null;
+  summary?: EarningsSummary;
 };
+
+/** Claude's three-bullet read of a reported quarter, for companies of $10B and more. */
+export type EarningsSummary = {
+  bullets: string[];
+  generatedAt: string;
+};
+
+/** One KV entry per US trading day, keyed by exchange-qualified symbol. */
+export const earningsSummaryKey = (date: string) => `earnings-summaries:v1:${date}`;
+
 
 export type EarningsCalendar = {
   from: string;
@@ -269,7 +280,17 @@ function parseReport(value: unknown): EarningsReport | null {
     context: context && (context.kind === 'previous' || context.kind === 'next')
       ? { kind: context.kind, period: text(context.period), eps: parseFigure(context.eps), revenue: parseFigure(context.revenue) }
       : null,
+    ...parseSummary(record.summary),
   };
+}
+
+function parseSummary(value: unknown): { summary?: EarningsSummary } {
+  const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+  const bullets = Array.isArray(record?.bullets)
+    ? record.bullets.flatMap((bullet) => text(bullet) ?? []).slice(0, 3)
+    : [];
+  const generatedAt = text(record?.generatedAt);
+  return bullets.length && generatedAt && Number.isFinite(Date.parse(generatedAt)) ? { summary: { bullets, generatedAt } } : {};
 }
 
 /** Validates the Worker's response for the website and the app. */
@@ -337,8 +358,12 @@ function resultLine(label: string, value: EarningsFigure, format: (value: number
   };
 }
 
-/** Up to three factual lines: results against consensus, then the quarter before or after. */
+/**
+ * Up to three lines: Claude's summary once a $10B+ report has one, otherwise
+ * factual lines (results against consensus, then the quarter before or after).
+ */
 export function earningsLines(report: EarningsReport): EarningsLine[] {
+  if (report.summary?.bullets.length) return report.summary.bullets.slice(0, 3).map((text) => ({ text }));
   const eps = (value: number) => formatEarningsPerShare(value, report.currency);
   const revenue = (value: number) => formatEarningsRevenue(value, report.currency);
   const lines: (EarningsLine | null)[] = [];

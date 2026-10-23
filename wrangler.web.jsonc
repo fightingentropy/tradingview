@@ -9,8 +9,11 @@
   "kv_namespaces": [
     { "binding": "DAILY_BRIEFS", "id": "a61b65da42314097857d47cc813a6d82" },
     // Read-only here: the news relay's feed is the brief's CT, Telegram, Digg and Paste Trade evidence.
-    { "binding": "NEWS_RELAY_KV", "id": "757a63280fc54505ad9c6950b37df7b6" }
+    { "binding": "NEWS_RELAY_KV", "id": "757a63280fc54505ad9c6950b37df7b6" },
+    // Sonnet summaries of reported $10B+ earnings, one entry per US trading day.
+    { "binding": "EARNINGS_SUMMARIES", "id": "9a9394262805424dbaeec45c2e40010e" }
   ],
+  "triggers": { "crons": ["*/15 * * * *"] },
   "workflows": [
     { "name": "tradingview-daily-brief", "binding": "DAILY_BRIEF_WORKFLOW", "class_name": "DailyBriefWorkflow" }
   ],
