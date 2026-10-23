@@ -1,6 +1,6 @@
 import { usePageActive } from "./PageView";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type Component } from 'solid-js';
-import { editionStatus, formatBriefDate, type DailyBrief } from '../lib/dailyBrief';
+import { formatBriefDate, isTodaysEdition, type DailyBrief } from '../lib/dailyBrief';
 import { parseBriefIndex, parseBriefPayload } from '../lib/dailyBriefFeed';
 import { convex } from '../lib/convex';
 import { isAdmin } from '../stores/auth';
@@ -39,7 +39,8 @@ const Brief: Component = () => {
   const [progress, setProgress] = createSignal(0);
   const [now, setNow] = createSignal(new Date());
   const [sourcesOpen, setSourcesOpen] = createSignal(false);
-  const status = createMemo(() => { const brief = edition(); return brief ? editionStatus(brief, brief.id, now()) : undefined; });
+  // Briefs run only on demand, so an edition from an earlier London day is never shown.
+  const current = createMemo(() => { const brief = edition(); return brief && isTodaysEdition(brief, now()) ? brief : undefined; });
   const [run, setRun] = createSignal<RunState>();
   const [runError, setRunError] = createSignal('');
   const [starting, setStarting] = createSignal(false);
@@ -82,7 +83,7 @@ const Brief: Component = () => {
       }
       setFeedError('');
     } catch {
-      if (!disposed) setFeedError(edition() ? 'Couldn’t refresh · Showing saved edition.' : 'Brief unavailable. Please try again.');
+      if (!disposed) setFeedError(current() ? 'Couldn’t refresh · Showing saved edition.' : 'Brief unavailable. Please try again.');
     } finally {
       feedBusy = false;
       if (!disposed) setLoading(false);
@@ -138,17 +139,17 @@ const Brief: Component = () => {
   createEffect(() => { if (pageActive()) void refreshEdition(); });
 
   const updateReadingPosition = () => {
-    const currentBrief = edition();
+    const currentBrief = current();
     if (!currentBrief) return;
     const maximum = scroller.scrollHeight - scroller.clientHeight;
     setProgress(maximum > 0 ? Math.min(100, scroller.scrollTop / maximum * 100) : 100);
-    let current = currentBrief.sections[0]?.id ?? '';
+    let active = currentBrief.sections[0]?.id ?? '';
     const top = scroller.getBoundingClientRect().top;
     for (const section of currentBrief.sections) {
       const heading = headings.get(section.id);
-      if (heading && heading.getBoundingClientRect().top - top <= 150) current = section.id;
+      if (heading && heading.getBoundingClientRect().top - top <= 150) active = section.id;
     }
-    setActiveSection(current);
+    setActiveSection(active);
   };
 
   const jumpTo = (id: string) => {
@@ -175,7 +176,7 @@ const Brief: Component = () => {
               {running() ? 'Researching…' : 'Run brief now'}
             </button>
           </Show>
-          <Show when={edition()}>{(brief) => <a class="brief-download" download={`market-overview-${brief().id}.md`} href={`data:text/markdown;charset=utf-8,${encodeURIComponent(brief().raw)}`}>
+          <Show when={current()}>{(brief) => <a class="brief-download" download={`market-overview-${brief().id}.md`} href={`data:text/markdown;charset=utf-8,${encodeURIComponent(brief().raw)}`}>
             <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg>
             Save brief
           </a>}</Show>
@@ -190,9 +191,15 @@ const Brief: Component = () => {
         </Show>
 
         <Show when={feedError() && !loading()}><div class="brief-feed-status" role="status">{feedError()}<button type="button" onClick={() => void refreshEdition()}>Retry</button></div></Show>
-        <Show when={loading() && !edition()}><div class="brief-loading" role="status" aria-label="Loading daily brief"><span class="brief-spinner" aria-hidden="true" /></div></Show>
+        <Show when={loading() && !current()}><div class="brief-loading" role="status" aria-label="Loading daily brief"><span class="brief-spinner" aria-hidden="true" /></div></Show>
+        <Show when={!loading() && !feedError() && !current() && !running()}>
+          <div class="brief-empty" role="status">
+            <p class="brief-empty-title">No brief today</p>
+            <p>{isAdmin() ? 'Press Run brief now to research and publish one.' : 'A brief appears here once one is generated today.'}</p>
+          </div>
+        </Show>
 
-        <Show when={edition()}>{(brief) => <>
+        <Show when={current()}>{(brief) => <>
         <div class="brief-edition-bar">
           <div class="brief-edition-stamp">
             <time class="brief-edition-date" dateTime={brief().id}>{formatBriefDate(brief().id, 'short')}</time>
@@ -212,14 +219,13 @@ const Brief: Component = () => {
                 </a>
               )}</For>
             </nav>
-            <div class="brief-sidebar-note"><span>Global macro</span><p>Facts, interpretation, and conditional market views.</p></div>
+            <div class="brief-sidebar-note"><span>US markets</span><p>Facts, interpretation, and conditional market views.</p></div>
           </aside>
 
           <article class="brief-article" aria-labelledby="brief-title" aria-busy={loading()}>
             <div class="brief-article-header">
-              <div class="brief-publication-line"><span classList={{ 'brief-status': true, 'brief-status-today': status() === 'today' }}>{status() === 'today' ? "Today's edition" : 'Latest available edition'}</span></div>
+              <div class="brief-publication-line"><span class="brief-status brief-status-today">Today's edition</span></div>
               <h2 id="brief-title">{brief().title}</h2>
-              <Show when={status() !== 'today'}><p class="brief-cutoff-note">Showing the latest loaded edition. Open About this brief for data times.</p></Show>
               <details class="brief-about">
                 <summary><span>About this brief</span><ChevronDown /></summary>
                 <dl class="brief-metadata">

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { editionStatus, londonDateKey, parseDailyBrief, safeBriefUrl } from './dailyBrief';
+import { isTodaysEdition, londonDateKey, parseDailyBrief, safeBriefUrl } from './dailyBrief';
 
 const fixture = (body: string, generated = '2026-09-07 19:44') => `Generated: ${generated} (Europe/London)  
 Market state: U.S. holiday; cash markets closed  
@@ -30,13 +30,14 @@ describe('daily brief publication boundaries', () => {
     expect(() => parseDailyBrief('No sections', fixture('Text only'))).toThrow('section');
   });
 
-  test('uses the London calendar day and never relabels an archive as current', () => {
+  test('uses the London calendar day and treats earlier editions as outdated', () => {
     expect(londonDateKey(new Date('2026-09-06T23:30:00Z'))).toBe('2026-09-07');
     expect(londonDateKey(new Date('2026-12-06T23:30:00Z'))).toBe('2026-12-06');
     const brief = parseDailyBrief('A dated view', fixture('## Market verdict\n\nText'));
-    expect(editionStatus(brief, brief.id, new Date('2026-09-06T23:30:00Z'))).toBe('today');
-    expect(editionStatus(brief, brief.id, new Date('2026-09-16T12:00:00Z'))).toBe('latest');
-    expect(editionStatus(brief, '2026-09-08', new Date('2026-09-16T12:00:00Z'))).toBe('archive');
+    expect(isTodaysEdition(brief, new Date('2026-09-06T23:30:00Z'))).toBe(true);
+    expect(isTodaysEdition(brief, new Date('2026-09-07T22:59:00Z'))).toBe(true);
+    expect(isTodaysEdition(brief, new Date('2026-09-07T23:00:00Z'))).toBe(false);
+    expect(isTodaysEdition(brief, new Date('2026-09-16T12:00:00Z'))).toBe(false);
   });
 
   test('retains claim-level source links and deduplicates the source index', () => {

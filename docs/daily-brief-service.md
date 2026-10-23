@@ -93,12 +93,16 @@ before claiming a publication succeeded.
 
 ## Native iPhone reader
 
-The iPhone app opens **News → Daily brief** by default. It reads the same public
-index and dated editions as the website, so new publications need no app update.
-Both renderers use the shared publication validation and safe
-Markdown parser in `@tradingview/shared`; the content, timestamps and sources stay identical. Both readers
-show only the latest edition, with no archive picker or bundled historical fallback.
-Each publication replaces the discovery index with its single current entry.
+The iPhone app opens **News → Pulse** by default; **Daily brief** is one tap away.
+It reads the same public index and dated editions as the website, so new
+publications need no app update. Both renderers use the shared publication
+validation and safe Markdown parser in `@tradingview/shared`; the content,
+timestamps and sources stay identical. Each publication replaces the discovery
+index with its single current entry.
+
+Because briefs run only on demand, both readers show an edition only on the
+London day it was generated (`isTodaysEdition`). On any other day they show
+"No brief today" with the run button, and a brief disappears at London midnight.
 
 The reader refreshes the index on focus, app foreground and every five minutes
 while open. Pull to refresh checks the index and current edition. A newer

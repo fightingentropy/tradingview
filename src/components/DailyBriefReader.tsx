@@ -9,10 +9,12 @@ import { Colors } from '@/constants/theme';
 import { useBriefRun } from '@/data/useBriefRun';
 import { useDailyBrief } from '@/data/useDailyBrief';
 import { DAILY_BRIEF_URL, canRunBrief } from '@/providers/briefs/client';
-import { editionStatus, formatBriefDate } from '@tradingview/shared/brief';
+import { formatBriefDate, isTodaysEdition } from '@tradingview/shared/brief';
 
 export function DailyBriefReader() {
-  const { brief, loading, refreshing, error, refresh, now } = useDailyBrief();
+  const { brief: latest, loading, refreshing, error, refresh, now } = useDailyBrief();
+  // Briefs run only on demand, so an edition from an earlier London day is never shown.
+  const brief = latest && isTodaysEdition(latest, now) ? latest : undefined;
   const [metadataOpen, setMetadataOpen] = useState(false);
   const [contentsOpen, setContentsOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -41,11 +43,17 @@ export function DailyBriefReader() {
 
   if (!brief) return <View style={styles.empty}>
     {loading ? <ActivityIndicator color={Colors.accent} accessibilityLabel="Loading daily brief" /> : <Ionicons name="newspaper-outline" color={Colors.textMuted} size={32} />}
-    {!loading && <AppText style={styles.emptyTitle}>Brief unavailable</AppText>}
-    {!loading && <Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Try again</AppText></Pressable>}
+    {!loading && <AppText style={styles.emptyTitle}>{error ? 'Brief unavailable' : 'No brief today'}</AppText>}
+    {!loading && error && <Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Try again</AppText></Pressable>}
+    {!loading && !error && !canRunBrief && <AppText style={styles.emptyNote}>A brief appears here once one is generated today.</AppText>}
+    {!loading && !error && canRunBrief && (briefRun.active
+      ? <AppText style={styles.emptyNote}>Researching a fresh brief since {runClock ?? 'now'} (London). It appears here when done.</AppText>
+      : <Pressable accessibilityRole="button" onPress={confirmRun} style={styles.retry}><AppText style={styles.linkText}>Generate today’s brief</AppText></Pressable>)}
+    {!loading && !error && canRunBrief && !briefRun.active && (briefRun.error || briefRun.run?.status === 'errored') && <AppText style={styles.noticeText}>
+      {briefRun.error ?? `The last run failed${briefRun.run?.error ? `: ${briefRun.run.error}` : '.'} Try again.`}
+    </AppText>}
   </View>;
 
-  const status = editionStatus(brief, brief.id, now);
   const rows = brief.sections.map((section, index) => ({ id: section.id, title: section.title, subtitle: `Section ${String(index + 1).padStart(2, '0')}` }));
 
   return <>
@@ -82,9 +90,7 @@ export function DailyBriefReader() {
       {error && <View style={styles.notice}><AppText style={styles.noticeText}>Couldn’t refresh · Showing saved edition</AppText><Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retry}><AppText style={styles.linkText}>Retry</AppText></Pressable></View>}
 
       <View style={styles.articleHeader}>
-        {status !== 'today' && <AppText style={styles.status}>Latest available edition</AppText>}
         <AppText accessibilityRole="header" style={styles.headline}>{brief.title}</AppText>
-        {status !== 'today' && <AppText style={styles.cutoffNote}>Showing the latest loaded edition. Open the information button for data times.</AppText>}
         {metadataOpen && <View testID="brief-metadata" style={styles.metadata}>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>GENERATED</AppText><AppText style={styles.metadataValue}>{brief.generated.slice(11)} · Europe/London</AppText></View>
           <View style={styles.metadataRow}><AppText style={styles.metadataLabel}>MARKET STATE</AppText><AppText style={styles.metadataValue}>{brief.marketState}</AppText></View>
@@ -135,9 +141,7 @@ const styles = StyleSheet.create({
   dateText: { fontSize: 13, fontWeight: '500' },
   readingTime: { flex: 1, textAlign: 'right', fontSize: 12, color: Colors.textMuted },
   articleHeader: { gap: 12, marginBottom: 24 },
-  status: { color: '#9BCABC', fontSize: 12, letterSpacing: 1, lineHeight: 15 },
   headline: { fontSize: 27, lineHeight: 33, fontWeight: '500', letterSpacing: -0.9 },
-  cutoffNote: { color: Colors.textMuted, fontSize: 12, lineHeight: 19 },
   metadata: { gap: 12, paddingVertical: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border },
   metadataRow: { flexDirection: 'row', gap: 12 },
   metadataLabel: { width: 100, fontSize: 12, lineHeight: 18, letterSpacing: 0.4, color: Colors.textFaint },
@@ -166,6 +170,7 @@ const styles = StyleSheet.create({
   noticeText: { color: Colors.warning, fontSize: 12, lineHeight: 19 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 36, gap: 14 },
   emptyTitle: { fontSize: 21, lineHeight: 28, fontWeight: '500', textAlign: 'center' },
+  emptyNote: { color: Colors.textMuted, fontSize: 13, lineHeight: 19, textAlign: 'center' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
   sheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%', paddingHorizontal: 24 },
   sheetHandle: { height: 4, width: 32, borderRadius: 2, backgroundColor: Colors.textFaint, opacity: 0.5, alignSelf: 'center', marginTop: 10 },

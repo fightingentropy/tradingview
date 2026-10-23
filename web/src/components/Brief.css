@@ -58,6 +58,9 @@
 .brief-masthead + .brief-feed-status { margin-top: -8px; }
 .brief-feed-status ~ .brief-edition-bar { margin-top: 24px; }
 .brief-loading { display: flex; justify-content: center; padding: 96px 0; }
+.brief-empty { padding: 96px 0; text-align: center; color: var(--color-brand-slate-400); font-size: 14px; line-height: 1.5; }
+.brief-empty p { margin: 0; }
+.brief-empty .brief-empty-title { margin-bottom: 6px; color: var(--color-brand-slate-100); font-size: 20px; font-weight: 500; letter-spacing: -0.01em; }
 .brief-spinner { width: 22px; height: 22px; border: 2px solid var(--color-brand-border); border-top-color: var(--color-brand-accent); border-radius: 50%; animation: brief-spin .8s linear infinite; }
 @keyframes brief-spin { to { transform: rotate(360deg); } }
 @keyframes brief-pulse { 50% { opacity: .35; } }
@@ -85,7 +88,6 @@
 .brief-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-brand-slate-600); }
 .brief-status-today::before { background: var(--color-brand-accent); }
 .brief-article-header h2 { margin: 16px 0 20px; color: var(--color-brand-slate-100); font-size: clamp(30px, 3.6vw, 44px); font-weight: 600; line-height: 1.12; letter-spacing: -0.03em; text-wrap: balance; }
-.brief-cutoff-note { max-width: 48ch; margin: 0 0 16px; color: var(--color-brand-slate-500); font-size: 14px; line-height: 1.6; }
 
 .brief-about { margin: 0 0 8px; }
 .brief-about summary { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; color: var(--color-brand-slate-500); font-size: 13px; font-weight: 500; cursor: pointer; list-style: none; transition: color 140ms var(--ease-out); }

@@ -57,7 +57,8 @@ export default function NewsScreen() {
   const activeWatchlistId = useWatchlists((state) => state.activeId);
   const { itemId } = useLocalSearchParams<{ itemId?: string | string[] }>();
   const notificationTarget = useMemo(() => parseNewsNotificationItemId(itemId), [itemId]);
-  const [selectedSource, setSelectedSource] = useState<NewsSourceFilter | 'brief'>('brief');
+  // Open on the always-fresh pulse; the brief exists only on days it is generated.
+  const [selectedSource, setSelectedSource] = useState<NewsSourceFilter | 'brief'>('all');
   const showBrief = selectedSource === 'brief' && !notificationTarget;
   const source = notificationTarget?.source ?? (selectedSource === 'brief' ? 'all' : selectedSource);
   const listRef = useRef<FlashListRef<NewsItem>>(null);

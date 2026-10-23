@@ -141,7 +141,7 @@ export function formatBriefDate(id: string, style: 'long' | 'short' = 'long'): s
   return new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', ...(style === 'long' ? { weekday: 'long' as const, day: 'numeric' as const, month: 'long' as const, year: 'numeric' as const } : { day: 'numeric' as const, month: 'short' as const, year: 'numeric' as const }) }).format(new Date(`${id}T12:00:00Z`));
 }
 
-export function editionStatus(brief: DailyBrief, latestId: string, now = new Date()): 'today' | 'latest' | 'archive' {
-  if (brief.id === londonDateKey(now)) return 'today';
-  return brief.id === latestId ? 'latest' : 'archive';
+/** Briefs run only on demand, so readers show an edition only on its own London day. */
+export function isTodaysEdition(brief: Pick<DailyBrief, 'id'>, now = new Date()): boolean {
+  return brief.id === londonDateKey(now);
 }
