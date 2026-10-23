@@ -7,6 +7,7 @@ import {
   clearApiWalletSessionsForVault,
   revokeApiWalletSessionsForVault,
   restoreApiWalletSession,
+  warmApiWalletSessionWorker,
 } from "./apiWalletSession";
 
 const VAULT_DATABASE_NAME = "trade-xyz-api-wallet-vault";
@@ -260,7 +261,33 @@ const requestResult = <T>(request: IDBRequest<T>) =>
       reject(request.error ?? new Error("Touch ID vault storage failed."));
   });
 
-const openVaultDatabase = () =>
+let vaultDatabase: Promise<IDBDatabase> | undefined;
+
+// One connection per page: an unlock reads the record three times, and each
+// open costs a round trip (tens of milliseconds in Safari). A version change
+// from another tab closes it so that tab is never blocked.
+const openVaultDatabase = () => {
+  vaultDatabase ??= connectVaultDatabase().then(
+    (database) => {
+      const forget = () => {
+        if (vaultDatabase) vaultDatabase = undefined;
+      };
+      database.onversionchange = () => {
+        database.close();
+        forget();
+      };
+      database.onclose = forget;
+      return database;
+    },
+    (error: unknown) => {
+      vaultDatabase = undefined;
+      throw error;
+    },
+  );
+  return vaultDatabase;
+};
+
+const connectVaultDatabase = () =>
   new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
       reject(new Error("Encrypted browser storage is unavailable."));
@@ -293,8 +320,9 @@ const readRawVaultRecord = async (): Promise<unknown> => {
     );
     await completion;
     return value;
-  } finally {
-    database.close();
+  } catch (error) {
+    vaultDatabase = undefined;
+    throw error;
   }
 };
 
@@ -307,8 +335,9 @@ const createVaultRecord = async (record: StoredApiWalletVault) => {
       .objectStore(VAULT_OBJECT_STORE)
       .add(record, VAULT_RECORD_KEY);
     await completion;
-  } finally {
-    database.close();
+  } catch (error) {
+    vaultDatabase = undefined;
+    throw error;
   }
 };
 
@@ -319,8 +348,9 @@ const deleteVaultRecord = async () => {
     const completion = transactionCompletion(transaction);
     transaction.objectStore(VAULT_OBJECT_STORE).delete(VAULT_RECORD_KEY);
     await completion;
-  } finally {
-    database.close();
+  } catch (error) {
+    vaultDatabase = undefined;
+    throw error;
   }
 };
 
@@ -341,8 +371,9 @@ const deleteVaultRecordIfMatches = async (
       // Never delete a missing, malformed, or replacement record here.
     }
     await completion;
-  } finally {
-    database.close();
+  } catch (error) {
+    vaultDatabase = undefined;
+    throw error;
   }
 };
 
@@ -561,7 +592,7 @@ const errorMessage = (error: unknown, fallback: string) => {
     : fallback;
 };
 
-const ensureTouchIdSupport = async (): Promise<VaultActionResult> => {
+const checkTouchIdSupport = async (): Promise<VaultActionResult> => {
   if (
     typeof window === "undefined" ||
     !window.isSecureContext ||
@@ -601,6 +632,18 @@ const ensureTouchIdSupport = async (): Promise<VaultActionResult> => {
       error: errorMessage(error, "Could not check Touch ID availability."),
     };
   }
+};
+
+let touchIdSupport: ReturnType<typeof checkTouchIdSupport> | undefined;
+
+// Both platform checks are async and slow-ish, and their answer cannot change
+// within a page, so a successful check is reused for every later unlock.
+const ensureTouchIdSupport = () => {
+  touchIdSupport ??= checkTouchIdSupport().then((support) => {
+    if (!support.ok) touchIdSupport = undefined;
+    return support;
+  });
+  return touchIdSupport;
 };
 
 const prfOutputFromCredential = (
@@ -843,6 +886,10 @@ const unlockApiWalletVault = async (
   setApiWalletVaultUnlockPending(true);
   let prfOutput: Uint8Array<ArrayBuffer> | null = null;
   let payload: VaultPayload | null = null;
+  // Decryption, session caching and the connection all need these afterwards;
+  // fetching them now overlaps the download with the Touch ID prompt.
+  void import("../lib/hyperliquidExecutionSdk").catch(() => undefined);
+  warmApiWalletSessionWorker();
   try {
     await initializeApiWalletVault();
     const revocationEpoch = apiWalletVaultRevocationEpoch();

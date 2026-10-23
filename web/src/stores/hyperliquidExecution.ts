@@ -1097,7 +1097,20 @@ const {
         timeout: 12_000,
       });
       const nextInfoClient = new InfoClient({ transport });
-      const role = await nextInfoClient.userRole({ user: wallet.address });
+      // These reads are independent, so they run together instead of in four
+      // sequential round trips. userRole stays authoritative: it is checked
+      // before any other result is used.
+      const rolePromise = nextInfoClient.userRole({ user: wallet.address });
+      const agentsPromise = expectedAccount
+        ? nextInfoClient.extraAgents({ user: expectedAccount })
+        : undefined;
+      const converterPromise = SymbolConverter.create({ transport });
+      const perpDexsPromise = nextInfoClient.perpDexs().catch(() => []);
+      // Each is awaited below; these only stop a rejection that lands while
+      // userRole is still pending from being reported as unhandled.
+      agentsPromise?.catch(() => undefined);
+      converterPromise.catch(() => undefined);
+      const role = await rolePromise;
       const masterAddress = resolveApiWalletAccount(
         role,
         expectedAccount ?? undefined,
@@ -1106,7 +1119,8 @@ const {
       let agentName: string | undefined;
       let agentValidUntil: number | undefined;
       try {
-        const agents = await nextInfoClient.extraAgents({ user: masterAddress });
+        const agents = await (agentsPromise ??
+          nextInfoClient.extraAgents({ user: masterAddress }));
         const approved = agents.find(
           (agent) => agent.address.toLowerCase() === wallet.address.toLowerCase(),
         );
@@ -1126,8 +1140,8 @@ const {
       }
 
       const [nextConverter, perpDexMetadata] = await Promise.all([
-        SymbolConverter.create({ transport }),
-        nextInfoClient.perpDexs().catch(() => []),
+        converterPromise,
+        perpDexsPromise,
       ]);
       const nextPerpDexIndices = new Map(
         perpDexMetadata.flatMap((dex, index) =>

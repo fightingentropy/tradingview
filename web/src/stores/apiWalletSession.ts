@@ -211,6 +211,11 @@ const getSharedWorker = (): SharedWorker | null => {
   }
 };
 
+/** Starts the session worker early, so its first request does not wait for a cold start. */
+export const warmApiWalletSessionWorker = () => {
+  getSharedWorker();
+};
+
 const requestWorker = (
   message: Record<string, unknown>,
 ): Promise<WorkerResponse | null> => {
