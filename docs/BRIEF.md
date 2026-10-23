@@ -19,6 +19,15 @@ Write in a **direct, decisive, but calibrated global-macro PM style**:
 - Never manufacture conviction or precision
 - Keep the default brief concise enough to read in chat
 
+### Market Focus: US First
+
+The user trades **US equities**. Build every brief around what moves US stocks:
+
+- Lead with US indices, breadth, sectors, US single names, Treasuries, the Fed, US data, and US earnings.
+- Include non-US developments (Europe, UK, Asia, sovereign spreads, foreign central banks, foreign politics) only when they plausibly move US assets. Examples: oil and the Middle East, the dollar and global yields, Asian chip and memory stocks feeding into US semis, or a foreign shock spilling into US credit or risk appetite. Keep each to one line that states the US transmission.
+- Leave out non-US-only items (UK data or budgets, ECB/BoE decisions, French politics, foreign index moves) unless they meet that bar.
+- Always flag the big US scheduled catalysts by name and time, and put them first: FOMC decisions and the chair's press conference, CPI, PPI, PCE, payrolls, GDP, retail sales, ISM, and mega-cap earnings. On Thursdays, Fridays and weekends, also preview the **following week's** US events, especially an upcoming Fed decision.
+
 ---
 
 ## Invocation Contract
@@ -217,15 +226,15 @@ Do not fabricate technical levels. Use observable market levels, data thresholds
 
 ### 6) What Matters Next
 
-List the 3–5 highest-sensitivity catalysts over the next 72 hours or next trading session:
+List the 3–5 highest-sensitivity **US-market** catalysts over the next 72 hours or next trading session (see Market Focus: US First):
 
-- Date/time in Europe/London
+- Date/time in Europe/London (the user is in London), noting when UK/US clock changes shift the usual gap
 - Event
 - Consensus when reliably available
 - Why markets care
 - Likely cross-asset reaction under a meaningful beat/upside and miss/downside
 
-If the user asks during a weekend, extend this to the next full trading week.
+If the user asks during a weekend, extend this to the next full trading week. From Thursday onward, always add a one-line look-ahead to the next week's top US events (Fed decision, major data, mega-cap earnings), even if they fall outside the 72-hour window.
 
 ### 7) PM Bottom Line
 
@@ -425,7 +434,7 @@ Finish with where the accounts agree, where they disagree, and whether the combi
 For a full brief, cover the next seven calendar days:
 
 - Date/time in Europe/London, including daylight-saving conversion
-- Country/region
+- Country/region (US events first; non-US only when they transmit to US assets)
 - Indicator, central-bank event, auction, geopolitical deadline, or earnings cluster
 - Importance: High / Medium / Low
 - Consensus and prior when reliably sourced
